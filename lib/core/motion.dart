@@ -1,4 +1,4 @@
-mport 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 /// FIX: previously triggered once and never reset, so scrolling back

@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/app_strings.dart';
 import '../../core/responsive.dart';
+import '../auth/auth_gate.dart';
+import '../auth/auth_providers.dart';
 import 'landing_model.dart';
 import 'landing_providers.dart';
 
@@ -39,9 +41,9 @@ class LandingNavbar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final isMobile = Responsive.isMobile(context);
-    // Below this width even the mobile layout gets tight (small phones
-    // in portrait) - shrink further rather than truncating the name.
     final isNarrow = MediaQuery.sizeOf(context).width < 360;
+    final session = ref.watch(sessionProfileProvider(school.schoolId));
+    final isSignedIn = session.valueOrNull != null;
 
     final navItems = <(String, VoidCallback)>[
       (strings.home, onNavHome),
@@ -70,8 +72,6 @@ class LandingNavbar extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          // Logo shrinks on very narrow screens instead of eating into
-          // the space the school name needs.
           if (school.logoUrl.isNotEmpty)
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
@@ -85,10 +85,6 @@ class LandingNavbar extends ConsumerWidget {
               ),
             ),
           const SizedBox(width: 10),
-          // FIX: previously truncated to a single line with ellipsis,
-          // which could cut a long school name mid-word on small
-          // screens. Now allowed to wrap to two lines and shrinks font
-          // size on very narrow phones instead of clipping.
           Expanded(
             child: Text(
               school.schoolName,
@@ -109,14 +105,11 @@ class LandingNavbar extends ConsumerWidget {
           if (canToggleLanguage) _LanguageToggle(locale: locale),
           const SizedBox(width: 10),
           if (!isMobile)
-            FilledButton(
-              onPressed: () => context.push('/sign-in'),
-              child: Text(strings.signIn),
-            )
+            _AuthButton(isSignedIn: isSignedIn, school: school, strings: strings)
           else
             IconButton(
               icon: const Icon(Icons.menu_rounded),
-              onPressed: () => _openMobileMenu(context, navItems, strings),
+              onPressed: () => _openMobileMenu(context, navItems, strings, isSignedIn, school),
             ),
         ],
       ),
@@ -127,35 +120,91 @@ class LandingNavbar extends ConsumerWidget {
     BuildContext context,
     List<(String, VoidCallback)> navItems,
     AppStrings strings,
+    bool isSignedIn,
+    LandingModel school,
   ) {
+    // FIX: previously used the default (roughly half-screen, non-
+    // scrollable) bottom sheet, which cut off items on smaller
+    // phones. isScrollControlled + an explicit max-height + a scroll
+    // view means every item is always reachable regardless of screen size.
     showModalBottomSheet(
-      isScrollControlled: true,
-context: context,
+      context: context,
       showDragHandle: true,
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final item in navItems)
-              ListTile(
-                title: Text(item.$1),
-                onTap: () {
-                  Navigator.pop(context);
-                  item.$2();
-                },
-              ),
-            const Divider(),
-            ListTile(
-              title: Text(strings.signIn),
-              trailing: const Icon(Icons.login_rounded),
-              onTap: () {
-                Navigator.pop(context);
-                context.push('/sign-in');
-              },
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final item in navItems)
+                  ListTile(
+                    title: Text(item.$1),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      item.$2();
+                    },
+                  ),
+                const Divider(),
+                ListTile(
+                  title: Text(isSignedIn ? 'Sign Out' : strings.signIn,
+                      style: TextStyle(
+                        color: isSignedIn ? Theme.of(context).colorScheme.error : null,
+                        fontWeight: FontWeight.w600,
+                      )),
+                  trailing: Icon(isSignedIn ? Icons.logout_rounded : Icons.login_rounded,
+                      color: isSignedIn ? Theme.of(context).colorScheme.error : null),
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    if (isSignedIn) {
+                      // ignore: use_build_context_synchronously
+                      await _signOut(context);
+                    } else {
+                      context.push('/sign-in');
+                    }
+                  },
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+Future<void> _signOut(BuildContext context) async {
+  final container = ProviderScope.containerOf(context);
+  await container.read(authControllerProvider.notifier).signOut();
+  if (context.mounted) context.go('/');
+}
+
+/// Sign In uses the school's own primary color (matches every other
+/// primary action on the page). Sign Out is deliberately red/error -
+/// a different, unmistakable color so the two states are never
+/// visually confused.
+class _AuthButton extends StatelessWidget {
+  final bool isSignedIn;
+  final LandingModel school;
+  final AppStrings strings;
+  const _AuthButton({required this.isSignedIn, required this.school, required this.strings});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    if (isSignedIn) {
+      return FilledButton(
+        style: FilledButton.styleFrom(backgroundColor: theme.colorScheme.error),
+        onPressed: () => _signOut(context),
+        child: const Text('Sign Out'),
+      );
+    }
+
+    return FilledButton(
+      onPressed: () => context.push('/sign-in'),
+      child: Text(strings.signIn),
     );
   }
 }

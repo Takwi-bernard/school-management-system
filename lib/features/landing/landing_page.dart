@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/app_strings.dart';
 import '../../core/motion.dart';
+import '../auth/auth_gate.dart';
 import 'landing_providers.dart';
 import 'landing_navbar.dart';
 import 'landing_content.dart';
@@ -44,6 +46,30 @@ class _LandingPageState extends ConsumerState<LandingPage> {
       ctx,
       duration: const Duration(milliseconds: 650),
       curve: Curves.easeInOutCubic,
+    );
+  }
+
+  /// "Apply Now" / "Start Admission" logic:
+  /// - not signed in -> parent sign-up (admission requires a parent account)
+  /// - signed in as parent -> parent dashboard/admission portal
+  /// - signed in as anything else -> not applicable, tell them so
+  Future<void> _handleAdmissionCta(BuildContext context, String schoolId) async {
+    final profile = await ref.read(sessionProfileProvider(schoolId).future);
+
+    if (!context.mounted) return;
+
+    if (profile == null) {
+      context.push('/sign-up/parent');
+      return;
+    }
+
+    if (profile.role == 'parent') {
+      context.push('/parent');
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Admission is managed from a parent account.')),
     );
   }
 
@@ -96,6 +122,8 @@ class _LandingPageState extends ConsumerState<LandingPage> {
                           aboutKey: _sectionKeys.about,
                           achievementsKey: _sectionKeys.achievements,
                           admissionsKey: _sectionKeys.admissions,
+                          onLearnMore: () => _scrollTo(_sectionKeys.about),
+                          onAdmissionCta: () => _handleAdmissionCta(context, school.schoolId),
                         ),
                       ),
                       KeyedSubtree(

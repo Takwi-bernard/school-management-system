@@ -7,6 +7,7 @@ import '../../core/motion.dart';
 import '../landing/landing_providers.dart';
 import 'auth_branding_header.dart';
 import 'auth_providers.dart';
+import 'google_icon.dart';
 
 class SignInPage extends ConsumerStatefulWidget {
   const SignInPage({super.key});
@@ -156,16 +157,11 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                   const Expanded(child: Divider()),
                 ]),
                 const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: OutlinedButton.icon(
-                    onPressed: authState.isLoading
-                        ? null
-                        : () => ref.read(authControllerProvider.notifier).signInWithGoogle(),
-                    icon: const Icon(Icons.g_mobiledata_rounded, size: 28),
-                    label: Text(strings.continueWithGoogle),
-                  ),
+                GoogleSignInButton(
+                  onPressed: authState.isLoading
+                      ? null
+                      : () => ref.read(authControllerProvider.notifier).signInWithGoogle(),
+                  label: strings.continueWithGoogle,
                 ),
                 const SizedBox(height: 20),
                 TextButton(

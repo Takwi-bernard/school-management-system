@@ -16,6 +16,8 @@ class LandingContentSections extends StatelessWidget {
   final GlobalKey aboutKey;
   final GlobalKey achievementsKey;
   final GlobalKey admissionsKey;
+  final VoidCallback onLearnMore;
+  final VoidCallback onAdmissionCta;
 
   const LandingContentSections({
     super.key,
@@ -24,13 +26,20 @@ class LandingContentSections extends StatelessWidget {
     required this.aboutKey,
     required this.achievementsKey,
     required this.admissionsKey,
+    required this.onLearnMore,
+    required this.onAdmissionCta,
   });
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _Hero(school: school, strings: strings),
+        _Hero(
+          school: school,
+          strings: strings,
+          onApply: onAdmissionCta,
+          onLearnMore: onLearnMore,
+        ),
         if (school.statistics.isNotEmpty)
           RevealOnScroll(child: _Statistics(school: school)),
         KeyedSubtree(
@@ -46,7 +55,7 @@ class LandingContentSections extends StatelessWidget {
           ),
         KeyedSubtree(
           key: admissionsKey,
-          child: RevealOnScroll(child: _AdmissionsCta(strings: strings)),
+          child: RevealOnScroll(child: _AdmissionsCta(strings: strings, onTap: onAdmissionCta)),
         ),
       ],
     );
@@ -56,7 +65,14 @@ class LandingContentSections extends StatelessWidget {
 class _Hero extends StatefulWidget {
   final LandingModel school;
   final AppStrings strings;
-  const _Hero({required this.school, required this.strings});
+  final VoidCallback onApply;
+  final VoidCallback onLearnMore;
+  const _Hero({
+    required this.school,
+    required this.strings,
+    required this.onApply,
+    required this.onLearnMore,
+  });
 
   @override
   State<_Hero> createState() => _HeroState();
@@ -178,7 +194,7 @@ class _HeroState extends State<_Hero> with SingleTickerProviderStateMixin {
                           children: [
                             HoverLift(
                               liftPixels: 3,
-                              onTap: () {},
+                              onTap: widget.onApply,
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 16),
                                 decoration: BoxDecoration(
@@ -196,7 +212,7 @@ class _HeroState extends State<_Hero> with SingleTickerProviderStateMixin {
                             ),
                             HoverLift(
                               liftPixels: 3,
-                              onTap: () {},
+                              onTap: widget.onLearnMore,
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 16),
                                 decoration: BoxDecoration(
@@ -252,6 +268,12 @@ class _Statistics extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // FIX: previously a Wrap with manually-computed item widths based
+    // on the FULL screen width (not the actual available width),
+    // which overflowed/misrendered with no visible card background.
+    // A GridView with a fixed max item width is robust regardless of
+    // screen size and gives each stat a real card, matching every
+    // other section on the page.
     final columns = Responsive.columns(context, max: 4);
 
     return Container(
@@ -267,33 +289,49 @@ class _Statistics extends StatelessWidget {
         horizontal: Responsive.pagePadding(context),
         vertical: 48,
       ),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        runSpacing: 24,
-        children: [
-          for (final stat in school.statistics)
-            SizedBox(
-              width: MediaQuery.sizeOf(context).width / columns - 32,
-              child: Column(
-                children: [
-                  Text(
-                    stat.value,
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      color: theme.colorScheme.onPrimary,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    stat.label,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(color: theme.colorScheme.onPrimary.withValues(alpha: 0.85)),
-                  ),
-                ],
-              ),
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: school.statistics.length,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columns,
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
+          mainAxisExtent: 120,
+        ),
+        itemBuilder: (context, i) {
+          final stat = school.statistics[i];
+          return Container(
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
             ),
-        ],
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  stat.value,
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    color: theme.colorScheme.onPrimary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  stat.label,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: theme.colorScheme.onPrimary.withValues(alpha: 0.9)),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -560,7 +598,8 @@ class _AchievementCardState extends State<_AchievementCard> {
 
 class _AdmissionsCta extends StatelessWidget {
   final AppStrings strings;
-  const _AdmissionsCta({required this.strings});
+  final VoidCallback onTap;
+  const _AdmissionsCta({required this.strings, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -582,7 +621,7 @@ class _AdmissionsCta extends StatelessWidget {
               style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
           const SizedBox(height: 20),
           HoverLift(
-            onTap: () {},
+            onTap: onTap,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 18),
               decoration: BoxDecoration(
