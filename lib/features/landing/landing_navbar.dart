@@ -129,7 +129,7 @@ class LandingNavbar extends ConsumerWidget {
     AppStrings strings,
   ) {
     showModalBottomSheet(
-      isScrollable: true,
+      isScrollControlled: true,
 context: context,
       showDragHandle: true,
       builder: (_) => SafeArea(
