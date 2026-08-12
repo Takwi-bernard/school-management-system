@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'features/landing/landing_page.dart';
+import 'core/app_router.dart';
 
 // Supabase credentials are passed in at build/run time via --dart-define,
 // never hardcoded here (see SETUP.md for the full run command).
-const _supabaseUrl = 'https://azttitaynheqvoohlipr.supabase.co';
-const _supabaseAnonKey = 'sb_publishable_yIrRAyYnpvsDiG0UTzAReQ_elMw1D18';
+const _supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+const _supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,7 +19,7 @@ Future<void> main() async {
 
   await Supabase.initialize(
     url: _supabaseUrl,
-    publishableKey: _supabaseAnonKey,
+    anonKey: _supabaseAnonKey,
   );
 
   runApp(const ProviderScope(child: SchoolApp()));
@@ -30,14 +30,14 @@ class SchoolApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return MaterialApp.router(
       title: 'School Management System',
       debugShowCheckedModeBanner: false,
       // This default theme only shows briefly during the initial
       // loading spinner - LandingPage replaces it with the resolved
       // school's own branded ThemeData once data arrives.
       theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.blue),
-      home: const LandingPage(),
+      routerConfig: appRouter,
     );
   }
 }

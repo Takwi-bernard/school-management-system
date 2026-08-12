@@ -1,0 +1,84 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../landing/landing_providers.dart';
+import 'auth_providers.dart';
+import 'auth_repository.dart';
+
+/// Checks whether there's an ALREADY-VALID Supabase session (e.g. the
+/// person refreshed the page after signing in) and, if so, validates
+/// it belongs to the CURRENT school - not just that a session exists.
+/// This is what makes "stay signed in across a page reload" work
+/// without weakening the tenant-isolation check.
+final sessionProfileProvider =
+    FutureProvider.family<UserProfile?, String>((ref, expectedSchoolId) async {
+  final session = Supabase.instance.client.auth.currentSession;
+  if (session == null) return null;
+
+  final repo = ref.watch(authRepositoryProvider);
+  final profile = await repo.fetchProfile(session.user.id);
+
+  if (profile == null || profile.role == 'super_admin' || profile.schoolId != expectedSchoolId) {
+    await repo.signOut();
+    return null;
+  }
+  return profile;
+});
+
+/// Route guard + role placeholder in one. Used for every /parent,
+/// /teacher, /principal, /secretary, /proprietor route until each
+/// role's real dashboard is built.
+class RoleGate extends ConsumerWidget {
+  final String requiredRole;
+  final String label;
+
+  const RoleGate({super.key, required this.requiredRole, required this.label});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final landing = ref.watch(landingProvider);
+
+    return landing.when(
+      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+      error: (e, _) => Scaffold(body: Center(child: Text('$e'))),
+      data: (school) {
+        final sessionAsync = ref.watch(sessionProfileProvider(school.schoolId));
+
+        return sessionAsync.when(
+          loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+          error: (e, _) => Scaffold(body: Center(child: Text('$e'))),
+          data: (profile) {
+            if (profile == null) {
+              WidgetsBinding.instance.addPostFrameCallback((_) => context.go('/sign-in'));
+              return const Scaffold(body: Center(child: CircularProgressIndicator()));
+            }
+            if (profile.role != requiredRole) {
+              return Scaffold(
+                body: Center(child: Text('This account is a ${profile.role} account, not $label.')),
+              );
+            }
+            return Scaffold(
+              appBar: AppBar(
+                title: Text('$label Dashboard - ${school.schoolName}'),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.logout),
+                    onPressed: () async {
+                      await ref.read(authControllerProvider.notifier).signOut();
+                      if (context.mounted) context.go('/');
+                    },
+                  ),
+                ],
+              ),
+              body: Center(
+                child: Text('$label dashboard - coming next.', style: Theme.of(context).textTheme.titleMedium),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}

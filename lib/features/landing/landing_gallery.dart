@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/l10n/app_strings.dart';
+import '../../core/motion.dart';
 import '../../core/responsive.dart';
 import 'landing_model.dart';
 
@@ -17,39 +18,41 @@ class LandingGallerySection extends StatelessWidget {
     final theme = Theme.of(context);
     final columns = Responsive.columns(context, max: 4);
 
-    return Container(
-      width: double.infinity,
-      color: theme.colorScheme.surfaceContainerLowest,
-      padding: EdgeInsets.symmetric(
-        horizontal: Responsive.pagePadding(context),
-        vertical: 72,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(strings.gallery,
-              style: theme.textTheme.labelLarge
-                  ?.copyWith(color: theme.colorScheme.secondary, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 8),
-          Text(strings.galleryTitle,
-              style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 26),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: gallery.length,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1,
+    return RevealOnScroll(
+      child: Container(
+        width: double.infinity,
+        color: theme.colorScheme.surfaceContainerLowest,
+        padding: EdgeInsets.symmetric(
+          horizontal: Responsive.pagePadding(context),
+          vertical: 80,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(strings.gallery,
+                style: theme.textTheme.labelLarge
+                    ?.copyWith(color: theme.colorScheme.secondary, fontWeight: FontWeight.w700, letterSpacing: 1.2)),
+            const SizedBox(height: 8),
+            Text(strings.galleryTitle,
+                style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 28),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: gallery.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                crossAxisSpacing: 14,
+                mainAxisSpacing: 14,
+                childAspectRatio: 1,
+              ),
+              itemBuilder: (context, i) => _GalleryTile(
+                item: gallery[i],
+                onTap: () => _openViewer(context, gallery, i),
+              ),
             ),
-            itemBuilder: (context, i) => _GalleryTile(
-              item: gallery[i],
-              onTap: () => _openViewer(context, gallery, i),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -70,12 +73,13 @@ class _GalleryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      clipBehavior: Clip.antiAlias,
-      borderRadius: BorderRadius.circular(14),
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
+    return HoverLift(
+      liftPixels: 0,
+      onTap: onTap,
+      child: Material(
+        clipBehavior: Clip.antiAlias,
+        borderRadius: BorderRadius.circular(16),
+        color: Colors.transparent,
         child: Hero(
           tag: 'gallery_${item.id}',
           child: Image.network(

@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/supabase_providers.dart';
 import 'landing_model.dart';
 import 'landing_repository.dart';
-
-final supabaseClientProvider = Provider<SupabaseClient>((ref) {
-  return Supabase.instance.client;
-});
 
 final tenantResolverProvider = Provider<TenantResolver>((ref) {
   return TenantResolver(ref.watch(supabaseClientProvider));

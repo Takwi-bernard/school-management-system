@@ -2,17 +2,53 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/l10n/app_strings.dart';
+import '../../core/motion.dart';
 import 'landing_providers.dart';
 import 'landing_navbar.dart';
 import 'landing_content.dart';
 import 'landing_gallery.dart';
 import 'landing_footer.dart';
 
-class LandingPage extends ConsumerWidget {
+/// Keys every nav item can scroll to. Shared between the navbar and
+/// the sections themselves so "Home" / "About" / etc. actually work.
+class LandingSectionKeys {
+  final home = GlobalKey();
+  final about = GlobalKey();
+  final achievements = GlobalKey();
+  final gallery = GlobalKey();
+  final admissions = GlobalKey();
+  final contact = GlobalKey();
+}
+
+class LandingPage extends ConsumerStatefulWidget {
   const LandingPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LandingPage> createState() => _LandingPageState();
+}
+
+class _LandingPageState extends ConsumerState<LandingPage> {
+  final _scrollController = ScrollController();
+  final _sectionKeys = LandingSectionKeys();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollTo(GlobalKey key) {
+    final ctx = key.currentContext;
+    if (ctx == null) return;
+    Scrollable.ensureVisible(
+      ctx,
+      duration: const Duration(milliseconds: 650),
+      curve: Curves.easeInOutCubic,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final landing = ref.watch(landingProvider);
     final locale = ref.watch(activeLocaleProvider);
 
@@ -23,43 +59,81 @@ class LandingPage extends ConsumerWidget {
         body: Center(child: Text('Unable to load school website.\n$error')),
       ),
       data: (school) {
-        // Once we know the school's real language_mode, this may trigger
-        // a one-time re-fetch in French for French-only schools (see
-        // landing_providers.dart for why the first request is always
-        // made in English).
         WidgetsBinding.instance.addPostFrameCallback((_) {
           recordSchoolLanguageMode(ref, school.languageMode);
         });
 
         final strings = AppStrings(locale);
         final canToggleLanguage = school.languageMode == 'bilingual';
+        final primary = _parseColor(school.primaryColor);
+        final secondary = _parseColor(school.secondaryColor);
 
         final schoolTheme = ThemeData(
           useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(
-            seedColor: _parseColor(school.primaryColor),
-            primary: _parseColor(school.primaryColor),
-            secondary: _parseColor(school.secondaryColor),
+            seedColor: primary,
+            primary: primary,
+            secondary: secondary,
           ),
         );
 
         return Theme(
           data: schoolTheme,
           child: Scaffold(
-            body: SingleChildScrollView(
-              child: Column(
-                children: [
-                  LandingNavbar(
-                    school: school,
-                    strings: strings,
-                    locale: locale,
-                    canToggleLanguage: canToggleLanguage,
+            body: Stack(
+              children: [
+                SingleChildScrollView(
+                  controller: _scrollController,
+                  child: Column(
+                    children: [
+                      // Spacer so content starts below the floating navbar.
+                      const SizedBox(height: 80),
+                      KeyedSubtree(
+                        key: _sectionKeys.home,
+                        child: LandingContentSections(
+                          school: school,
+                          strings: strings,
+                          aboutKey: _sectionKeys.about,
+                          achievementsKey: _sectionKeys.achievements,
+                          admissionsKey: _sectionKeys.admissions,
+                        ),
+                      ),
+                      KeyedSubtree(
+                        key: _sectionKeys.gallery,
+                        child: LandingGallerySection(
+                          gallery: school.gallery,
+                          strings: strings,
+                        ),
+                      ),
+                      KeyedSubtree(
+                        key: _sectionKeys.contact,
+                        child: LandingFooterSection(school: school, strings: strings),
+                      ),
+                    ],
                   ),
-                  LandingContentSections(school: school, strings: strings),
-                  LandingGallerySection(gallery: school.gallery, strings: strings),
-                  LandingFooterSection(school: school, strings: strings),
-                ],
-              ),
+                ),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: ScrollElevation(
+                    controller: _scrollController,
+                    builder: (context, elevated) => LandingNavbar(
+                      school: school,
+                      strings: strings,
+                      locale: locale,
+                      canToggleLanguage: canToggleLanguage,
+                      elevated: elevated,
+                      onNavHome: () => _scrollTo(_sectionKeys.home),
+                      onNavAbout: () => _scrollTo(_sectionKeys.about),
+                      onNavAchievements: () => _scrollTo(_sectionKeys.achievements),
+                      onNavGallery: () => _scrollTo(_sectionKeys.gallery),
+                      onNavAdmissions: () => _scrollTo(_sectionKeys.admissions),
+                      onNavContact: () => _scrollTo(_sectionKeys.contact),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         );

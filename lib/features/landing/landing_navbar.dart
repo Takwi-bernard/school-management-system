@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/app_strings.dart';
 import '../../core/responsive.dart';
@@ -11,6 +12,13 @@ class LandingNavbar extends ConsumerWidget {
   final AppStrings strings;
   final Locale locale;
   final bool canToggleLanguage;
+  final bool elevated;
+  final VoidCallback onNavHome;
+  final VoidCallback onNavAbout;
+  final VoidCallback onNavAchievements;
+  final VoidCallback onNavGallery;
+  final VoidCallback onNavAdmissions;
+  final VoidCallback onNavContact;
 
   const LandingNavbar({
     super.key,
@@ -18,74 +26,108 @@ class LandingNavbar extends ConsumerWidget {
     required this.strings,
     required this.locale,
     required this.canToggleLanguage,
+    required this.elevated,
+    required this.onNavHome,
+    required this.onNavAbout,
+    required this.onNavAchievements,
+    required this.onNavGallery,
+    required this.onNavAdmissions,
+    required this.onNavContact,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final isMobile = Responsive.isMobile(context);
+    // Below this width even the mobile layout gets tight (small phones
+    // in portrait) - shrink further rather than truncating the name.
+    final isNarrow = MediaQuery.sizeOf(context).width < 360;
 
-    final navLabels = [
-      strings.home,
-      strings.about,
-      strings.achievements,
-      strings.gallery,
-      strings.admissions,
-      strings.contact,
+    final navItems = <(String, VoidCallback)>[
+      (strings.home, onNavHome),
+      (strings.about, onNavAbout),
+      (strings.achievements, onNavAchievements),
+      (strings.gallery, onNavGallery),
+      (strings.admissions, onNavAdmissions),
+      (strings.contact, onNavContact),
     ];
 
-    return Container(
-      height: 80,
-      color: theme.colorScheme.surface,
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      height: 72,
       padding: EdgeInsets.symmetric(horizontal: Responsive.pagePadding(context)),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withValues(alpha: elevated ? 0.98 : 0.9),
+        boxShadow: elevated
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 20,
+                  offset: const Offset(0, 6),
+                ),
+              ]
+            : [],
+      ),
       child: Row(
         children: [
+          // Logo shrinks on very narrow screens instead of eating into
+          // the space the school name needs.
           if (school.logoUrl.isNotEmpty)
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: Image.network(
                 school.logoUrl,
-                width: 44,
-                height: 44,
+                width: isNarrow ? 32 : 40,
+                height: isNarrow ? 32 : 40,
                 fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) =>
                     Icon(Icons.school_rounded, color: theme.colorScheme.primary),
               ),
             ),
-          const SizedBox(width: 12),
-          Flexible(
+          const SizedBox(width: 10),
+          // FIX: previously truncated to a single line with ellipsis,
+          // which could cut a long school name mid-word on small
+          // screens. Now allowed to wrap to two lines and shrinks font
+          // size on very narrow phones instead of clipping.
+          Expanded(
             child: Text(
               school.schoolName,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              softWrap: true,
+              style: (isMobile ? theme.textTheme.titleSmall : theme.textTheme.titleMedium)
+                  ?.copyWith(fontWeight: FontWeight.w700, height: 1.15),
             ),
           ),
-          const Spacer(),
+          const SizedBox(width: 8),
           if (!isMobile)
-            for (final label in navLabels)
+            for (final item in navItems)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: TextButton(onPressed: () {}, child: Text(label)),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: TextButton(onPressed: item.$2, child: Text(item.$1)),
               ),
           if (canToggleLanguage) _LanguageToggle(locale: locale),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           if (!isMobile)
             FilledButton(
-              onPressed: () => _showSignInRoles(context, strings),
+              onPressed: () => context.push('/sign-in'),
               child: Text(strings.signIn),
             )
           else
             IconButton(
               icon: const Icon(Icons.menu_rounded),
-              onPressed: () => _openMobileMenu(context, navLabels, strings),
+              onPressed: () => _openMobileMenu(context, navItems, strings),
             ),
         ],
       ),
     );
   }
 
-  void _openMobileMenu(BuildContext context, List<String> navLabels, AppStrings strings) {
+  void _openMobileMenu(
+    BuildContext context,
+    List<(String, VoidCallback)> navItems,
+    AppStrings strings,
+  ) {
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
@@ -93,70 +135,26 @@ class LandingNavbar extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            for (final label in navLabels)
-              ListTile(title: Text(label), onTap: () => Navigator.pop(context)),
+            for (final item in navItems)
+              ListTile(
+                title: Text(item.$1),
+                onTap: () {
+                  Navigator.pop(context);
+                  item.$2();
+                },
+              ),
             const Divider(),
             ListTile(
               title: Text(strings.signIn),
               trailing: const Icon(Icons.login_rounded),
               onTap: () {
                 Navigator.pop(context);
-                _showSignInRoles(context, strings);
+                context.push('/sign-in');
               },
             ),
           ],
         ),
       ),
-    );
-  }
-
-  void _showSignInRoles(BuildContext context, AppStrings strings) {
-    showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(strings.signIn,
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineSmall
-                      ?.copyWith(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 6),
-              Text(strings.selectRole),
-              const SizedBox(height: 16),
-              _RoleTile(icon: Icons.family_restroom, label: strings.parent),
-              _RoleTile(icon: Icons.school_rounded, label: strings.teacher),
-              _RoleTile(icon: Icons.manage_accounts, label: strings.principal),
-              _RoleTile(icon: Icons.assignment_ind, label: strings.secretary),
-              _RoleTile(icon: Icons.business, label: strings.proprietor),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RoleTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  const _RoleTile({required this.icon, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(label),
-      trailing: const Icon(Icons.chevron_right_rounded),
-      onTap: () {
-        Navigator.pop(context);
-        // Authentication module will handle this route later.
-      },
     );
   }
 }
@@ -177,8 +175,8 @@ class _LanguageToggle extends ConsumerWidget {
         PopupMenuItem(value: 'fr', child: Text('Français')),
       ],
       child: const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 8),
-        child: Icon(Icons.language_rounded),
+        padding: EdgeInsets.symmetric(horizontal: 6),
+        child: Icon(Icons.language_rounded, size: 22),
       ),
     );
   }
