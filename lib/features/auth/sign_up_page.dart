@@ -20,7 +20,27 @@ class SignUpPage extends ConsumerWidget {
 
     return landing.when(
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Scaffold(body: Center(child: Text('Unable to load school.\n$e'))),
+      error: (e, _) => Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.wifi_off_rounded, size: 48, color: Colors.grey),
+                const SizedBox(height: 16),
+                const Text('We couldn\'t reach the server. Please check your connection.',
+                    textAlign: TextAlign.center),
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: () => ref.invalidate(landingProvider),
+                  child: const Text('Try Again'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
       data: (school) {
         final strings = AppStrings(locale);
 

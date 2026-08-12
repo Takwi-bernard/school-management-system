@@ -48,13 +48,31 @@ class LandingRepository {
     final school = await tenantResolver.resolve();
     final schoolId = school['id'] as String;
 
-    final branding = await _loadBrandingAssets(schoolId);
-    final content = await _loadContent(schoolId: schoolId, language: language);
-    final statistics = await _loadStatistics(schoolId: schoolId, language: language);
-    final achievements = await _loadAchievements(schoolId: schoolId, language: language);
-    final gallery = await _loadGallery(schoolId);
-    final announcements = await _loadAnnouncements(schoolId);
-    final events = await _loadEvents(schoolId);
+    // PERFORMANCE FIX: these were previously awaited one after another
+    // (7 sequential round trips). On a slow/high-latency connection -
+    // exactly the Cameroon mobile-network case - that multiplies total
+    // load time by roughly 7x. Running them concurrently means total
+    // load time is close to the SLOWEST single request, not the sum
+    // of all of them.
+    final results = await Future.wait([
+      _loadBrandingAssets(schoolId),
+      _loadContent(schoolId: schoolId, language: language),
+      _loadStatistics(schoolId: schoolId, language: language),
+      _loadAchievements(schoolId: schoolId, language: language),
+      _loadGallery(schoolId),
+      _loadAnnouncements(schoolId),
+      _loadEvents(schoolId),
+      _loadCurrentAcademicYear(schoolId),
+    ]);
+
+    final branding = results[0] as Map<String, String>;
+    final content = results[1] as Map<String, String>;
+    final statistics = results[2] as List<LandingStatistic>;
+    final achievements = results[3] as List<LandingAchievement>;
+    final gallery = results[4] as List<LandingGalleryItem>;
+    final announcements = results[5] as List<LandingAnnouncement>;
+    final events = results[6] as List<LandingEvent>;
+    final currentAcademicYear = results[7] as String?;
 
     return LandingModel(
       schoolId: schoolId,
@@ -69,6 +87,7 @@ class LandingRepository {
       phone: school['phone'] as String? ?? '',
       address: school['address'] as String? ?? '',
       website: school['website'] as String? ?? '',
+      currentAcademicYear: currentAcademicYear,
       history: content['history'] ?? '',
       vision: content['vision'] ?? '',
       mission: content['mission'] ?? '',
@@ -79,6 +98,16 @@ class LandingRepository {
       announcements: announcements,
       events: events,
     );
+  }
+
+  Future<String?> _loadCurrentAcademicYear(String schoolId) async {
+    final row = await client
+        .from('academic_years')
+        .select('year_name')
+        .eq('school_id', schoolId)
+        .eq('is_current', true)
+        .maybeSingle();
+    return row?['year_name'] as String?;
   }
 
   // logo/hero_banner live in school_assets (asset_type), NOT on the

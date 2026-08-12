@@ -106,9 +106,13 @@ class _HeroState extends State<_Hero> with SingleTickerProviderStateMixin {
         height: isMobile ? 480 : 640,
         width: double.infinity,
         decoration: BoxDecoration(
+          // PERFORMANCE: ResizeImage decodes at a capped resolution
+          // instead of the original file size - meaningfully less
+          // data/CPU on a slow connection or low-end phone.
           image: school.heroImageUrl.isNotEmpty
               ? DecorationImage(
-                  image: NetworkImage(school.heroImageUrl), fit: BoxFit.cover)
+                  image: ResizeImage(NetworkImage(school.heroImageUrl), width: 1400),
+                  fit: BoxFit.cover)
               : null,
           gradient: LinearGradient(
             colors: [
@@ -183,6 +187,28 @@ class _HeroState extends State<_Hero> with SingleTickerProviderStateMixin {
                               color: Colors.white.withValues(alpha: 0.88),
                               fontSize: isMobile ? 15 : 20,
                               fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                        if (school.currentAcademicYear != null) ...[
+                          const SizedBox(height: 14),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: Colors.white24),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.calendar_today_rounded, size: 13, color: Colors.white70),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '${school.currentAcademicYear} Academic Year',
+                                  style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600),
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -549,7 +575,7 @@ class _AchievementCardState extends State<_AchievementCard> {
                 SizedBox(
                   height: 160,
                   width: double.infinity,
-                  child: Image.network(a.imageUrl!, fit: BoxFit.cover,
+                  child: Image.network(a.imageUrl!, fit: BoxFit.cover, cacheWidth: 500,
                       errorBuilder: (_, __, ___) => _placeholder(theme)),
                 )
               else

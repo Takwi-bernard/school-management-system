@@ -81,8 +81,32 @@ class _LandingPageState extends ConsumerState<LandingPage> {
     return landing.when(
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
+      // FIX: previously showed the raw error object. Now a calm,
+      // branded retry screen - the most common real-world cause here
+      // is a slow/dropped connection, so "try again" is the actually
+      // useful action, not a technical error dump.
       error: (error, _) => Scaffold(
-        body: Center(child: Text('Unable to load school website.\n$error')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.wifi_off_rounded, size: 48, color: Colors.grey),
+                const SizedBox(height: 16),
+                const Text(
+                  'We couldn\'t load this page. Please check your connection.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: () => ref.invalidate(landingProvider),
+                  child: const Text('Try Again'),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
       data: (school) {
         WidgetsBinding.instance.addPostFrameCallback((_) {

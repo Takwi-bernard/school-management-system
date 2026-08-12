@@ -26,9 +26,6 @@ class AuthRepository {
     return _client.auth.signInWithPassword(email: email, password: password);
   }
 
-  // Redirects back to whichever school's domain initiated this - not a
-  // hardcoded mobile deep link, since V1 is web-first and multi-tenant
-  // (every school has a different domain to return to).
   Future<void> signInWithGoogle() {
     return _client.auth.signInWithOAuth(
       OAuthProvider.google,
@@ -59,8 +56,8 @@ class AuthRepository {
 
   // --------------------------------------------------
   // CHILD PHOTO UPLOAD
-  // Storage layout: student-photos/{school_id}/{parent_user_id}/{ts}.ext
-  // (matches the bucket convention already agreed for the platform).
+  // Path: {school_id}/{parent_user_id}/{ts}.ext - NOT prefixed with
+  // "student-photos/" again, that's already the bucket name.
   // --------------------------------------------------
 
   Future<String?> uploadChildPhoto({
@@ -70,7 +67,7 @@ class AuthRepository {
     required String extension,
   }) async {
     final path =
-        'student-photos/$schoolId/$parentUserId/${DateTime.now().millisecondsSinceEpoch}.$extension';
+        '$schoolId/$parentUserId/${DateTime.now().millisecondsSinceEpoch}.$extension';
 
     await _client.storage.from('student-photos').uploadBinary(
           path,
@@ -83,8 +80,17 @@ class AuthRepository {
 
   // --------------------------------------------------
   // PARENT REGISTRATION
-  // school_id is the CURRENT TENANT (resolved by TenantResolver before
-  // this is ever called) - not a guess, not client-decided by role.
+  // Profile (users + parents row) is created by a database trigger on
+  // auth.users (Migration 016) reading this metadata - NOT by an RPC
+  // call after signUp(), since there may be no active session yet if
+  // the project requires email confirmation. This means core account
+  // creation ALWAYS succeeds regardless of that setting.
+  //
+  // Child info is optional and handled separately: it needs a real
+  // session (for photo upload), so if one doesn't exist yet
+  // (confirmation pending), it's simply skipped - never blocks
+  // account creation, matching the agreed "ask again at admission
+  // time" behavior.
   // --------------------------------------------------
 
   Future<void> registerParent({
@@ -99,17 +105,31 @@ class AuthRepository {
     String? childPhotoExtension,
     String? requestedClassName,
   }) async {
-    final response = await _client.auth.signUp(email: email, password: password);
+    final response = await _client.auth.signUp(
+      email: email,
+      password: password,
+      data: {
+        'account_type': 'parent',
+        'school_id': schoolId,
+        'full_name': fullName,
+        'phone': phone,
+        'preferred_language': preferredLanguage,
+      },
+    );
+
     final user = response.user;
     if (user == null) {
       throw const AuthException('Unable to create the parent account.');
     }
 
-    // Photo upload happens here, AFTER signUp, since it needs the new
-    // user's id as part of the storage path - not passed in from outside.
-    String? childPhotoUrl;
+    // No active session yet (email confirmation pending) - child info
+    // capture is deferred to admission time, not an error.
+    if (_client.auth.currentSession == null) return;
+    if (childName == null || childName.isEmpty) return;
+
+    String? photoUrl;
     if (childPhotoBytes != null && childPhotoExtension != null) {
-      childPhotoUrl = await uploadChildPhoto(
+      photoUrl = await uploadChildPhoto(
         schoolId: schoolId,
         parentUserId: user.id,
         bytes: childPhotoBytes,
@@ -117,21 +137,17 @@ class AuthRepository {
       );
     }
 
-    await _client.rpc('register_parent', params: {
-      'p_user_id': user.id,
+    await _client.rpc('save_child_draft', params: {
       'p_school_id': schoolId,
-      'p_full_name': fullName,
-      'p_phone': phone,
-      'p_email': email,
-      'p_preferred_language': preferredLanguage,
       'p_child_name': childName,
-      'p_child_photo_url': childPhotoUrl,
+      'p_photo_url': photoUrl,
       'p_requested_class_name': requestedClassName,
     });
   }
 
   // --------------------------------------------------
   // TEACHER REGISTRATION
+  // Same trigger-based pattern - nothing further needed after signUp().
   // --------------------------------------------------
 
   Future<void> registerTeacher({
@@ -142,19 +158,20 @@ class AuthRepository {
     required String password,
     required String preferredLanguage,
   }) async {
-    final response = await _client.auth.signUp(email: email, password: password);
-    final user = response.user;
-    if (user == null) {
+    final response = await _client.auth.signUp(
+      email: email,
+      password: password,
+      data: {
+        'account_type': 'teacher',
+        'school_id': schoolId,
+        'full_name': fullName,
+        'phone': phone,
+        'preferred_language': preferredLanguage,
+      },
+    );
+
+    if (response.user == null) {
       throw const AuthException('Unable to create the teacher account.');
     }
-
-    await _client.rpc('register_teacher', params: {
-      'p_user_id': user.id,
-      'p_school_id': schoolId,
-      'p_full_name': fullName,
-      'p_phone': phone,
-      'p_email': email,
-      'p_preferred_language': preferredLanguage,
-    });
   }
 }

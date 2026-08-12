@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/motion.dart';
 import '../landing/landing_model.dart';
@@ -96,28 +97,55 @@ class AuthScaffold extends StatelessWidget {
             ),
           ),
           child: SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: maxWidth),
-                  child: Container(
-                    padding: const EdgeInsets.all(32),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.08),
-                          blurRadius: 40,
-                          offset: const Offset(0, 20),
+            child: Stack(
+              children: [
+                Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: maxWidth),
+                      child: Container(
+                        padding: const EdgeInsets.all(32),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface,
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.08),
+                              blurRadius: 40,
+                              offset: const Offset(0, 20),
+                            ),
+                          ],
                         ),
-                      ],
+                        child: child,
+                      ),
                     ),
-                    child: child,
                   ),
                 ),
-              ),
+                // FIX: there was previously no way to return to the
+                // public landing page from any auth screen once you'd
+                // navigated in - a visitor who clicked Sign In "just
+                // to look" had no way back. Always visible, always
+                // goes home explicitly (not just pop(), since a
+                // direct link or page refresh may have no back stack).
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: SafeArea(
+                    child: IconButton.filledTonal(
+                      icon: const Icon(Icons.arrow_back_rounded),
+                      tooltip: 'Back to home',
+                      onPressed: () {
+                        if (context.canPop()) {
+                          context.pop();
+                        } else {
+                          context.go('/');
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),

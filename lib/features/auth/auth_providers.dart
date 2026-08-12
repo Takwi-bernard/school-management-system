@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/supabase_providers.dart';
+import 'auth_error.dart';
 import 'auth_repository.dart';
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
@@ -57,10 +58,8 @@ class AuthController extends StateNotifier<AuthState> {
       if (user == null) throw const AuthException('Authentication failed.');
 
       await _resolveAndValidateProfile(user.id, expectedSchoolId);
-    } on AuthException catch (e) {
-      state = state.copyWith(isLoading: false, errorMessage: _friendly(e));
     } catch (e) {
-      state = state.copyWith(isLoading: false, errorMessage: e.toString());
+      state = state.copyWith(isLoading: false, errorMessage: friendlyError(e));
     }
   }
 
@@ -73,7 +72,7 @@ class AuthController extends StateNotifier<AuthState> {
       // which watches auth state changes (see auth_gate.dart) using
       // the SAME expectedSchoolId check as email/password sign-in.
     } catch (e) {
-      state = state.copyWith(isLoading: false, errorMessage: e.toString());
+      state = state.copyWith(isLoading: false, errorMessage: friendlyError(e));
     }
   }
 
@@ -127,10 +126,8 @@ class AuthController extends StateNotifier<AuthState> {
         requestedClassName: requestedClassName,
       );
       state = state.copyWith(isLoading: false);
-    } on AuthException catch (e) {
-      state = state.copyWith(isLoading: false, errorMessage: _friendly(e));
     } catch (e) {
-      state = state.copyWith(isLoading: false, errorMessage: e.toString());
+      state = state.copyWith(isLoading: false, errorMessage: friendlyError(e));
     }
   }
 
@@ -153,28 +150,13 @@ class AuthController extends StateNotifier<AuthState> {
         preferredLanguage: preferredLanguage,
       );
       state = state.copyWith(isLoading: false);
-    } on AuthException catch (e) {
-      state = state.copyWith(isLoading: false, errorMessage: _friendly(e));
     } catch (e) {
-      state = state.copyWith(isLoading: false, errorMessage: e.toString());
+      state = state.copyWith(isLoading: false, errorMessage: friendlyError(e));
     }
   }
 
   Future<void> signOut() async {
     await _repository.signOut();
     state = const AuthState();
-  }
-
-  String _friendly(AuthException e) {
-    switch (e.message) {
-      case 'Invalid login credentials':
-        return 'The email or password is incorrect.';
-      case 'Email not confirmed':
-        return 'Please verify your email before signing in.';
-      case 'WRONG_SCHOOL':
-        return 'This account belongs to a different school.';
-      default:
-        return e.message;
-    }
   }
 }

@@ -17,6 +17,10 @@ class LandingModel {
   final String address;
   final String website;
 
+  // Current academic year (e.g. "2026/2027") - null if the school
+  // hasn't set one as current yet. Managed by the Principal, not editable here.
+  final String? currentAcademicYear;
+
   // Localized content (school_content, filtered by current language).
   final String history;
   final String vision;
@@ -42,6 +46,7 @@ class LandingModel {
     required this.phone,
     required this.address,
     required this.website,
+    required this.currentAcademicYear,
     required this.history,
     required this.vision,
     required this.mission,
