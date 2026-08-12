@@ -1,10 +1,10 @@
-import 'package:flutter/material.dart';
+mport 'package:flutter/material.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
-/// Fades and slides a section up into place the first time it scrolls
-/// into view. Only plays once per widget instance (won't re-trigger
-/// every time you scroll past it), which is what makes a page feel
-/// "alive" without becoming distracting.
+/// FIX: previously triggered once and never reset, so scrolling back
+/// up (or back down past a section again) did nothing. Now toggles
+/// visibility on EVERY crossing, in either scroll direction, so
+/// sections consistently animate in/out as you scroll past them.
 class RevealOnScroll extends StatefulWidget {
   final Widget child;
   final Duration delay;
@@ -23,19 +23,18 @@ class _RevealOnScrollState extends State<RevealOnScroll> {
     return VisibilityDetector(
       key: ObjectKey(widget),
       onVisibilityChanged: (info) {
-        if (!_visible && info.visibleFraction > 0.12) {
-          Future.delayed(widget.delay, () {
-            if (mounted) setState(() => _visible = true);
-          });
+        final shouldBeVisible = info.visibleFraction > 0.12;
+        if (shouldBeVisible != _visible && mounted) {
+          setState(() => _visible = shouldBeVisible);
         }
       },
       child: AnimatedOpacity(
         opacity: _visible ? 1 : 0,
-        duration: const Duration(milliseconds: 600),
+        duration: const Duration(milliseconds: 450),
         curve: Curves.easeOut,
         child: AnimatedSlide(
           offset: _visible ? Offset.zero : const Offset(0, 0.06),
-          duration: const Duration(milliseconds: 600),
+          duration: const Duration(milliseconds: 450),
           curve: Curves.easeOutCubic,
           child: widget.child,
         ),
@@ -44,9 +43,10 @@ class _RevealOnScrollState extends State<RevealOnScroll> {
   }
 }
 
-/// Subtle lift-and-shadow on hover (web/desktop) - a no-op on touch
-/// devices since there's no hover concept there, so it never gets in
-/// the way on mobile.
+/// FIX: previously only responded to mouse hover, so touch/mobile got
+/// zero feedback (desktop-only motion). Now ALSO responds to
+/// tap-down/tap-up with the same lift+shadow animation, so mobile
+/// gets equivalent motion via press feedback instead of hover.
 class HoverLift extends StatefulWidget {
   final Widget child;
   final double liftPixels;
@@ -59,27 +59,34 @@ class HoverLift extends StatefulWidget {
 }
 
 class _HoverLiftState extends State<HoverLift> {
-  bool _hovering = false;
+  bool _active = false;
+
+  void _setActive(bool value) {
+    if (_active != value && mounted) setState(() => _active = value);
+  }
 
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
-      onEnter: (_) => setState(() => _hovering = true),
-      onExit: (_) => setState(() => _hovering = false),
+      onEnter: (_) => _setActive(true),
+      onExit: (_) => _setActive(false),
       cursor: widget.onTap != null ? SystemMouseCursors.click : MouseCursor.defer,
       child: GestureDetector(
         onTap: widget.onTap,
+        onTapDown: (_) => _setActive(true),
+        onTapUp: (_) => _setActive(false),
+        onTapCancel: () => _setActive(false),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 220),
+          duration: const Duration(milliseconds: 180),
           curve: Curves.easeOut,
-          transform: Matrix4.translationValues(0, _hovering ? -widget.liftPixels : 0, 0),
+          transform: Matrix4.translationValues(0, _active ? -widget.liftPixels : 0, 0),
           decoration: BoxDecoration(
-            boxShadow: _hovering
+            boxShadow: _active
                 ? [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.14),
-                      blurRadius: 24,
-                      offset: const Offset(0, 14),
+                      color: Colors.black.withValues(alpha: 0.16),
+                      blurRadius: 22,
+                      offset: const Offset(0, 12),
                     ),
                   ]
                 : [
@@ -97,9 +104,6 @@ class _HoverLiftState extends State<HoverLift> {
   }
 }
 
-/// Elevates the navbar with a soft shadow once the page has scrolled
-/// past a small threshold - a standard modern-site cue that content
-/// is moving underneath a "docked" bar.
 class ScrollElevation extends StatefulWidget {
   final ScrollController controller;
   final Widget Function(BuildContext context, bool elevated) builder;
