@@ -7,6 +7,7 @@ import '../../core/motion.dart';
 import '../landing/landing_providers.dart';
 import 'auth_branding_header.dart';
 import 'auth_error_banner.dart';
+import 'auth_gate.dart';
 import 'auth_providers.dart';
 import 'google_icon.dart';
 
@@ -108,6 +109,16 @@ class _SignInPageState extends ConsumerState<SignInPage> {
         ),
       ),
       data: (school) {
+        // Same fix as the landing page: if there's already a valid
+        // session for this school (e.g. someone bookmarked /sign-in,
+        // or navigated back here after signing in), skip the form and
+        // go straight to their dashboard instead of showing it again.
+        ref.listen(sessionProfileProvider(school.schoolId), (previous, next) {
+          next.whenData((profile) {
+            if (profile != null) _redirectByRole(profile.role);
+          });
+        });
+
         final strings = AppStrings(locale);
 
         return AuthScaffold(

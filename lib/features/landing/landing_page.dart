@@ -113,6 +113,29 @@ class _LandingPageState extends ConsumerState<LandingPage> {
           recordSchoolLanguageMode(ref, school.languageMode);
         });
 
+        // FIX: this was the actual gap behind "Google sign-in completes
+        // but nothing happens on the frontend" - the OAuth redirect
+        // lands back on '/' (the landing page), but nothing here ever
+        // checked whether a session had just been established.
+        // RoleGate only protected the dashboard routes, never the
+        // landing page itself. Now, if there's already a valid session
+        // for THIS school, skip straight to the right dashboard - this
+        // also correctly handles a returning already-signed-in visitor.
+        ref.listen(sessionProfileProvider(school.schoolId), (previous, next) {
+          next.whenData((profile) {
+            if (profile == null) return;
+            final route = switch (profile.role) {
+              'parent' => '/parent',
+              'teacher' => '/teacher',
+              'principal' => '/principal',
+              'secretary' => '/secretary',
+              'proprietor' => '/proprietor',
+              _ => null,
+            };
+            if (route != null) context.go(route);
+          });
+        });
+
         final strings = AppStrings(locale);
         final canToggleLanguage = school.languageMode == 'bilingual';
         final primary = _parseColor(school.primaryColor);
