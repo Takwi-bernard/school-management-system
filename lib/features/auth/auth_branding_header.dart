@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -123,25 +125,48 @@ class AuthScaffold extends StatelessWidget {
                   ),
                 ),
                 // FIX: there was previously no way to return to the
-                // public landing page from any auth screen once you'd
-                // navigated in - a visitor who clicked Sign In "just
-                // to look" had no way back. Always visible, always
-                // goes home explicitly (not just pop(), since a
-                // direct link or page refresh may have no back stack).
+                // public landing page from any auth screen - a
+                // visitor who clicked Sign In "just to look" had no
+                // way back. Always visible, goes home explicitly.
+                // Redesigned as a soft glass pill rather than a plain
+                // filled circle, matching the rest of the page's style.
                 Positioned(
                   top: 8,
                   left: 8,
                   child: SafeArea(
-                    child: IconButton.filledTonal(
-                      icon: const Icon(Icons.arrow_back_rounded),
-                      tooltip: 'Back to home',
-                      onPressed: () {
+                    child: HoverLift(
+                      liftPixels: 2,
+                      onTap: () {
                         if (context.canPop()) {
                           context.pop();
                         } else {
                           context.go('/');
                         }
                       },
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(30),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surface.withValues(alpha: 0.7),
+                              borderRadius: BorderRadius.circular(30),
+                              border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.15)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.arrow_back_rounded, size: 18, color: theme.colorScheme.primary),
+                                const SizedBox(width: 6),
+                                Text('Home',
+                                    style: theme.textTheme.labelLarge
+                                        ?.copyWith(color: theme.colorScheme.primary, fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),

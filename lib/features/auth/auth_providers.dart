@@ -159,4 +159,13 @@ class AuthController extends StateNotifier<AuthState> {
     await _repository.signOut();
     state = const AuthState();
   }
+
+  /// Called whenever a page is entered, so a leftover error from a
+  /// DIFFERENT page (e.g. sign-up) never bleeds into this one - error
+  /// state was previously global/shared across every auth screen.
+  void clearError() {
+    if (state.errorMessage != null) {
+      state = state.copyWith(clearError: true);
+    }
+  }
 }

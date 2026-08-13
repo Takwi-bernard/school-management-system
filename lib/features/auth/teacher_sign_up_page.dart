@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/l10n/app_strings.dart';
 import '../landing/landing_providers.dart';
 import 'auth_branding_header.dart';
+import 'auth_error_banner.dart';
 import 'auth_providers.dart';
 
 class TeacherSignUpPage extends ConsumerStatefulWidget {
@@ -22,6 +23,15 @@ class _TeacherSignUpPageState extends ConsumerState<TeacherSignUpPage> {
   final _password = TextEditingController();
   final _confirm = TextEditingController();
   bool _obscure1 = true, _obscure2 = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // FIX: clear any error left over from a different auth page.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(authControllerProvider.notifier).clearError();
+    });
+  }
 
   @override
   void dispose() {
@@ -157,12 +167,10 @@ class _TeacherSignUpPageState extends ConsumerState<TeacherSignUpPage> {
                   ),
                   validator: (v) => v != _password.text ? 'Passwords do not match' : null,
                 ),
-                if (authState.errorMessage != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 14),
-                    child: Text(authState.errorMessage!,
-                        style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                  ),
+                AuthErrorBanner(
+                  message: authState.errorMessage,
+                  onDismiss: () => ref.read(authControllerProvider.notifier).clearError(),
+                ),
                 const SizedBox(height: 22),
                 SizedBox(
                   width: double.infinity,

@@ -6,6 +6,7 @@ import '../../core/l10n/app_strings.dart';
 import '../../core/motion.dart';
 import '../landing/landing_providers.dart';
 import 'auth_branding_header.dart';
+import 'auth_error_banner.dart';
 import 'auth_providers.dart';
 import 'google_icon.dart';
 
@@ -21,6 +22,16 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscure = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // FIX: clear any error left over from a different auth page -
+    // error state was previously shared globally across all of them.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(authControllerProvider.notifier).clearError();
+    });
+  }
 
   @override
   void dispose() {
@@ -42,6 +53,11 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     final state = ref.read(authControllerProvider);
     if (state.profile != null) {
       _redirectByRole(state.profile!.role);
+    } else {
+      // FIX: previously the password field kept the old value after a
+      // failed attempt (or a forced sign-out from a school mismatch) -
+      // clear it for a fresh, secure retry.
+      _passwordController.clear();
     }
   }
 
@@ -137,12 +153,10 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                     child: Text(strings.forgotPassword),
                   ),
                 ),
-                if (authState.errorMessage != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Text(authState.errorMessage!,
-                        style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                  ),
+                AuthErrorBanner(
+                  message: authState.errorMessage,
+                  onDismiss: () => ref.read(authControllerProvider.notifier).clearError(),
+                ),
                 const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity,
