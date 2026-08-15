@@ -7,9 +7,8 @@ import 'core/app_router.dart';
 
 // Supabase credentials are passed in at build/run time via --dart-define,
 // never hardcoded here (see SETUP.md for the full run command).
-const _supabaseUrl = String.fromEnvironment('SUPABASE_URL');
-const _supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
-
+const _supabaseUrl = 'https://azttitaynheqvoohlipr.supabase.co';
+const _supabaseAnonKey = 'sb_publishable_yIrRAyYnpvsDiG0UTzAReQ_elMw1D18';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
