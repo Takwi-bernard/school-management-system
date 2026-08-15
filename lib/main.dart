@@ -1,16 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/app_router.dart';
 
 // Supabase credentials are passed in at build/run time via --dart-define,
 // never hardcoded here (see SETUP.md for the full run command).
-const _supabaseUrl = 'https://azttitaynheqvoohlipr.supabase.co';
-const _supabaseAnonKey = 'sb_publishable_yIrRAyYnpvsDiG0UTzAReQ_elMw1D18';
+const _supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+const _supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Switches the app from hash-based URLs (yourapp.com/#/sign-in) to
+  // path-based URLs (yourapp.com/sign-in). This MUST happen before
+  // runApp() - without it, go_router's hash and Supabase's OAuth
+  // redirect fragment (yourapp.com/#access_token=...) fight over the
+  // same '#' slot in the URL, and one of them silently loses.
+  // vercel.json's rewrite (all paths -> index.html) already supports
+  // this, no other config needed.
+  usePathUrlStrategy();
 
   if (_supabaseUrl.isEmpty || _supabaseAnonKey.isEmpty) {
     runApp(const _MissingConfigApp());
@@ -19,7 +29,7 @@ Future<void> main() async {
 
   await Supabase.initialize(
     url: _supabaseUrl,
-    anonKey: _supabaseAnonKey,
+    publishableKey: _supabaseAnonKey,
   );
 
   runApp(const ProviderScope(child: SchoolApp()));

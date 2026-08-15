@@ -161,7 +161,7 @@ class _HeroState extends State<_Hero> with SingleTickerProviderStateMixin {
                             strings.ourSchool.toUpperCase(),
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 12,
+                              fontSize: 20,
                               fontWeight: FontWeight.w700,
                               letterSpacing: 1.6,
                             ),

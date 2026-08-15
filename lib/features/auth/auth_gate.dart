@@ -1,20 +1,34 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' as supa;
 
 import '../landing/landing_providers.dart';
 import 'auth_providers.dart';
 import 'auth_repository.dart';
 
+/// Fires on every sign-in, sign-out, token refresh, and - critically -
+/// when Supabase finishes parsing an OAuth redirect. sessionProfileProvider
+/// below watches this so it recomputes at the right moment instead of
+/// only checking currentSession once at first build (which can run
+/// BEFORE Supabase has finished handling the redirect on web).
+final authStateChangesProvider = StreamProvider<supa.AuthState>((ref) {
+  return supa.Supabase.instance.client.auth.onAuthStateChange;
+});
+
 /// Checks whether there's an ALREADY-VALID Supabase session (e.g. the
-/// person refreshed the page after signing in) and, if so, validates
-/// it belongs to the CURRENT school - not just that a session exists.
-/// This is what makes "stay signed in across a page reload" work
+/// person refreshed the page after signing in, or just landed back
+/// from an OAuth redirect) and, if so, validates it belongs to the
+/// CURRENT school - not just that a session exists. This is what
+/// makes "stay signed in across a page reload / OAuth redirect" work
 /// without weakening the tenant-isolation check.
 final sessionProfileProvider =
     FutureProvider.family<UserProfile?, String>((ref, expectedSchoolId) async {
-  final session = Supabase.instance.client.auth.currentSession;
+  // Re-run this provider whenever auth state actually changes, instead
+  // of computing once and going stale.
+  ref.watch(authStateChangesProvider);
+
+  final session = supa.Supabase.instance.client.auth.currentSession;
   if (session == null) return null;
 
   final repo = ref.watch(authRepositoryProvider);
