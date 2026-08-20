@@ -7,6 +7,7 @@ import '../features/auth/sign_up_page.dart';
 import '../features/auth/parent_sign_up_page.dart';
 import '../features/auth/teacher_sign_up_page.dart';
 import '../features/auth/auth_gate.dart';
+import '../features/teacher/teacher_home.dart';
 
 /// FIX: default GoRouter navigation is an abrupt cut with no
 /// transition at all. This gives every route the same soft
@@ -56,8 +57,7 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/teacher',
-      pageBuilder: (c, s) =>
-          _page(const RoleGate(requiredRole: 'teacher', label: 'Teacher'), s),
+      pageBuilder: (c, s) => _page(const TeacherHome(), s),
     ),
     GoRoute(
       path: '/principal',
