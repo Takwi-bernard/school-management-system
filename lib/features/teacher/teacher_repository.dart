@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'teacher_models.dart';
@@ -15,9 +17,38 @@ class TeacherRepository {
     final uid = client.auth.currentUser?.id;
     if (uid == null) return null;
 
-    final row = await client.from('teachers').select().eq('user_id', uid).maybeSingle();
+    final row = await client
+        .from('teachers')
+        .select('*, users(email)')
+        .eq('user_id', uid)
+        .maybeSingle();
     if (row == null) return null;
     return TeacherProfile.fromMap(row);
+  }
+
+  Future<void> updateProfile({
+    required String teacherId,
+    String? fullName,
+    String? phone,
+    String? photoUrl,
+  }) async {
+    final updates = <String, dynamic>{};
+    if (fullName != null) updates['full_name'] = fullName;
+    if (phone != null) updates['phone'] = phone;
+    if (photoUrl != null) updates['photo_url'] = photoUrl;
+    if (updates.isEmpty) return;
+    await client.from('teachers').update(updates).eq('id', teacherId);
+  }
+
+  Future<String> uploadProfilePhoto({
+    required String schoolId,
+    required String userId,
+    required Uint8List bytes,
+    required String extension,
+  }) async {
+    final path = '$schoolId/$userId/${DateTime.now().millisecondsSinceEpoch}.$extension';
+    await client.storage.from('staff-photos').uploadBinary(path, bytes);
+    return client.storage.from('staff-photos').getPublicUrl(path);
   }
 
   Future<String?> _currentAcademicYearId(String schoolId) async {

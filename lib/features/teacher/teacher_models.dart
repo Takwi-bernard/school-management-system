@@ -7,6 +7,8 @@ class TeacherProfile {
   final String schoolId;
   final String fullName;
   final String? phone;
+  final String? email;
+  final String? photoUrl;
   final String employmentType; // may be null in DB, defaulted here
   final String approvalStatus; // 'pending' | 'approved' | 'rejected'
 
@@ -16,6 +18,8 @@ class TeacherProfile {
     required this.schoolId,
     required this.fullName,
     this.phone,
+    this.email,
+    this.photoUrl,
     this.employmentType = 'full_time',
     required this.approvalStatus,
   });
@@ -23,13 +27,30 @@ class TeacherProfile {
   bool get isApproved => approvalStatus == 'approved';
   bool get isRejected => approvalStatus == 'rejected';
 
+  TeacherProfile copyWith({String? fullName, String? phone, String? photoUrl}) {
+    return TeacherProfile(
+      teacherId: teacherId,
+      userId: userId,
+      schoolId: schoolId,
+      fullName: fullName ?? this.fullName,
+      phone: phone ?? this.phone,
+      email: email,
+      photoUrl: photoUrl ?? this.photoUrl,
+      employmentType: employmentType,
+      approvalStatus: approvalStatus,
+    );
+  }
+
   factory TeacherProfile.fromMap(Map<String, dynamic> map) {
+    final user = map['users'] as Map<String, dynamic>?;
     return TeacherProfile(
       teacherId: map['id'] as String,
       userId: map['user_id'] as String,
       schoolId: map['school_id'] as String,
       fullName: map['full_name'] as String? ?? '',
       phone: map['phone'] as String?,
+      email: user?['email'] as String?,
+      photoUrl: map['photo_url'] as String?,
       employmentType: map['employment_type'] as String? ?? 'full_time',
       approvalStatus: map['approval_status'] as String? ?? 'pending',
     );
