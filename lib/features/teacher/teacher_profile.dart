@@ -34,7 +34,7 @@ class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
   Future<void> _changePhoto() async {
     final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 80);
     if (picked == null) 
-
+    return;
 
     setState(() => _uploadingPhoto = true);
     try {
