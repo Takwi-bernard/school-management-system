@@ -3,11 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
-<<<<<<< HEAD
-
-=======
 import 'package:supabase_flutter/supabase_flutter.dart';
->>>>>>> c8e4ced7169cbbafb09e73e595f7fe030104ec69
 import '../../core/motion.dart';
 import '../../core/responsive.dart';
 import '../auth/auth_providers.dart';
@@ -37,13 +33,8 @@ class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
 
   Future<void> _changePhoto() async {
     final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 80);
-<<<<<<< HEAD
-    if (picked == null) return;
-// temporal for testing, remove this line in production
-=======
     if (picked == null) 
     return;
->>>>>>> c8e4ced7169cbbafb09e73e595f7fe030104ec69
 
     setState(() => _uploadingPhoto = true);
     try {
