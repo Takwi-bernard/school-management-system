@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
-import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../core/motion.dart';
 import '../../core/responsive.dart';
 import '../auth/auth_providers.dart';
@@ -34,20 +34,8 @@ class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
   Future<void> _changePhoto() async {
     final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 80);
     if (picked == null) return;
+// temporal for testing, remove this line in production
 
-
-// TEMPORARY - showing the token to debug the upload issue
-  final token = Supabase.instance.client.auth.currentSession?.accessToken;
-  if (token != null && mounted) {
-    final parts = token.split('.');
-    final payload = utf8.decode(base64Url.decode(base64Url.normalize(parts[1])));
-    await showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        content: SingleChildScrollView(child: SelectableText(payload)),
-      ),
-    );
-  }
     setState(() => _uploadingPhoto = true);
     try {
       final bytes = await picked.readAsBytes();

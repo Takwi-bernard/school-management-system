@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/l10n/app_strings.dart';
 import '../../core/motion.dart';
 import '../../core/responsive.dart';
 import '../auth/auth_gate.dart';
@@ -19,6 +20,7 @@ class TeacherHome extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final landing = ref.watch(landingProvider);
+    final locale = ref.watch(activeLocaleProvider);
 
     return landing.when(
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
@@ -39,7 +41,7 @@ class TeacherHome extends ConsumerWidget {
                 body: Center(child: Text('This account is a ${session.role} account, not Teacher.')),
               );
             }
-            return const _TeacherProfileGate();
+            return _TeacherProfileGate(locale: locale);
           },
         );
       },
@@ -48,19 +50,21 @@ class TeacherHome extends ConsumerWidget {
 }
 
 class _TeacherProfileGate extends ConsumerWidget {
-  const _TeacherProfileGate();
+  final Locale locale;
+  const _TeacherProfileGate({required this.locale});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final landing = ref.watch(landingProvider).value!;
     final profileAsync = ref.watch(teacherProfileProvider);
+    final strings = AppStrings(locale);
 
     return profileAsync.when(
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(body: Center(child: Text('$e'))),
       data: (profile) {
         if (profile == null) {
-          return const Scaffold(body: Center(child: Text('Your teacher profile could not be found.')));
+          return Scaffold(body: Center(child: Text(strings.profileNotFound)));
         }
 
         final primary = _parseColor(landing.primaryColor);
@@ -73,13 +77,14 @@ class _TeacherProfileGate extends ConsumerWidget {
         return Theme(
           data: theme,
           child: profile.isApproved
-              ? _TeacherDashboard(profile: profile, schoolName: landing.schoolName, logoUrl: landing.logoUrl)
+              ? _TeacherDashboard(profile: profile, schoolName: landing.schoolName, logoUrl: landing.logoUrl, strings: strings)
               : _PendingApproval(
                   schoolName: landing.schoolName,
                   motto: landing.motto,
                   logoUrl: landing.logoUrl,
                   principalEmail: landing.email,
                   rejected: profile.isRejected,
+                  strings: strings,
                 ),
         );
       },
@@ -99,6 +104,7 @@ class _PendingApproval extends ConsumerWidget {
   final String logoUrl;
   final String principalEmail;
   final bool rejected;
+  final AppStrings strings;
 
   const _PendingApproval({
     required this.schoolName,
@@ -106,6 +112,7 @@ class _PendingApproval extends ConsumerWidget {
     required this.logoUrl,
     required this.principalEmail,
     required this.rejected,
+    required this.strings,
   });
 
   @override
@@ -183,15 +190,13 @@ class _PendingApproval extends ConsumerWidget {
                         ),
                         const SizedBox(height: 26),
                         Text(
-                          rejected ? 'Application Not Approved' : 'Approval Pending',
+                          rejected ? strings.applicationNotApproved : strings.approvalPending,
                           textAlign: TextAlign.center,
                           style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 14),
                         Text(
-                          rejected
-                              ? 'Your teacher application for this school was not approved. If you believe this is a mistake, please contact the Principal.'
-                              : 'Your account has been created, but you have not yet been approved as a teacher of this school. Please wait for the Principal to approve your account, or contact them directly below.',
+                          rejected ? strings.rejectedMessage : strings.pendingApprovalMessage,
                           textAlign: TextAlign.center,
                           style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
                         ),
@@ -205,7 +210,7 @@ class _PendingApproval extends ConsumerWidget {
                               borderRadius: BorderRadius.circular(16),
                             ),
                             child: Column(children: [
-                              Text('Contact the school', style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700)),
+                              Text(strings.contactSchool, style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700)),
                               const SizedBox(height: 6),
                               SelectableText(principalEmail,
                                   style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700, color: theme.colorScheme.primary)),
@@ -226,7 +231,7 @@ class _PendingApproval extends ConsumerWidget {
                             child: Row(mainAxisSize: MainAxisSize.min, children: [
                               const Icon(Icons.logout_rounded, size: 18),
                               const SizedBox(width: 8),
-                              const Text('Sign Out'),
+                              Text(strings.signIn.contains('Sign') ? 'Sign Out' : strings.signIn),
                             ]),
                           ),
                         ),
@@ -247,8 +252,9 @@ class _TeacherDashboard extends ConsumerWidget {
   final TeacherProfile profile;
   final String schoolName;
   final String logoUrl;
+  final AppStrings strings;
 
-  const _TeacherDashboard({required this.profile, required this.schoolName, required this.logoUrl});
+  const _TeacherDashboard({required this.profile, required this.schoolName, required this.logoUrl, required this.strings});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -262,9 +268,6 @@ class _TeacherDashboard extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Top bar: logo/school name, timetable, and a profile
-              // avatar (photo if uploaded, initials otherwise) instead
-              // of a bare logout icon - tapping opens the profile page.
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: Responsive.pagePadding(context), vertical: 14),
                 child: Row(children: [
@@ -281,7 +284,7 @@ class _TeacherDashboard extends ConsumerWidget {
                   ),
                   IconButton(
                     icon: const Icon(Icons.calendar_month_outlined),
-                    tooltip: 'My Timetable',
+                    tooltip: strings.myTimetable,
                     onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TeacherTimetablePage())),
                   ),
                   HoverLift(
@@ -299,9 +302,6 @@ class _TeacherDashboard extends ConsumerWidget {
                   ),
                 ]),
               ),
-
-              // Hero-style greeting header, matching the landing page's
-              // gradient visual language instead of a flat app bar.
               RevealOnScroll(
                 child: Container(
                   width: double.infinity,
@@ -318,16 +318,14 @@ class _TeacherDashboard extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Welcome back,', style: theme.textTheme.bodyLarge?.copyWith(color: Colors.white70)),
+                      Text(strings.welcomeBack, style: theme.textTheme.bodyLarge?.copyWith(color: Colors.white70)),
                       Text(profile.fullName,
                           style: theme.textTheme.headlineSmall?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
                     ],
                   ),
                 ),
               ),
-
               const SizedBox(height: 24),
-
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: Responsive.pagePadding(context)),
                 child: assignmentsAsync.when(
@@ -347,19 +345,19 @@ class _TeacherDashboard extends ConsumerWidget {
                           child: GridView.count(
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
-                            crossAxisCount: isMobile ? 3 : 3,
+                            crossAxisCount: 3,
                             crossAxisSpacing: 12,
                             mainAxisSpacing: 12,
                             childAspectRatio: isMobile ? 0.95 : 1.6,
                             children: [
-                              _StatCard(icon: Icons.menu_book_outlined, label: 'Subjects', value: '$subjectCount'),
-                              _StatCard(icon: Icons.class_outlined, label: 'Classes', value: '$classCount'),
-                              _StatCard(icon: Icons.assignment_outlined, label: 'Assignments', value: '${assignments.length}'),
+                              _StatCard(icon: Icons.menu_book_outlined, label: strings.subjectsLabel, value: '$subjectCount'),
+                              _StatCard(icon: Icons.class_outlined, label: strings.classesLabel, value: '$classCount'),
+                              _StatCard(icon: Icons.assignment_outlined, label: strings.assignmentsLabel, value: '${assignments.length}'),
                             ],
                           ),
                         ),
                         const SizedBox(height: 28),
-                        Text('My Teaching', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                        Text(strings.myTeaching, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
                         const SizedBox(height: 14),
                         if (assignments.isEmpty)
                           RevealOnScroll(
@@ -379,11 +377,11 @@ class _TeacherDashboard extends ConsumerWidget {
                                   child: Icon(Icons.assignment_late_outlined, size: 30, color: theme.colorScheme.primary),
                                 ),
                                 const SizedBox(height: 16),
-                                Text('No teaching assignments yet',
+                                Text(strings.noAssignmentsTitle,
                                     style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
                                 const SizedBox(height: 6),
                                 Text(
-                                  'Once the Principal assigns you subjects and classes, they\'ll appear here.',
+                                  strings.noAssignmentsDescription,
                                   textAlign: TextAlign.center,
                                   style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.outline),
                                 ),
@@ -436,7 +434,7 @@ class _TeacherDashboard extends ConsumerWidget {
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                         decoration: BoxDecoration(color: theme.colorScheme.secondaryContainer, borderRadius: BorderRadius.circular(20)),
-                                        child: Text('Coef. ${a.coefficient}', style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w700)),
+                                        child: Text('${strings.coefficientLabel.substring(0, 4)}. ${a.coefficient}', style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w700)),
                                       ),
                                       const SizedBox(width: 6),
                                       const Icon(Icons.arrow_forward_ios_rounded, size: 14),
