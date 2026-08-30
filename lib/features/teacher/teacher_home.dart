@@ -231,7 +231,7 @@ class _PendingApproval extends ConsumerWidget {
                             child: Row(mainAxisSize: MainAxisSize.min, children: [
                               const Icon(Icons.logout_rounded, size: 18),
                               const SizedBox(width: 8),
-                              Text(strings.signIn.contains('Sign') ? 'Sign Out' : strings.signIn),
+                              Text(strings.signOut),
                             ]),
                           ),
                         ),
@@ -434,7 +434,7 @@ class _TeacherDashboard extends ConsumerWidget {
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                         decoration: BoxDecoration(color: theme.colorScheme.secondaryContainer, borderRadius: BorderRadius.circular(20)),
-                                        child: Text('${strings.coefficientLabel.substring(0, 4)}. ${a.coefficient}', style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w700)),
+                                        child: Text('${strings.coefficientShort} ${a.coefficient}', style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w700)),
                                       ),
                                       const SizedBox(width: 6),
                                       const Icon(Icons.arrow_forward_ios_rounded, size: 14),

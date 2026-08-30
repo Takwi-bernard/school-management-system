@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/l10n/app_strings.dart';
+import '../../core/motion.dart';
 import '../../core/responsive.dart';
+import '../landing/landing_providers.dart';
 import 'teacher_models.dart';
 import 'teacher_providers.dart';
-
-const _days = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 class TeacherTimetablePage extends ConsumerWidget {
   const TeacherTimetablePage({super.key});
@@ -13,16 +14,27 @@ class TeacherTimetablePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final strings = AppStrings(ref.watch(activeLocaleProvider));
     final timetableAsync = ref.watch(teacherTimetableProvider);
+    final days = strings.weekdays;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('My Timetable')),
+      appBar: AppBar(title: Text(strings.myTimetable)),
       body: timetableAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('$e')),
         data: (entries) {
           if (entries.isEmpty) {
-            return const Center(child: Text('Your timetable has not been configured yet.'));
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.event_busy_outlined, size: 48, color: theme.colorScheme.outline),
+                  const SizedBox(height: 16),
+                  Text(strings.timetableEmpty, textAlign: TextAlign.center, style: theme.textTheme.bodyMedium),
+                ]),
+              ),
+            );
           }
 
           final grouped = <int, List<TeacherTimetableEntry>>{};
@@ -30,36 +42,52 @@ class TeacherTimetablePage extends ConsumerWidget {
             grouped.putIfAbsent(e.dayOfWeek, () => []).add(e);
           }
 
+          final sortedDays = grouped.keys.toList()..sort();
+
           return ListView(
             padding: EdgeInsets.all(Responsive.pagePadding(context)),
             children: [
-              for (final day in grouped.keys.toList()..sort())
+              for (int idx = 0; idx < sortedDays.length; idx++)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 20),
-                  child: Card(
-                    clipBehavior: Clip.antiAlias,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                          color: theme.colorScheme.surfaceContainerHighest,
-                          child: Text(_days[day], style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-                        ),
-                        for (final item in grouped[day]!)
-                          ListTile(
-                            leading: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(item.startTime, style: const TextStyle(fontWeight: FontWeight.w700)),
-                                Text(item.endTime, style: theme.textTheme.bodySmall),
-                              ],
+                  child: RevealOnScroll(
+                    delay: Duration(milliseconds: idx * 60),
+                    child: Card(
+                      clipBehavior: Clip.antiAlias,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(colors: [theme.colorScheme.primary, theme.colorScheme.secondary]),
                             ),
-                            title: Text(item.subjectName, style: const TextStyle(fontWeight: FontWeight.w700)),
-                            subtitle: Text(item.className + (item.roomName != null ? ' · ${item.roomName}' : '')),
+                            child: Text(days[sortedDays[idx]],
+                                style: theme.textTheme.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
                           ),
-                      ],
+                          for (final item in grouped[sortedDays[idx]]!)
+                            ListTile(
+                              leading: Container(
+                                width: 58,
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.primaryContainer,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(item.startTime, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                                    Text(item.endTime, style: theme.textTheme.bodySmall),
+                                  ],
+                                ),
+                              ),
+                              title: Text(item.subjectName, style: const TextStyle(fontWeight: FontWeight.w700)),
+                              subtitle: Text(item.className + (item.roomName != null ? ' · ${item.roomName}' : '')),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 ),

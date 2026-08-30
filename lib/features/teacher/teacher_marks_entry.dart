@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/l10n/app_strings.dart';
+import '../../core/motion.dart';
 import '../../core/responsive.dart';
+import '../landing/landing_providers.dart';
 import 'teacher_models.dart';
 import 'teacher_providers.dart';
 
@@ -36,7 +39,7 @@ class _TeacherMarksEntryPageState extends ConsumerState<TeacherMarksEntryPage> {
   TextEditingController _remarkFor(String studentId) =>
       _remarkControllers.putIfAbsent(studentId, () => TextEditingController());
 
-  Future<void> _save(String status, ExamPeriod period, String academicYearId) async {
+  Future<void> _save(String status, ExamPeriod period, String academicYearId, AppStrings strings) async {
     setState(() => _saving = true);
     try {
       final entries = _scoreControllers.entries
@@ -66,13 +69,12 @@ class _TeacherMarksEntryPageState extends ConsumerState<TeacherMarksEntryPage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(status == 'submitted' ? 'Marks submitted to the Principal for review.' : 'Draft saved.'),
+          content: Text(status == 'submitted' ? strings.marksSubmittedMessage : strings.draftSavedMessage),
         ));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Could not save marks. Please try again.')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings.saveMarksError)));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -82,6 +84,7 @@ class _TeacherMarksEntryPageState extends ConsumerState<TeacherMarksEntryPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final strings = AppStrings(ref.watch(activeLocaleProvider));
     final periodsAsync = ref.watch(examPeriodsProvider);
     final rosterAsync = ref.watch(
       rosterProvider((classId: widget.assignment.classId, academicYearId: widget.assignment.academicYearId)),
@@ -91,7 +94,7 @@ class _TeacherMarksEntryPageState extends ConsumerState<TeacherMarksEntryPage> {
     );
 
     return Scaffold(
-      appBar: AppBar(title: Text('${widget.assignment.subjectName} - Marks')),
+      appBar: AppBar(title: Text('${widget.assignment.subjectName} - ${strings.marksLabel}')),
       body: periodsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('$e')),
@@ -99,20 +102,18 @@ class _TeacherMarksEntryPageState extends ConsumerState<TeacherMarksEntryPage> {
           final openPeriods = periods.where((p) => p.isOpen).toList();
 
           if (openPeriods.isEmpty) {
-            return const Center(
+            return Center(
               child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'The Principal has not opened marks entry for any sequence yet.',
-                  textAlign: TextAlign.center,
-                ),
+                padding: const EdgeInsets.all(24),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.lock_clock_outlined, size: 48, color: theme.colorScheme.outline),
+                  const SizedBox(height: 16),
+                  Text(strings.marksNotOpenYet, textAlign: TextAlign.center, style: theme.textTheme.bodyMedium),
+                ]),
               ),
             );
           }
 
-          // Most schools only have one sequence open at a time - use
-          // the first. If several are open, still show the first;
-          // the teacher can only meaningfully fill one form here.
           final currentPeriod = openPeriods.first;
 
           return rosterAsync.when(
@@ -123,9 +124,6 @@ class _TeacherMarksEntryPageState extends ConsumerState<TeacherMarksEntryPage> {
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, _) => Center(child: Text('$e')),
                 data: (allMarks) {
-                  // Pre-fill controllers from any existing draft/submitted
-                  // mark for the CURRENT period only - past periods stay
-                  // read-only reference data.
                   for (final s in students) {
                     final existing = allMarks
                         .where((m) => m.studentId == s.studentId && m.examPeriodId == currentPeriod.id)
@@ -148,24 +146,28 @@ class _TeacherMarksEntryPageState extends ConsumerState<TeacherMarksEntryPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.primaryContainer,
-                                borderRadius: BorderRadius.circular(18),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(currentPeriod.name,
-                                      style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Coefficient ${widget.assignment.coefficient}'
-                                    '${currentPeriod.dueDate != null ? ' · Due ${_fmt(currentPeriod.dueDate!)}' : ''}',
-                                  ),
-                                ],
+                            RevealOnScroll(
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(22),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(colors: [theme.colorScheme.primary, theme.colorScheme.secondary]),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(currentPeriod.name,
+                                        style: theme.textTheme.titleLarge
+                                            ?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      '${strings.coefficientLabel} ${widget.assignment.coefficient}'
+                                      '${currentPeriod.dueDate != null ? ' · ${strings.dueLabel} ${_fmt(currentPeriod.dueDate!)}' : ''}',
+                                      style: const TextStyle(color: Colors.white70),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                             const SizedBox(height: 20),
@@ -202,14 +204,14 @@ class _TeacherMarksEntryPageState extends ConsumerState<TeacherMarksEntryPage> {
                                               child: TextField(
                                                 controller: _scoreFor(s.studentId),
                                                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                                decoration: const InputDecoration(labelText: 'Score (0-20)', isDense: true),
+                                                decoration: InputDecoration(labelText: strings.scoreLabel, isDense: true),
                                               ),
                                             ),
                                             const SizedBox(width: 12),
                                             Expanded(
                                               child: TextField(
                                                 controller: _remarkFor(s.studentId),
-                                                decoration: const InputDecoration(labelText: 'Comment (optional)', isDense: true),
+                                                decoration: InputDecoration(labelText: strings.commentOptional, isDense: true),
                                               ),
                                             ),
                                           ]),
@@ -222,16 +224,18 @@ class _TeacherMarksEntryPageState extends ConsumerState<TeacherMarksEntryPage> {
                             const SizedBox(height: 20),
                             Row(mainAxisAlignment: MainAxisAlignment.end, children: [
                               OutlinedButton(
-                                onPressed: _saving ? null : () => _save('draft', currentPeriod, widget.assignment.academicYearId),
-                                child: const Text('Save Draft'),
+                                onPressed: _saving
+                                    ? null
+                                    : () => _save('draft', currentPeriod, widget.assignment.academicYearId, strings),
+                                child: Text(strings.saveDraft),
                               ),
                               const SizedBox(width: 10),
                               FilledButton.icon(
                                 onPressed: _saving
                                     ? null
-                                    : () => _save('submitted', currentPeriod, widget.assignment.academicYearId),
+                                    : () => _save('submitted', currentPeriod, widget.assignment.academicYearId, strings),
                                 icon: const Icon(Icons.send_outlined),
-                                label: const Text('Submit to Principal'),
+                                label: Text(strings.submitToPrincipal),
                               ),
                             ]),
                           ],

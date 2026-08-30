@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:convert';
-import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../core/l10n/app_strings.dart';
 import '../../core/motion.dart';
 import '../../core/responsive.dart';
 import '../auth/auth_providers.dart';
+import '../landing/landing_providers.dart';
 import 'teacher_models.dart';
 import 'teacher_providers.dart';
 
@@ -31,10 +32,9 @@ class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
     super.dispose();
   }
 
-  Future<void> _changePhoto() async {
+  Future<void> _changePhoto(AppStrings strings) async {
     final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 80);
-    if (picked == null) 
-    return;
+    if (picked == null) return;
 
     setState(() => _uploadingPhoto = true);
     try {
@@ -52,19 +52,18 @@ class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
           );
       ref.invalidate(teacherProfileProvider);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Photo updated.')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings.photoUpdatedMessage)));
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Could not upload photo. Please try again.')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings.photoUploadError)));
       }
     } finally {
       if (mounted) setState(() => _uploadingPhoto = false);
     }
   }
 
-  Future<void> _save() async {
+  Future<void> _save(AppStrings strings) async {
     setState(() => _saving = true);
     try {
       await ref.read(teacherRepositoryProvider).updateProfile(
@@ -74,12 +73,11 @@ class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
           );
       ref.invalidate(teacherProfileProvider);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile updated.')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings.profileUpdatedMessage)));
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Could not save changes. Please try again.')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings.profileSaveError)));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -90,9 +88,11 @@ class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final p = widget.profile;
+    final locale = ref.watch(activeLocaleProvider);
+    final strings = AppStrings(locale);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('My Profile')),
+      appBar: AppBar(title: Text(strings.myProfile)),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: EdgeInsets.all(Responsive.pagePadding(context)),
@@ -133,7 +133,7 @@ class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
                                 right: 0,
                                 child: HoverLift(
                                   liftPixels: 2,
-                                  onTap: _uploadingPhoto ? null : _changePhoto,
+                                  onTap: _uploadingPhoto ? null : () => _changePhoto(strings),
                                   child: Container(
                                     padding: const EdgeInsets.all(8),
                                     decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
@@ -159,7 +159,7 @@ class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                             decoration:
                                 BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(20)),
-                            child: Text('Teacher', style: theme.textTheme.labelMedium?.copyWith(color: Colors.white)),
+                            child: Text(strings.teacher, style: theme.textTheme.labelMedium?.copyWith(color: Colors.white)),
                           ),
                         ],
                       ),
@@ -176,13 +176,13 @@ class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Personal Information',
+                          Text(strings.personalInformation,
                               style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
                           const SizedBox(height: 16),
                           TextField(
                             controller: _nameController,
                             decoration: InputDecoration(
-                              labelText: 'Full Name',
+                              labelText: strings.fullName,
                               prefixIcon: const Icon(Icons.person_outline),
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
                             ),
@@ -192,7 +192,7 @@ class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
                             controller: _phoneController,
                             keyboardType: TextInputType.phone,
                             decoration: InputDecoration(
-                              labelText: 'Phone Number',
+                              labelText: strings.phoneNumber,
                               prefixIcon: const Icon(Icons.phone_outlined),
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
                             ),
@@ -201,11 +201,11 @@ class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
                           SizedBox(
                             width: double.infinity,
                             child: FilledButton(
-                              onPressed: _saving ? null : _save,
+                              onPressed: _saving ? null : () => _save(strings),
                               child: _saving
                                   ? const SizedBox(
                                       width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                                  : const Text('Save Changes'),
+                                  : Text(strings.saveChanges),
                             ),
                           ),
                         ],
@@ -221,7 +221,7 @@ class _TeacherProfilePageState extends ConsumerState<TeacherProfilePage> {
                           if (context.mounted) context.go('/');
                         },
                         icon: const Icon(Icons.logout_rounded),
-                        label: const Text('Sign Out'),
+                        label: Text(strings.signOut),
                       ),
                     ),
                   ],

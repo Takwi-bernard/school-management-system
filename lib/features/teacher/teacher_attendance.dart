@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/l10n/app_strings.dart';
+import '../../core/motion.dart';
 import '../../core/responsive.dart';
+import '../landing/landing_providers.dart';
 import 'teacher_models.dart';
 import 'teacher_providers.dart';
+
 class TeacherAttendancePage extends ConsumerStatefulWidget {
   final TeacherProfile profile;
   final TeachingAssignment assignment;
@@ -16,7 +20,7 @@ class TeacherAttendancePage extends ConsumerStatefulWidget {
 
 class _TeacherAttendancePageState extends ConsumerState<TeacherAttendancePage> {
   DateTime _date = DateTime.now();
-  final Map<String, String> _status = {}; // studentId -> present/absent/late/excused
+  final Map<String, String> _status = {};
   bool _saving = false;
   bool _loadedForDate = false;
 
@@ -36,7 +40,7 @@ class _TeacherAttendancePageState extends ConsumerState<TeacherAttendancePage> {
     }
   }
 
-  Future<void> _save() async {
+  Future<void> _save(AppStrings strings) async {
     setState(() => _saving = true);
     try {
       final entries = _status.entries
@@ -52,12 +56,11 @@ class _TeacherAttendancePageState extends ConsumerState<TeacherAttendancePage> {
           );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Attendance saved.')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings.attendanceSavedMessage)));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Could not save attendance. Please try again.')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings.saveAttendanceError)));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -67,6 +70,7 @@ class _TeacherAttendancePageState extends ConsumerState<TeacherAttendancePage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final strings = AppStrings(ref.watch(activeLocaleProvider));
     final rosterAsync = ref.watch(
       rosterProvider((classId: widget.assignment.classId, academicYearId: widget.assignment.academicYearId)),
     );
@@ -76,8 +80,15 @@ class _TeacherAttendancePageState extends ConsumerState<TeacherAttendancePage> {
       date: _date,
     )));
 
+    final statusLabels = {
+      'present': strings.statusPresent,
+      'absent': strings.statusAbsent,
+      'late': strings.statusLate,
+      'excused': strings.statusExcused,
+    };
+
     return Scaffold(
-      appBar: AppBar(title: Text('${widget.assignment.className} - Attendance')),
+      appBar: AppBar(title: Text('${widget.assignment.className} - ${strings.attendanceLabel}')),
       body: rosterAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('$e')),
@@ -102,46 +113,65 @@ class _TeacherAttendancePageState extends ConsumerState<TeacherAttendancePage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(children: [
-                          Expanded(
-                            child: Text('Date: ${_fmt(_date)}',
-                                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                        RevealOnScroll(
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(colors: [theme.colorScheme.primary, theme.colorScheme.secondary]),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(children: [
+                              Expanded(
+                                child: Text('${strings.dateLabel}: ${_fmt(_date)}',
+                                    style: theme.textTheme.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.w700)),
+                              ),
+                              HoverLift(
+                                liftPixels: 2,
+                                onTap: _pickDate,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                    Icon(Icons.calendar_today_outlined, size: 16, color: theme.colorScheme.primary),
+                                    const SizedBox(width: 8),
+                                    Text(strings.changeDate, style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.w700)),
+                                  ]),
+                                ),
+                              ),
+                            ]),
                           ),
-                          OutlinedButton.icon(
-                            onPressed: _pickDate,
-                            icon: const Icon(Icons.calendar_today_outlined),
-                            label: const Text('Change Date'),
-                          ),
-                        ]),
-                        const SizedBox(height: 16),
+                        ),
+                        const SizedBox(height: 20),
                         Expanded(
                           child: ListView.separated(
                             itemCount: students.length,
                             separatorBuilder: (_, __) => const SizedBox(height: 8),
                             itemBuilder: (context, i) {
                               final s = students[i];
-                              return Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.surfaceContainerHighest,
-                                  borderRadius: BorderRadius.circular(14),
+                              return RevealOnScroll(
+                                delay: Duration(milliseconds: (i * 25).clamp(0, 250)),
+                                child: Container(
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: Row(children: [
+                                    Expanded(
+                                      child: Text(s.fullName,
+                                          style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                                    ),
+                                    DropdownButton<String>(
+                                      value: _status[s.studentId] ?? 'present',
+                                      underline: const SizedBox.shrink(),
+                                      items: statusLabels.entries
+                                          .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+                                          .toList(),
+                                      onChanged: (v) => setState(() => _status[s.studentId] = v ?? 'present'),
+                                    ),
+                                  ]),
                                 ),
-                                child: Row(children: [
-                                  Expanded(
-                                    child: Text(s.fullName,
-                                        style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-                                  ),
-                                  DropdownButton<String>(
-                                    value: _status[s.studentId] ?? 'present',
-                                    items: const [
-                                      DropdownMenuItem(value: 'present', child: Text('Present')),
-                                      DropdownMenuItem(value: 'absent', child: Text('Absent')),
-                                      DropdownMenuItem(value: 'late', child: Text('Late')),
-                                      DropdownMenuItem(value: 'excused', child: Text('Excused')),
-                                    ],
-                                    onChanged: (v) => setState(() => _status[s.studentId] = v ?? 'present'),
-                                  ),
-                                ]),
                               );
                             },
                           ),
@@ -150,9 +180,9 @@ class _TeacherAttendancePageState extends ConsumerState<TeacherAttendancePage> {
                         SizedBox(
                           width: double.infinity,
                           child: FilledButton.icon(
-                            onPressed: _saving ? null : _save,
+                            onPressed: _saving ? null : () => _save(strings),
                             icon: const Icon(Icons.save_outlined),
-                            label: const Text('Save Attendance'),
+                            label: Text(strings.saveAttendance),
                           ),
                         ),
                       ],
