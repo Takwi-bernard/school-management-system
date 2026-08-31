@@ -172,4 +172,84 @@ class AppStrings {
   List<String> get weekdays => isFrench
       ? ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche']
       : ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+  // ============================================================
+  // Parent module
+  // ============================================================
+
+  // Dashboard
+  String get enrollMyChild => isFrench ? 'Inscrire mon enfant' : 'Enroll My Child';
+  String get admissionsInProgress => isFrench ? 'Admissions en cours' : 'Admissions In Progress';
+  String get myChildren => isFrench ? 'Mes enfants' : 'My Children';
+  String get noChildrenTitle => isFrench ? 'Aucun enfant inscrit' : 'No children enrolled yet';
+  String get noChildrenDescription => isFrench
+      ? "Utilisez le bouton ci-dessus pour inscrire votre premier enfant."
+      : 'Use the button above to enroll your first child.';
+  String get admissionRejected => isFrench ? 'Admission refusée' : 'Admission rejected';
+  String get registrationFeePending =>
+      isFrench ? "Frais d'inscription à payer" : 'Registration fee pending';
+  String get admissionUnderReview => isFrench ? "En cours d'examen par l'école" : 'Under review by the school';
+  String get classNotAssigned => isFrench ? 'Classe non assignée' : 'Class not assigned';
+
+  // Enrollment
+  String get childFirstName => isFrench ? "Prénom de l'enfant" : "Child's First Name";
+  String get childLastName => isFrench ? "Nom de famille de l'enfant" : "Child's Last Name";
+  String get required => isFrench ? 'Ce champ est requis.' : 'This field is required.';
+  String get chooseSubjects => isFrench ? 'Choisir les matières' : 'Choose Subjects';
+  String get compulsorySubjectsNote => isFrench
+      ? 'Certaines matières sont obligatoires et ne peuvent pas être désélectionnées.'
+      : 'Some subjects are compulsory and cannot be unselected.';
+  String get compulsory => isFrench ? 'Obligatoire' : 'Compulsory';
+  String get guardianInformation => isFrench ? 'Informations sur le tuteur' : 'Guardian Information';
+  String get guardianName => isFrench ? 'Nom du tuteur' : 'Guardian Name';
+  String get emergencyContactName => isFrench ? "Nom du contact d'urgence" : 'Emergency Contact Name';
+  String get emergencyContactPhone => isFrench ? "Téléphone du contact d'urgence" : 'Emergency Contact Phone';
+  String get address => isFrench ? 'Adresse' : 'Address';
+  String get submitEnrollment => isFrench ? "Soumettre l'inscription" : 'Submit Enrollment';
+
+  // Fees & payment
+  String get schoolFees => isFrench ? 'Frais scolaires' : 'School Fees';
+  String get academicYearNotSet => isFrench
+      ? "L'école n'a pas encore défini d'année scolaire en cours."
+      : 'The school has not set a current academic year yet.';
+  String get noFeesConfigured => isFrench
+      ? "Les frais n'ont pas encore été configurés pour cet enfant."
+      : 'Fees have not been configured for this child yet.';
+  String get due => isFrench ? 'Échéance' : 'Due';
+  String get payNow => isFrench ? 'Payer maintenant' : 'Pay Now';
+  String get mobileMoneyPayment => isFrench ? 'Mobile Money' : 'Mobile Money';
+  String get mobileMoneyNumber => isFrench ? 'Numéro Mobile Money' : 'Mobile Money Number';
+  String get enterValidNumber => isFrench ? 'Entrez un numéro valide.' : 'Enter a valid number.';
+  String get confirmPayment => isFrench ? 'Confirmer le paiement' : 'Confirm Payment';
+  String get paymentStatus => isFrench ? 'Statut du paiement' : 'Payment Status';
+  String get paymentSuccessful => isFrench ? 'Paiement réussi' : 'Payment Successful';
+  String get paymentFailed => isFrench ? 'Paiement échoué' : 'Payment Failed';
+  String get paymentPending => isFrench ? 'Paiement en attente' : 'Payment Pending';
+  String get downloadReceipt => isFrench ? 'Télécharger le reçu' : 'Download Receipt';
+  String get tryAgain => isFrench ? 'Réessayer' : 'Try Again';
+
+  // Report cards & review (used by the next module)
+  String get reportCards => isFrench ? 'Bulletins scolaires' : 'Report Cards';
+  String get reportCardNotPublishedTitle =>
+      isFrench ? 'Bulletin pas encore publié' : 'Report Card Not Yet Published';
+  String get reportCardNotPublishedDescription => isFrench
+      ? "L'école n'a pas encore publié ce bulletin. Une fois publié, il apparaîtra ici automatiquement."
+      : 'The school has not published this report card yet. Once published, it will appear here automatically.';
+  String get checkAgainLater => isFrench ? 'Veuillez vérifier à nouveau plus tard.' : 'Please check again later.';
+  String get subject => isFrench ? 'Matière' : 'Subject';
+  String get mark => isFrench ? 'Note' : 'Mark';
+  String get total => isFrench ? 'Total' : 'Total';
+  String get average => isFrench ? 'Moyenne' : 'Average';
+  String get rank => isFrench ? 'Rang' : 'Rank';
+  String get remark => isFrench ? 'Remarque' : 'Remark';
+  String get studentReportCard => isFrench ? 'BULLETIN SCOLAIRE' : 'STUDENT REPORT CARD';
+  String get reviewMyChild => isFrench ? 'Évaluation de mon enfant' : 'Review My Child';
+  String get attendanceSummary => isFrench ? 'Résumé de présence' : 'Attendance Summary';
+  String get present => isFrench ? 'Présent' : 'Present';
+  String get absent => isFrench ? 'Absent' : 'Absent';
+  String get late => isFrench ? 'En retard' : 'Late';
+  String get schoolComments => isFrench ? "Commentaires de l'école" : 'School Comments';
+  String get noCommentYet => isFrench
+      ? "Aucun commentaire de l'école n'a encore été publié pour cet enfant."
+      : 'No school comment has been published for this child yet.';
 }
