@@ -52,7 +52,15 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
       final profile = await ref.read(parentProfileProvider.future);
       if (profile == null) throw Exception('Profile not found.');
 
-      final landing = ref.read(landingProvider).value!;
+      // FIX: previously read landing.currentAcademicYear, which is a
+      // DISPLAY string like "2025/2026", not a UUID - that caused a
+      // Postgres "invalid input syntax for type uuid" error on submit.
+      // This looks up the school's actual current academic_years.id.
+      final academicYearId = await ref.read(currentAcademicYearIdProvider(widget.schoolId).future);
+      if (academicYearId == null) {
+        throw Exception('This school has not set a current academic year yet. Please contact the school office.');
+      }
+
       Uint8List? photoBytes;
       String? ext;
       if (_photo != null) {
@@ -64,7 +72,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
             schoolId: widget.schoolId,
             parentId: profile.parentId,
             requestedClassId: _selectedClass!.id,
-            academicYearId: landing.currentAcademicYear ?? '', // resolved server-side ideally; see note below
+            academicYearId: academicYearId,
             firstName: _firstName.text.trim(),
             lastName: _lastName.text.trim(),
             guardianName: _guardianName.text.trim().isEmpty ? null : _guardianName.text.trim(),
