@@ -9,6 +9,11 @@ import '../features/auth/teacher_sign_up_page.dart';
 import '../features/auth/auth_gate.dart';
 import '../features/teacher/teacher_home.dart';
 import '../features/parent/parent_home.dart';
+import '../features/parent/parent_enrollment.dart';
+import '../features/parent/parent_fees.dart';
+import '../features/parent/parent_report_card.dart';
+import '../features/parent/parent_profile.dart';
+import '../features/parent/parent_models.dart';
 /// FIX: default GoRouter navigation is an abrupt cut with no
 /// transition at all. This gives every route the same soft
 /// fade + gentle upward slide - noticeably smoother/more "alive"
@@ -55,6 +60,48 @@ final appRouter = GoRouter(
       pageBuilder: (c, s) => _page(const ParentHome(), s),
     ),
     GoRoute(
+  path: '/parent',
+  pageBuilder: (c, s) => _page(const ParentHome(), s),
+  routes: [
+    GoRoute(
+      path: 'enroll',
+      pageBuilder: (c, s) => _page(EnrollChildPage(schoolId: s.extra as String), s),
+    ),
+    GoRoute(
+      path: 'fees',
+      pageBuilder: (c, s) => _page(ChildFeesPage(child: s.extra as EnrolledChild), s),
+    ),
+    GoRoute(
+      path: 'report-card',
+      pageBuilder: (c, s) => _page(ReportCardPage(child: s.extra as EnrolledChild), s),
+    ),
+    GoRoute(
+      path: 'review',
+      pageBuilder: (c, s) => _page(ReviewChildPage(child: s.extra as EnrolledChild), s),
+    ),
+    GoRoute(
+      path: 'profile',
+      pageBuilder: (c, s) => _page(const ParentProfilePage(), s),
+    ),
+    GoRoute(
+      path: 'payment',
+      pageBuilder: (c, s) {
+        final args = s.extra as Map<String, dynamic>;
+        return _page(
+          MobileMoneyPaymentPage(
+            child: args['child'] as EnrolledChild?,
+            admissionRequestId: args['admissionRequestId'] as String?,
+            landing: args['landing'],
+            amount: args['amount'] as double,
+            paymentPurpose: args['paymentPurpose'] as String,
+          ),
+          s,
+        );
+      },
+    ),
+  ],
+),
+    GoRoute(
       path: '/teacher',
       pageBuilder: (c, s) => _page(const TeacherHome(), s),
     ),
@@ -75,3 +122,4 @@ final appRouter = GoRouter(
     ),
   ],
 );
+
