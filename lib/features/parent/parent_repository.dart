@@ -100,7 +100,7 @@ class ParentRepository {
     return byDepartment.map((r) => SubjectOfferingOption.fromMap(r)).toList();
   }
 
-  Future<void> submitAdmissionRequest({
+   Future<String> submitAdmissionRequest({
     required String schoolId,
     required String parentId,
     required String requestedClassId,
@@ -140,7 +140,12 @@ class ParentRepository {
           'emergency_contact_phone': emergencyContactPhone,
           'address': address,
           'photo_url': photoUrl,
-          'status': 'submitted',
+          // FIX: was 'submitted', which PendingAdmission.needsPayment
+          // never matches - the dashboard showed "under review" the
+          // instant the form was submitted, before any payment. A
+          // brand-new admission is ALWAYS unpaid at this point, so it
+          // must start in the payment-pending state, not "under review".
+          'status': 'awaiting_payment',
         })
         .select()
         .single();
@@ -151,8 +156,9 @@ class ParentRepository {
           {'admission_request_id': request['id'], 'subject_id': subjectId},
       ]);
     }
-  }
 
+    return request['id'] as String;
+  }
   // --------------------------------------------------
   // ACADEMIC TERMS (for the report card term picker - dynamic, not
   // assumed to always be exactly 3)

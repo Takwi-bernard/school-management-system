@@ -8,6 +8,7 @@ import '../../core/motion.dart';
 import '../landing/landing_providers.dart';
 import 'parent_models.dart';
 import 'parent_providers.dart';
+import 'parent_fees.dart';
 
 class EnrollChildPage extends ConsumerStatefulWidget {
   final String schoolId;
@@ -68,7 +69,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
         ext = _photo!.name.contains('.') ? _photo!.name.split('.').last : 'jpg';
       }
 
-      await ref.read(parentRepositoryProvider).submitAdmissionRequest(
+            final admissionRequestId = await ref.read(parentRepositoryProvider).submitAdmissionRequest(
             schoolId: widget.schoolId,
             parentId: profile.parentId,
             requestedClassId: _selectedClass!.id,
@@ -86,10 +87,68 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
 
       if (!mounted) return;
       ref.invalidate(pendingAdmissionsProvider);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enrollment submitted. You can complete the registration fee next.')),
+
+      final registrationFee = await ref.read(parentRepositoryProvider).getRegistrationFee(
+            classId: _selectedClass!.id,
+            academicYearId: academicYearId,
+          );
+
+      if (!mounted) return;
+
+      final landing = ref.read(landingProvider).value;
+      if (registrationFee == null || landing == null) {
+        // No fee configured for this class yet - nothing to pay right
+        // now, so just confirm submission and go back.
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enrollment submitted. The school has not set a registration fee for this class yet.')),
+        );
+        Navigator.pop(context);
+        return;
+      }
+
+      // Explicit choice, as requested - never silently assume either way.
+      final wantsToPayNow = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Enrollment Submitted'),
+          content: Text(
+            'A registration fee of ${registrationFee.toStringAsFixed(0)} FCFA is required to complete this enrollment. '
+            'Your child will remain pending until it is paid.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Pay Later'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Pay Now'),
+            ),
+          ],
+        ),
       );
-      Navigator.pop(context);
+
+      if (!mounted) return;
+
+      if (wantsToPayNow == true) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => MobileMoneyPaymentPage(
+              admissionRequestId: admissionRequestId,
+              landing: landing,
+              amount: registrationFee,
+              paymentPurpose: 'Registration Fee',
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You can complete the registration fee anytime from your dashboard.')),
+        );
+        Navigator.pop(context);
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
