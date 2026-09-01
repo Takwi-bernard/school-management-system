@@ -7,8 +7,10 @@ import '../../core/motion.dart';
 import '../../core/responsive.dart';
 import '../auth/auth_gate.dart';
 import '../auth/auth_providers.dart';
+import '../landing/landing_model.dart';
 import '../landing/landing_providers.dart';
 import 'parent_enrollment.dart';
+import 'parent_fees.dart';
 import 'parent_models.dart';
 import 'parent_providers.dart';
 
@@ -40,20 +42,11 @@ class ParentHome extends ConsumerWidget {
               );
             }
 
-            final primary = _parseColor(school.primaryColor);
-            final secondary = _parseColor(school.secondaryColor);
-            final theme = ThemeData(
-              useMaterial3: true,
-              colorScheme: ColorScheme.fromSeed(seedColor: primary, primary: primary, secondary: secondary),
-            );
-
             return Theme(
-              data: theme,
+              data: buildSchoolTheme(school.primaryColor, school.secondaryColor),
               child: _ParentDashboard(
                 schoolId: school.schoolId,
-                schoolName: school.schoolName,
-                logoUrl: school.logoUrl,
-                motto: school.motto,
+                landing: school,
                 strings: AppStrings(locale),
               ),
             );
@@ -62,26 +55,16 @@ class ParentHome extends ConsumerWidget {
       },
     );
   }
-
-  Color _parseColor(String hex) {
-    var v = hex.replaceAll('#', '');
-    if (v.length == 6) v = 'FF$v';
-    return Color(int.tryParse(v, radix: 16) ?? 0xFF1A73E8);
-  }
 }
 
 class _ParentDashboard extends ConsumerWidget {
   final String schoolId;
-  final String schoolName;
-  final String logoUrl;
-  final String motto;
+  final LandingModel landing;
   final AppStrings strings;
 
   const _ParentDashboard({
     required this.schoolId,
-    required this.schoolName,
-    required this.logoUrl,
-    required this.motto,
+    required this.landing,
     required this.strings,
   });
 
@@ -110,13 +93,13 @@ class _ParentDashboard extends ConsumerWidget {
               ),
               child: Row(
                 children: [
-                  if (logoUrl.isNotEmpty)
+                  if (landing.logoUrl.isNotEmpty)
                     Container(
                       width: 56,
                       height: 56,
                       padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
-                      child: Image.network(logoUrl, fit: BoxFit.contain,
+                      child: Image.network(landing.logoUrl, fit: BoxFit.contain,
                           errorBuilder: (_, __, ___) => Icon(Icons.school_rounded, color: theme.colorScheme.primary)),
                     ),
                   const SizedBox(width: 16),
@@ -124,13 +107,13 @@ class _ParentDashboard extends ConsumerWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(schoolName,
+                        Text(landing.schoolName,
                             style: theme.textTheme.titleLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
                         profileAsync.when(
                           loading: () => const SizedBox(),
                           error: (_, __) => const SizedBox(),
                           data: (profile) => Text(
-                            '${strings.welcomeBack}, ${profile?.fullName ?? ''}',
+                            '${strings.welcomeBack} ${profile?.fullName ?? ''}',
                             style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70),
                           ),
                         ),
@@ -189,7 +172,7 @@ class _ParentDashboard extends ConsumerWidget {
                               Text(strings.admissionsInProgress,
                                   style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
                               const SizedBox(height: 12),
-                              ...pending.map((p) => _PendingAdmissionCard(admission: p, strings: strings)),
+                              ...pending.map((p) => _PendingAdmissionCard(admission: p, strings: strings, landing: landing)),
                               const SizedBox(height: 24),
                             ],
                           ),
@@ -251,13 +234,14 @@ class _ParentDashboard extends ConsumerWidget {
   }
 }
 
-class _PendingAdmissionCard extends StatelessWidget {
+class _PendingAdmissionCard extends ConsumerWidget {
   final PendingAdmission admission;
   final AppStrings strings;
-  const _PendingAdmissionCard({required this.admission, required this.strings});
+  final LandingModel landing;
+  const _PendingAdmissionCard({required this.admission, required this.strings, required this.landing});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final label = admission.isRejected
         ? strings.admissionRejected
@@ -272,20 +256,60 @@ class _PendingAdmissionCard extends StatelessWidget {
         color: theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(admission.isRejected ? Icons.cancel_outlined : Icons.hourglass_top_rounded,
-              color: admission.isRejected ? theme.colorScheme.error : theme.colorScheme.primary),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(admission.fullName, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-                Text(label, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-              ],
-            ),
+          Row(
+            children: [
+              Icon(admission.isRejected ? Icons.cancel_outlined : Icons.hourglass_top_rounded,
+                  color: admission.isRejected ? theme.colorScheme.error : theme.colorScheme.primary),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(admission.fullName, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                    Text(label, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+                  ],
+                ),
+              ),
+            ],
           ),
+          if (admission.needsPayment)
+            Consumer(
+              builder: (context, ref, _) {
+                final feeAsync = ref.watch(registrationFeeProvider(
+                  (classId: admission.requestedClassId, academicYearId: admission.academicYearId),
+                ));
+                return feeAsync.when(
+                  loading: () => const Padding(padding: EdgeInsets.only(top: 12), child: LinearProgressIndicator()),
+                  error: (e, _) => const SizedBox(),
+                  data: (fee) {
+                    if (fee == null) return const SizedBox();
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => MobileMoneyPaymentPage(
+                                admissionRequestId: admission.id,
+                                landing: landing,
+                                amount: fee,
+                                paymentPurpose: 'Registration Fee',
+                              ),
+                            ),
+                          ),
+                          child: Text('${strings.payNow} - ${fee.toStringAsFixed(0)} FCFA'),
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
         ],
       ),
     );

@@ -41,13 +41,23 @@ final currentAcademicYearIdProvider = FutureProvider.family<String?, String>((re
   return ref.watch(parentRepositoryProvider).getCurrentAcademicYearId(schoolId);
 });
 
-final childFeesProvider = FutureProvider.family<List<FeeSummary>, ({String studentId, String academicYearId})>(
+final childFeesProvider =
+    FutureProvider.family<List<FeeSummary>, ({String studentId, String classId, String academicYearId})>(
   (ref, params) {
-    return ref
-        .watch(parentRepositoryProvider)
-        .getChildFees(studentId: params.studentId, academicYearId: params.academicYearId);
+    return ref.watch(parentRepositoryProvider).getChildFees(
+          studentId: params.studentId,
+          classId: params.classId,
+          academicYearId: params.academicYearId,
+        );
   },
 );
+
+final registrationFeeProvider =
+    FutureProvider.family<double?, ({String classId, String academicYearId})>((ref, params) {
+  return ref
+      .watch(parentRepositoryProvider)
+      .getRegistrationFee(classId: params.classId, academicYearId: params.academicYearId);
+});
 
 final paymentHistoryProvider = FutureProvider<List<PaymentTransaction>>((ref) async {
   final profile = await ref.watch(parentProfileProvider.future);

@@ -36,7 +36,7 @@ class ChildFeesPage extends ConsumerWidget {
             if (yearId == null) {
               return Center(child: Text(strings.academicYearNotSet));
             }
-            final feesAsync = ref.watch(childFeesProvider((studentId: child.studentId, academicYearId: yearId)));
+           final feesAsync = ref.watch(childFeesProvider((studentId: child.studentId, classId: child.classId ?? '', academicYearId: yearId)));
             return feesAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text('$e')),

@@ -1,28 +1,8 @@
+import 'package:flutter/material.dart';
+
 /// All Parent module data models in one file (matches the
 /// consolidation pattern already used for Landing/Auth/Teacher).
 
-
-import 'package:flutter/material.dart';
-
-/// Rebuilds the school's branded theme from its stored colors.
-/// Used on every parent page (not just the dashboard) because a page
-/// reached via Navigator.push attaches to the app's ROOT navigator -
-/// above the dashboard's own Theme wrapper - so it does NOT inherit
-/// branding through Theme.of(context) alone. Cheap to recompute.
-ThemeData buildSchoolTheme(String primaryColorHex, String secondaryColorHex) {
-  final primary = _parseColor(primaryColorHex);
-  final secondary = _parseColor(secondaryColorHex);
-  return ThemeData(
-    useMaterial3: true,
-    colorScheme: ColorScheme.fromSeed(seedColor: primary, primary: primary, secondary: secondary),
-  );
-}
-
-Color _parseColor(String hex) {
-  var v = hex.replaceAll('#', '');
-  if (v.length == 6) v = 'FF$v';
-  return Color(int.tryParse(v, radix: 16) ?? 0xFF1A73E8);
-}
 class ParentProfile {
   final String parentId; // parents.id
   final String userId;
@@ -61,6 +41,7 @@ class EnrolledChild {
   final String firstName;
   final String lastName;
   final String? photoUrl;
+  final String? classId;
   final String? className;
   final String currentStatus;
 
@@ -71,6 +52,7 @@ class EnrolledChild {
     required this.firstName,
     required this.lastName,
     this.photoUrl,
+    this.classId,
     this.className,
     required this.currentStatus,
   });
@@ -88,6 +70,7 @@ class EnrolledChild {
       firstName: map['first_name'] as String? ?? '',
       lastName: map['last_name'] as String? ?? '',
       photoUrl: map['student_photo_url'] as String?,
+      classId: classData?['id'] as String?,
       className: classData?['class_name'] as String?,
       currentStatus: map['current_status'] as String? ?? 'active',
     );
@@ -96,8 +79,7 @@ class EnrolledChild {
 
 /// A child submission still going through admission - not a real
 /// student yet. Separate model because it genuinely represents a
-/// different thing (a REQUEST, not an enrolled child) with a
-/// different, smaller set of guaranteed fields.
+/// different thing (a REQUEST, not an enrolled child).
 class PendingAdmission {
   final String id;
   final String schoolId;
@@ -106,6 +88,7 @@ class PendingAdmission {
   final String? photoUrl;
   final String requestedClassId;
   final String requestedClassName;
+  final String academicYearId;
   final String status; // submitted | awaiting_payment | approved | rejected
   final String? rejectionReason;
 
@@ -117,6 +100,7 @@ class PendingAdmission {
     this.photoUrl,
     required this.requestedClassId,
     required this.requestedClassName,
+    required this.academicYearId,
     required this.status,
     this.rejectionReason,
   });
@@ -135,6 +119,7 @@ class PendingAdmission {
       photoUrl: map['photo_url'] as String?,
       requestedClassId: map['requested_class_id'] as String,
       requestedClassName: classData?['class_name'] as String? ?? '',
+      academicYearId: map['academic_year_id'] as String,
       status: map['status'] as String? ?? 'submitted',
       rejectionReason: map['rejection_reason'] as String?,
     );
@@ -363,4 +348,24 @@ class TeacherComment {
       createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ?? DateTime.now(),
     );
   }
+}
+
+/// Rebuilds the school's branded theme from its stored colors.
+/// Used on every parent page (not just the dashboard) because a page
+/// reached via Navigator.push attaches to the app's ROOT navigator -
+/// above the dashboard's own Theme wrapper - so it does NOT inherit
+/// branding through Theme.of(context) alone. Cheap to recompute.
+ThemeData buildSchoolTheme(String primaryColorHex, String secondaryColorHex) {
+  final primary = _parseColor(primaryColorHex);
+  final secondary = _parseColor(secondaryColorHex);
+  return ThemeData(
+    useMaterial3: true,
+    colorScheme: ColorScheme.fromSeed(seedColor: primary, primary: primary, secondary: secondary),
+  );
+}
+
+Color _parseColor(String hex) {
+  var v = hex.replaceAll('#', '');
+  if (v.length == 6) v = 'FF$v';
+  return Color(int.tryParse(v, radix: 16) ?? 0xFF1A73E8);
 }

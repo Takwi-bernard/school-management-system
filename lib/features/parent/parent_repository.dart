@@ -37,7 +37,7 @@ class ParentRepository {
             student_photo_url, current_status,
             class_enrollments (
               enrollment_status,
-              classes ( class_name )
+              classes ( id, class_name )
             )
           ),
           guardians!inner ( parent_id )
@@ -153,8 +153,6 @@ class ParentRepository {
     }
   }
 
-
-
   // --------------------------------------------------
   // ACADEMIC TERMS (for the report card term picker - dynamic, not
   // assumed to always be exactly 3)
@@ -230,7 +228,6 @@ class ParentRepository {
     return AttendanceSummary(present: present, absent: absent, late: late, excused: excused);
   }
 
-
   // --------------------------------------------------
   // PROFILE UPDATE
   // --------------------------------------------------
@@ -267,6 +264,7 @@ class ParentRepository {
 
     await _client.auth.updateUser(UserAttributes(password: newPassword));
   }
+
   // --------------------------------------------------
   // APPROVED TEACHER COMMENTS ONLY - never drafts
   // --------------------------------------------------
@@ -280,21 +278,28 @@ class ParentRepository {
         .order('created_at', ascending: false);
     return rows.map((r) => TeacherComment.fromMap(r)).toList();
   }
+
   // --------------------------------------------------
-  // FEES - fully dynamic, school-configured installments
+  // FEES - fees are keyed by class_id + academic_year_id, with
+  // registration_fee and total_school_fee living DIRECTLY on the fees
+  // row (not a "name"/"amount" per row - that was a wrong assumption
+  // in an earlier draft). Installments use `installment_name`, not
+  // `name`.
   // --------------------------------------------------
 
   Future<List<FeeSummary>> getChildFees({
     required String studentId,
+    required String classId,
     required String academicYearId,
   }) async {
-    final feeRows = await _client
+    final feeRow = await _client
         .from('fees')
-        .select('id, name, amount, installments(id, name, amount, due_date)')
-        .eq('academic_year_id', academicYearId);
-    // Note: fees are per school+year+class (Migration 006) - filtering
-    // by the student's actual class happens via a join in production;
-    // simplified here to the shape already confirmed in the schema.
+        .select('id, registration_fee, total_school_fee, installments(id, installment_name, amount, due_date, display_order)')
+        .eq('class_id', classId)
+        .eq('academic_year_id', academicYearId)
+        .maybeSingle();
+
+    if (feeRow == null) return [];
 
     final paidRows = await _client
         .from('payments')
@@ -304,27 +309,46 @@ class ParentRepository {
 
     final paidInstallmentIds = paidRows.map((r) => r['installment_id']).toSet();
 
-    return feeRows.map((fee) {
-      final installments = (fee['installments'] as List)
-          .map((i) => InstallmentSummary(
-                installmentId: i['id'] as String,
-                name: i['name'] as String? ?? '',
-                amount: (i['amount'] as num).toDouble(),
-                isPaid: paidInstallmentIds.contains(i['id']),
-                dueDate: DateTime.tryParse(i['due_date'] as String? ?? ''),
-              ))
-          .toList();
+    final installmentsRaw = List<Map<String, dynamic>>.from(feeRow['installments'] as List);
+    installmentsRaw.sort((a, b) => (a['display_order'] as int).compareTo(b['display_order'] as int));
 
-      final paidAmount = installments.where((i) => i.isPaid).fold(0.0, (sum, i) => sum + i.amount);
+    final installments = installmentsRaw
+        .map((i) => InstallmentSummary(
+              installmentId: i['id'] as String,
+              name: i['installment_name'] as String? ?? '',
+              amount: (i['amount'] as num).toDouble(),
+              isPaid: paidInstallmentIds.contains(i['id']),
+              dueDate: DateTime.tryParse(i['due_date'] as String? ?? ''),
+            ))
+        .toList();
 
-      return FeeSummary(
-        feeId: fee['id'] as String,
-        feeName: fee['name'] as String? ?? '',
-        totalAmount: (fee['amount'] as num).toDouble(),
+    final paidAmount = installments.where((i) => i.isPaid).fold(0.0, (sum, i) => sum + i.amount);
+
+    return [
+      FeeSummary(
+        feeId: feeRow['id'] as String,
+        feeName: 'School Fees',
+        totalAmount: (feeRow['total_school_fee'] as num).toDouble(),
         amountPaid: paidAmount,
         installments: installments,
-      );
-    }).toList();
+      ),
+    ];
+  }
+
+  /// The registration fee is a single amount per class+year (a column
+  /// on `fees`, not a separate row) - used for the pending-admission
+  /// "Pay Now" step before a student even exists.
+  Future<double?> getRegistrationFee({
+    required String classId,
+    required String academicYearId,
+  }) async {
+    final row = await _client
+        .from('fees')
+        .select('registration_fee')
+        .eq('class_id', classId)
+        .eq('academic_year_id', academicYearId)
+        .maybeSingle();
+    return (row?['registration_fee'] as num?)?.toDouble();
   }
 
   Future<List<PaymentTransaction>> getPaymentHistory(String parentId) async {
@@ -351,11 +375,10 @@ class ParentRepository {
         .maybeSingle();
     return row?['id'] as String?;
   }
+
   // --------------------------------------------------
   // PAYMENT - via Edge Functions only, never direct table writes
   // --------------------------------------------------
-
-
 
   Future<PaymentTransaction> initiatePayment({
     required String schoolId,
