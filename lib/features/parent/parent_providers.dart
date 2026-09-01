@@ -54,3 +54,46 @@ final paymentHistoryProvider = FutureProvider<List<PaymentTransaction>>((ref) as
   if (profile == null) return [];
   return ref.watch(parentRepositoryProvider).getPaymentHistory(profile.parentId);
 });
+
+final termsForYearProvider = FutureProvider.family<List<AcademicTermOption>, String>((ref, academicYearId) {
+  return ref.watch(parentRepositoryProvider).getTermsForYear(academicYearId);
+});
+
+final reportCardProvider = FutureProvider.family<ReportCardSummary?, ({String studentId, String termId})>((ref, params) {
+  return ref.watch(parentRepositoryProvider).getReportCard(studentId: params.studentId, termId: params.termId);
+});
+
+final attendanceSummaryProvider =
+    FutureProvider.family<AttendanceSummary, ({String studentId, String academicYearId})>((ref, params) {
+  return ref
+      .watch(parentRepositoryProvider)
+      .getAttendanceSummary(studentId: params.studentId, academicYearId: params.academicYearId);
+});
+
+final approvedCommentsProvider = FutureProvider.family<List<TeacherComment>, String>((ref, studentId) {
+  return ref.watch(parentRepositoryProvider).getApprovedComments(studentId);
+});
+
+class ParentProfileActions {
+  ParentProfileActions(this._ref);
+  final Ref _ref;
+
+  Future<void> updateProfile({required String fullName, required String phone}) async {
+    final profile = await _ref.read(parentProfileProvider.future);
+    if (profile == null) throw Exception('Profile not found.');
+    await _ref.read(parentRepositoryProvider).updateProfile(parentId: profile.parentId, fullName: fullName, phone: phone);
+    _ref.invalidate(parentProfileProvider);
+  }
+
+  Future<void> changePassword({required String currentPassword, required String newPassword}) async {
+    final profile = await _ref.read(parentProfileProvider.future);
+    if (profile == null || profile.email == null) throw Exception('Profile not found.');
+    await _ref.read(parentRepositoryProvider).changePassword(
+          email: profile.email!,
+          currentPassword: currentPassword,
+          newPassword: newPassword,
+        );
+  }
+}
+
+final parentProfileActionsProvider = Provider<ParentProfileActions>((ref) => ParentProfileActions(ref));

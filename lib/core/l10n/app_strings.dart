@@ -252,4 +252,10 @@ class AppStrings {
   String get noCommentYet => isFrench
       ? "Aucun commentaire de l'école n'a encore été publié pour cet enfant."
       : 'No school comment has been published for this child yet.';
+        String get changePassword => isFrench ? 'Changer le mot de passe' : 'Change Password';
+  String get cancel => isFrench ? 'Annuler' : 'Cancel';
+  String get currentPassword => isFrench ? 'Mot de passe actuel' : 'Current Password';
+  String get newPassword => isFrench ? 'Nouveau mot de passe' : 'New Password';
+  String get passwordTooShort => isFrench ? 'Au moins 8 caractères.' : 'At least 8 characters.';
+  String get passwordsDoNotMatch => isFrench ? 'Les mots de passe ne correspondent pas.' : 'Passwords do not match.';
 }

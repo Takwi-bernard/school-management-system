@@ -153,6 +153,133 @@ class ParentRepository {
     }
   }
 
+
+
+  // --------------------------------------------------
+  // ACADEMIC TERMS (for the report card term picker - dynamic, not
+  // assumed to always be exactly 3)
+  // --------------------------------------------------
+
+  Future<List<AcademicTermOption>> getTermsForYear(String academicYearId) async {
+    final rows = await _client
+        .from('academic_terms')
+        .select('id, term_name, term_order, is_current')
+        .eq('academic_year_id', academicYearId)
+        .order('term_order');
+    return rows.map((r) => AcademicTermOption.fromMap(r)).toList();
+  }
+
+  // --------------------------------------------------
+  // REPORT CARD - a row only exists once the school has generated
+  // it; absence of a row IS the "not yet published" state, not an error.
+  // --------------------------------------------------
+
+  Future<ReportCardSummary?> getReportCard({
+    required String studentId,
+    required String termId,
+  }) async {
+    final reportRow = await _client
+        .from('report_cards')
+        .select('''
+          id, overall_average, class_rank, total_students, principal_comment, generated_at,
+          students ( first_name, last_name ),
+          classes ( class_name ),
+          academic_terms ( term_name )
+        ''')
+        .eq('student_id', studentId)
+        .eq('term_id', termId)
+        .maybeSingle();
+
+    if (reportRow == null) return null;
+
+    final subjectRows = await _client
+        .from('subject_results')
+        .select('score, coefficient, weighted_score, grade, remark, subjects(subject_name)')
+        .eq('report_card_id', reportRow['id']);
+
+    return ReportCardSummary.fromMap(reportRow, subjectRows);
+  }
+
+  // --------------------------------------------------
+  // ATTENDANCE SUMMARY
+  // --------------------------------------------------
+
+  Future<AttendanceSummary> getAttendanceSummary({
+    required String studentId,
+    required String academicYearId,
+  }) async {
+    final rows = await _client
+        .from('attendance')
+        .select('status')
+        .eq('student_id', studentId)
+        .eq('academic_year_id', academicYearId);
+
+    var present = 0, absent = 0, late = 0, excused = 0;
+    for (final r in rows) {
+      switch (r['status']) {
+        case 'present':
+          present++;
+        case 'absent':
+          absent++;
+        case 'late':
+          late++;
+        case 'excused':
+          excused++;
+      }
+    }
+    return AttendanceSummary(present: present, absent: absent, late: late, excused: excused);
+  }
+
+
+  // --------------------------------------------------
+  // PROFILE UPDATE
+  // --------------------------------------------------
+
+  Future<void> updateProfile({
+    required String parentId,
+    required String fullName,
+    required String phone,
+  }) async {
+    await _client.from('parents').update({
+      'full_name': fullName,
+      'phone': phone,
+    }).eq('id', parentId);
+  }
+
+  // --------------------------------------------------
+  // CHANGE PASSWORD
+  // Supabase's updateUser() alone does NOT verify the current
+  // password - it just needs an active session. So we re-authenticate
+  // with the CURRENT password first, as a real check, before allowing
+  // the change - otherwise "Current Password" would just be theater.
+  // --------------------------------------------------
+
+  Future<void> changePassword({
+    required String email,
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    try {
+      await _client.auth.signInWithPassword(email: email, password: currentPassword);
+    } on AuthException {
+      throw Exception('Your current password is incorrect.');
+    }
+
+    await _client.auth.updateUser(UserAttributes(password: newPassword));
+  }
+  // --------------------------------------------------
+  // APPROVED TEACHER COMMENTS ONLY - never drafts
+  // --------------------------------------------------
+
+  Future<List<TeacherComment>> getApprovedComments(String studentId) async {
+    final rows = await _client
+        .from('class_comments')
+        .select('comment, created_at, teachers(full_name), exam_periods(period_name)')
+        .eq('student_id', studentId)
+        .eq('status', 'approved')
+        .order('created_at', ascending: false);
+    return rows.map((r) => TeacherComment.fromMap(r)).toList();
+  }
   // --------------------------------------------------
   // FEES - fully dynamic, school-configured installments
   // --------------------------------------------------

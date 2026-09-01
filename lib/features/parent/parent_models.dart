@@ -248,3 +248,119 @@ class PaymentTransaction {
         createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ?? DateTime.now(),
       );
 }
+
+class AcademicTermOption {
+  final String id;
+  final String termName;
+  final bool isCurrent;
+  const AcademicTermOption({required this.id, required this.termName, required this.isCurrent});
+
+  factory AcademicTermOption.fromMap(Map<String, dynamic> map) => AcademicTermOption(
+        id: map['id'] as String,
+        termName: map['term_name'] as String? ?? '',
+        isCurrent: map['is_current'] as bool? ?? false,
+      );
+}
+
+class SubjectResult {
+  final String subjectName;
+  final double score;
+  final int coefficient;
+  final double weightedScore;
+  final String? grade;
+  final String? remark;
+
+  const SubjectResult({
+    required this.subjectName,
+    required this.score,
+    required this.coefficient,
+    required this.weightedScore,
+    this.grade,
+    this.remark,
+  });
+
+  factory SubjectResult.fromMap(Map<String, dynamic> map) {
+    final subject = map['subjects'] as Map?;
+    return SubjectResult(
+      subjectName: subject?['subject_name'] as String? ?? '',
+      score: (map['score'] as num).toDouble(),
+      coefficient: map['coefficient'] as int,
+      weightedScore: (map['weighted_score'] as num).toDouble(),
+      grade: map['grade'] as String?,
+      remark: map['remark'] as String?,
+    );
+  }
+}
+
+class ReportCardSummary {
+  final String studentName;
+  final String className;
+  final String termName;
+  final double? overallAverage;
+  final int? classRank;
+  final int? totalStudents;
+  final String? principalComment;
+  final List<SubjectResult> subjects;
+
+  const ReportCardSummary({
+    required this.studentName,
+    required this.className,
+    required this.termName,
+    this.overallAverage,
+    this.classRank,
+    this.totalStudents,
+    this.principalComment,
+    required this.subjects,
+  });
+
+  factory ReportCardSummary.fromMap(Map<String, dynamic> report, List<dynamic> subjectRows) {
+    final student = report['students'] as Map?;
+    final classData = report['classes'] as Map?;
+    final term = report['academic_terms'] as Map?;
+    return ReportCardSummary(
+      studentName: '${student?['first_name'] ?? ''} ${student?['last_name'] ?? ''}'.trim(),
+      className: classData?['class_name'] as String? ?? '',
+      termName: term?['term_name'] as String? ?? '',
+      overallAverage: (report['overall_average'] as num?)?.toDouble(),
+      classRank: report['class_rank'] as int?,
+      totalStudents: report['total_students'] as int?,
+      principalComment: report['principal_comment'] as String?,
+      subjects: subjectRows.map((r) => SubjectResult.fromMap(Map<String, dynamic>.from(r))).toList(),
+    );
+  }
+}
+
+class AttendanceSummary {
+  final int present;
+  final int absent;
+  final int late;
+  final int excused;
+  const AttendanceSummary({required this.present, required this.absent, required this.late, required this.excused});
+
+  int get total => present + absent + late + excused;
+}
+
+class TeacherComment {
+  final String teacherName;
+  final String examPeriodName;
+  final String comment;
+  final DateTime createdAt;
+
+  const TeacherComment({
+    required this.teacherName,
+    required this.examPeriodName,
+    required this.comment,
+    required this.createdAt,
+  });
+
+  factory TeacherComment.fromMap(Map<String, dynamic> map) {
+    final teacher = map['teachers'] as Map?;
+    final period = map['exam_periods'] as Map?;
+    return TeacherComment(
+      teacherName: teacher?['full_name'] as String? ?? '',
+      examPeriodName: period?['period_name'] as String? ?? '',
+      comment: map['comment'] as String? ?? '',
+      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ?? DateTime.now(),
+    );
+  }
+}
