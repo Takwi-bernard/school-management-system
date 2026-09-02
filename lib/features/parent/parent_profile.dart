@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/app_strings.dart';
-import '../../core/motion.dart';
 import '../auth/auth_providers.dart';
 import '../landing/landing_providers.dart';
 import 'parent_models.dart';
@@ -31,21 +30,26 @@ class ParentProfilePage extends ConsumerWidget {
             return ListView(
               padding: const EdgeInsets.all(20),
               children: [
+                brandedSubpageHeader(context, schoolName: landing.schoolName, logoUrl: landing.logoUrl),
                 _ProfileHeader(profile: profile),
                 const SizedBox(height: 20),
                 _EditableInfoCard(profile: profile, strings: strings),
                 const SizedBox(height: 16),
                 _ActionTile(
                   icon: Icons.lock_outline_rounded,
-                  title: strings.forgotPassword.replaceAll('?', '').trim().isEmpty
-                      ? (strings.isFrench ? 'Changer le mot de passe' : 'Change Password')
-                      : (strings.isFrench ? 'Changer le mot de passe' : 'Change Password'),
+                  title: strings.changePassword,
+                  subtitle: strings.isFrench
+                      ? 'Vous devrez confirmer votre mot de passe actuel.'
+                      : 'You will need to confirm your current password.',
                   onTap: () => showDialog(context: context, builder: (_) => const _ChangePasswordDialog()),
                 ),
                 const SizedBox(height: 12),
                 _ActionTile(
                   icon: Icons.logout_rounded,
                   title: strings.signOut,
+                  subtitle: strings.isFrench
+                      ? 'Vous devrez vous reconnecter pour continuer.'
+                      : 'You will need to sign in again to continue.',
                   isDestructive: true,
                   onTap: () async {
                     await ref.read(authControllerProvider.notifier).signOut();
@@ -156,16 +160,29 @@ class _EditableInfoCardState extends ConsumerState<_EditableInfoCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(widget.strings.personalInformation, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 4),
+          Text(
+            widget.strings.isFrench
+                ? 'Ces informations sont utilisées par l\'école pour vous contacter au sujet de votre enfant.'
+                : 'This information is used by the school to contact you about your child.',
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+          ),
           const SizedBox(height: 16),
           TextField(
             controller: _nameController,
-            decoration: InputDecoration(labelText: widget.strings.fullName, border: const OutlineInputBorder()),
+            decoration: InputDecoration(
+              labelText: widget.strings.fullName,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+            ),
           ),
           const SizedBox(height: 14),
           TextField(
             controller: _phoneController,
             keyboardType: TextInputType.phone,
-            decoration: InputDecoration(labelText: widget.strings.phoneNumber, border: const OutlineInputBorder()),
+            decoration: InputDecoration(
+              labelText: widget.strings.phoneNumber,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+            ),
           ),
           if (_dirty) ...[
             const SizedBox(height: 16),
@@ -188,9 +205,16 @@ class _EditableInfoCardState extends ConsumerState<_EditableInfoCard> {
 class _ActionTile extends StatelessWidget {
   final IconData icon;
   final String title;
+  final String subtitle;
   final VoidCallback onTap;
   final bool isDestructive;
-  const _ActionTile({required this.icon, required this.title, required this.onTap, this.isDestructive = false});
+  const _ActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.isDestructive = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -208,7 +232,16 @@ class _ActionTile extends StatelessWidget {
             children: [
               Icon(icon, color: color),
               const SizedBox(width: 14),
-              Expanded(child: Text(title, style: TextStyle(fontWeight: FontWeight.w700, color: color))),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: TextStyle(fontWeight: FontWeight.w700, color: color)),
+                    const SizedBox(height: 3),
+                    Text(subtitle, style: TextStyle(fontSize: 12, color: color.withValues(alpha: 0.7))),
+                  ],
+                ),
+              ),
               Icon(Icons.chevron_right_rounded, color: color),
             ],
           ),
@@ -264,35 +297,38 @@ class _ChangePasswordDialogState extends ConsumerState<_ChangePasswordDialog> {
   Widget build(BuildContext context) {
     final strings = AppStrings(ref.watch(activeLocaleProvider));
     return AlertDialog(
-      title: Text(strings.isFrench ? 'Changer le mot de passe' : 'Change Password'),
+      title: Text(strings.changePassword),
       content: Form(
         key: _formKey,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Text(
+              strings.isFrench
+                  ? 'Entrez votre mot de passe actuel, puis choisissez-en un nouveau.'
+                  : 'Enter your current password, then choose a new one.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.outline),
+            ),
+            const SizedBox(height: 16),
             TextFormField(
               controller: _current,
               obscureText: true,
-              decoration: InputDecoration(labelText: strings.isFrench ? 'Mot de passe actuel' : 'Current Password'),
+              decoration: InputDecoration(labelText: strings.currentPassword),
               validator: (v) => (v == null || v.isEmpty) ? strings.required : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _newPass,
               obscureText: true,
-              decoration: InputDecoration(labelText: strings.isFrench ? 'Nouveau mot de passe' : 'New Password'),
-              validator: (v) => (v == null || v.length < 8)
-                  ? (strings.isFrench ? 'Au moins 8 caractères.' : 'At least 8 characters.')
-                  : null,
+              decoration: InputDecoration(labelText: strings.newPassword),
+              validator: (v) => (v == null || v.length < 8) ? strings.passwordTooShort : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _confirm,
               obscureText: true,
               decoration: InputDecoration(labelText: strings.confirmPassword),
-              validator: (v) => v != _newPass.text
-                  ? (strings.isFrench ? 'Les mots de passe ne correspondent pas.' : 'Passwords do not match.')
-                  : null,
+              validator: (v) => v != _newPass.text ? strings.passwordsDoNotMatch : null,
             ),
             if (_error != null) ...[
               const SizedBox(height: 10),
@@ -302,7 +338,7 @@ class _ChangePasswordDialogState extends ConsumerState<_ChangePasswordDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: _loading ? null : () => Navigator.pop(context), child: Text(strings.isFrench ? 'Annuler' : 'Cancel')),
+        TextButton(onPressed: _loading ? null : () => Navigator.pop(context), child: Text(strings.cancel)),
         FilledButton(
           onPressed: _loading ? null : _submit,
           child: _loading

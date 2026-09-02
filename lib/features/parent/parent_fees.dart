@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import '../../core/l10n/app_strings.dart';
-import '../../core/motion.dart';
 import '../../core/responsive.dart';
 import '../landing/landing_model.dart';
 import '../landing/landing_providers.dart';
@@ -28,31 +28,91 @@ class ChildFeesPage extends ConsumerWidget {
     return Theme(
       data: buildSchoolTheme(landing.primaryColor, landing.secondaryColor),
       child: Scaffold(
-        appBar: AppBar(title: Text('${strings.schoolFees} - ${child.fullName}')),
+        appBar: AppBar(title: Text(strings.schoolFees)),
         body: academicYearIdAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, _) => Center(child: Text('$e')),
           data: (yearId) {
             if (yearId == null) {
-              return Center(child: Text(strings.academicYearNotSet));
+              return _InfoState(icon: Icons.event_busy_rounded, message: strings.academicYearNotSet);
             }
-           final feesAsync = ref.watch(childFeesProvider((studentId: child.studentId, classId: child.classId ?? '', academicYearId: yearId)));
+            if (child.classId == null) {
+              return _InfoState(
+                icon: Icons.info_outline_rounded,
+                message: strings.isFrench
+                    ? 'La classe de cet enfant n\'est pas encore confirmée par l\'école.'
+                    : 'This child\'s class has not been confirmed by the school yet.',
+              );
+            }
+            final feesAsync = ref.watch(childFeesProvider((studentId: child.studentId, classId: child.classId!, academicYearId: yearId)));
             return feesAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text('$e')),
               data: (fees) {
                 if (fees.isEmpty) {
-                  return Center(child: Text(strings.noFeesConfigured));
+                  return _InfoState(icon: Icons.receipt_long_outlined, message: strings.noFeesConfigured);
                 }
                 return ListView(
                   padding: EdgeInsets.all(Responsive.pagePadding(context)),
-                  children: fees
-                      .map((fee) => _FeeCard(fee: fee, child: child, landing: landing, strings: strings))
-                      .toList(),
+                  children: [
+                    brandedSubpageHeader(
+                      context,
+                      schoolName: landing.schoolName,
+                      logoUrl: landing.logoUrl,
+                      subtitle: child.fullName,
+                    ),
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 20),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.info_outline_rounded, color: Theme.of(context).colorScheme.primary, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              strings.isFrench
+                                  ? 'Ci-dessous, les frais scolaires fixés par l\'école pour ${child.fullName}. Chaque tranche non payée est visible ci-dessous - appuyez sur "Payer maintenant" pour la régler par Mobile Money.'
+                                  : 'Below are the school fees set by the school for ${child.fullName}. Any unpaid installment is shown below - tap "Pay Now" to settle it by Mobile Money.',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ...fees.map((fee) => _FeeCard(fee: fee, child: child, landing: landing, strings: strings)),
+                  ],
                 );
               },
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _InfoState extends StatelessWidget {
+  final IconData icon;
+  final String message;
+  const _InfoState({required this.icon, required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 48, color: Theme.of(context).colorScheme.outline),
+            const SizedBox(height: 12),
+            Text(message, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
+          ],
         ),
       ),
     );
@@ -82,12 +142,25 @@ class _FeeCard extends StatelessWidget {
           const SizedBox(height: 10),
           LinearProgressIndicator(value: progress, minHeight: 8, borderRadius: BorderRadius.circular(20)),
           const SizedBox(height: 8),
-          Text('${fee.amountPaid.toStringAsFixed(0)} / ${fee.totalAmount.toStringAsFixed(0)} FCFA',
-              style: theme.textTheme.bodySmall),
+          Text(
+            '${fee.amountPaid.toStringAsFixed(0)} / ${fee.totalAmount.toStringAsFixed(0)} FCFA  ·  '
+            '${(progress * 100).toStringAsFixed(0)}% ${strings.isFrench ? 'payé' : 'paid'}',
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+          ),
           const SizedBox(height: 16),
-          // DYNAMIC INSTALLMENTS - whatever the school configured, in
-          // whatever names/order/count it chose. Never assumes exactly 3.
-          ...fee.installments.map((i) => _InstallmentRow(installment: i, fee: fee, child: child, landing: landing, strings: strings)),
+          if (fee.fullyPaid)
+            Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Colors.green, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  strings.isFrench ? 'Tous les frais ont été payés.' : 'All fees have been paid.',
+                  style: theme.textTheme.bodySmall?.copyWith(color: Colors.green, fontWeight: FontWeight.w600),
+                ),
+              ],
+            )
+          else
+            ...fee.installments.map((i) => _InstallmentRow(installment: i, fee: fee, child: child, landing: landing, strings: strings)),
         ],
       ),
     );
@@ -111,12 +184,18 @@ class _InstallmentRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: installment.isPaid ? Colors.green.withValues(alpha: 0.06) : theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
       child: Row(
         children: [
           Icon(installment.isPaid ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-              color: installment.isPaid ? Colors.green : theme.colorScheme.outline),
+              color: installment.isPaid ? Colors.green : theme.colorScheme.outline, size: 20),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -133,17 +212,12 @@ class _InstallmentRow extends StatelessWidget {
           const SizedBox(width: 10),
           if (!installment.isPaid)
             FilledButton(
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => MobileMoneyPaymentPage(
-                    child: child,
-                    landing: landing,
-                    amount: installment.amount,
-                    paymentPurpose: installment.name,
-                  ),
-                ),
-              ),
+              onPressed: () => context.push('/parent/payment', extra: {
+                'child': child,
+                'landing': landing,
+                'amount': installment.amount,
+                'paymentPurpose': installment.name,
+              }),
               child: Text(strings.payNow),
             ),
         ],
@@ -155,8 +229,7 @@ class _InstallmentRow extends StatelessWidget {
 }
 
 /// Also used directly for registration fees (child == null in that
-/// case, admissionRequestId set instead) - see the optional
-/// constructor params below.
+/// case, admissionRequestId set instead).
 class MobileMoneyPaymentPage extends ConsumerStatefulWidget {
   final EnrolledChild? child;
   final String? admissionRequestId;
@@ -195,18 +268,13 @@ class _MobileMoneyPaymentPageState extends ConsumerState<MobileMoneyPaymentPage>
             phoneNumber: _phoneController.text.trim(),
           );
       if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PaymentStatusPage(
-            transactionId: transaction.id,
-            landing: widget.landing,
-            child: widget.child,
-            paymentPurpose: widget.paymentPurpose,
-            amount: widget.amount,
-          ),
-        ),
-      );
+      context.pushReplacement('/parent/payment-status', extra: {
+        'transactionId': transaction.id,
+        'landing': widget.landing,
+        'child': widget.child,
+        'paymentPurpose': widget.paymentPurpose,
+        'amount': widget.amount,
+      });
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
     } finally {
@@ -217,6 +285,7 @@ class _MobileMoneyPaymentPageState extends ConsumerState<MobileMoneyPaymentPage>
   @override
   Widget build(BuildContext context) {
     final strings = AppStrings(ref.watch(activeLocaleProvider));
+    final theme = Theme.of(context);
 
     return Theme(
       data: buildSchoolTheme(widget.landing.primaryColor, widget.landing.secondaryColor),
@@ -225,30 +294,70 @@ class _MobileMoneyPaymentPageState extends ConsumerState<MobileMoneyPaymentPage>
         body: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 480),
-            child: Padding(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: Form(
                 key: _formKey,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.phone_android_rounded, size: 56, color: Theme.of(context).colorScheme.primary),
+                    brandedSubpageHeader(context, schoolName: widget.landing.schoolName, logoUrl: widget.landing.logoUrl),
+                    const SizedBox(height: 8),
+                    Icon(Icons.phone_android_rounded, size: 56, color: theme.colorScheme.primary),
                     const SizedBox(height: 12),
-                    Text(widget.paymentPurpose, style: Theme.of(context).textTheme.titleMedium),
+                    Text(widget.paymentPurpose, style: theme.textTheme.titleMedium),
+                    if (widget.child != null)
+                      Text(widget.child!.fullName, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+                    const SizedBox(height: 8),
                     Text('${widget.amount.toStringAsFixed(0)} FCFA',
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+                        style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
                     const SizedBox(height: 24),
                     TextFormField(
                       controller: _phoneController,
                       keyboardType: TextInputType.phone,
-                      decoration: InputDecoration(labelText: strings.mobileMoneyNumber, border: const OutlineInputBorder(), hintText: '6XXXXXXXX'),
+                      decoration: InputDecoration(
+                        labelText: strings.mobileMoneyNumber,
+                        hintText: '6XXXXXXXX',
+                        prefixIcon: const Icon(Icons.phone_outlined),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
                       validator: (v) {
                         final digits = (v ?? '').replaceAll(RegExp(r'\D'), '');
                         if (digits.length < 9) return strings.enterValidNumber;
                         return null;
                       },
                     ),
+                    const SizedBox(height: 8),
+                    Text(
+                      strings.isFrench
+                          ? 'Utilisez le numéro MTN ou Orange Money qui recevra la demande de paiement.'
+                          : 'Use the MTN or Orange Money number that will receive the payment request.',
+                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+                    ),
                     const SizedBox(height: 20),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.info_outline_rounded, size: 18),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              strings.isFrench
+                                  ? 'Après avoir appuyé sur "Confirmer", vous recevrez une demande sur votre téléphone. Entrez votre code secret Mobile Money pour terminer le paiement.'
+                                  : 'After tapping "Confirm", you will receive a prompt on your phone. Enter your Mobile Money PIN to complete the payment.',
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 22),
                     SizedBox(
                       width: double.infinity,
                       height: 50,
@@ -335,11 +444,13 @@ class _PaymentStatusPageState extends ConsumerState<PaymentStatusPage> {
         body: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 480),
-            child: Padding(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  brandedSubpageHeader(context, schoolName: widget.landing.schoolName, logoUrl: widget.landing.logoUrl),
+                  const SizedBox(height: 8),
                   Icon(
                     success ? Icons.check_circle_rounded : failed ? Icons.cancel_rounded : Icons.hourglass_top_rounded,
                     size: 72,
@@ -349,6 +460,22 @@ class _PaymentStatusPageState extends ConsumerState<PaymentStatusPage> {
                   Text(
                     success ? strings.paymentSuccessful : failed ? strings.paymentFailed : strings.paymentPending,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    success
+                        ? (strings.isFrench
+                            ? 'Votre paiement a été confirmé. L\'école peut maintenant voir cette mise à jour.'
+                            : 'Your payment has been confirmed. The school can now see this update.')
+                        : failed
+                            ? (strings.isFrench
+                                ? 'Le paiement n\'a pas pu être confirmé. Vous pouvez réessayer.'
+                                : 'The payment could not be confirmed. You can try again.')
+                            : (strings.isFrench
+                                ? 'Vérifiez votre téléphone et entrez votre code secret Mobile Money pour continuer. Cette page se mettra à jour automatiquement.'
+                                : 'Check your phone and enter your Mobile Money PIN to continue. This page will update automatically.'),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Theme.of(context).colorScheme.outline),
                   ),
                   const SizedBox(height: 24),
                   if (success)

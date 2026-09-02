@@ -1,7 +1,50 @@
 import 'package:flutter/material.dart';
 
+
+
+/// A consistent small branding strip (logo + school name) for every
+/// parent sub-page - reused instead of rebuilding it per page, so
+/// the parent always sees which school they're dealing with, not
+/// just a generic AppBar title.
+Widget brandedSubpageHeader(BuildContext context, {required String schoolName, required String logoUrl, String? subtitle}) {
+  final theme = Theme.of(context);
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 20),
+    child: Row(
+      children: [
+        if (logoUrl.isNotEmpty)
+          Container(
+            width: 40,
+            height: 40,
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: theme.colorScheme.outlineVariant),
+            ),
+            child: Image.network(logoUrl, fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => Icon(Icons.school_rounded, color: theme.colorScheme.primary, size: 20)),
+          )
+        else
+          Icon(Icons.school_rounded, color: theme.colorScheme.primary),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(schoolName, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+              if (subtitle != null)
+                Text(subtitle, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
 /// All Parent module data models in one file (matches the
 /// consolidation pattern already used for Landing/Auth/Teacher).
+
 
 class ParentProfile {
   final String parentId; // parents.id

@@ -1,19 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../../core/l10n/app_strings.dart';
 import '../../core/responsive.dart';
 import '../landing/landing_providers.dart';
 import 'parent_models.dart';
 import 'parent_providers.dart';
-
-import 'package:http/http.dart' as http;
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
-/// Report Card + Review My Child - kept in one file since both are
-/// read-only academic views of the same child, following the
-/// consolidation convention used across this project.
 
 class ReportCardPage extends ConsumerStatefulWidget {
   final EnrolledChild child;
@@ -25,6 +21,117 @@ class ReportCardPage extends ConsumerStatefulWidget {
 
 class _ReportCardPageState extends ConsumerState<ReportCardPage> {
   String? _selectedTermId;
+
+  @override
+  Widget build(BuildContext context) {
+    final landing = ref.watch(landingProvider).value;
+    if (landing == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    final strings = AppStrings(ref.watch(activeLocaleProvider));
+    final yearIdAsync = ref.watch(currentAcademicYearIdProvider(widget.child.schoolId));
+
+    return Theme(
+      data: buildSchoolTheme(landing.primaryColor, landing.secondaryColor),
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(strings.reportCards),
+          actions: [
+            if (_selectedTermId != null)
+              Consumer(
+                builder: (context, ref, _) {
+                  final reportAsync = ref.watch(
+                    reportCardProvider((studentId: widget.child.studentId, termId: _selectedTermId!)),
+                  );
+                  final report = reportAsync.valueOrNull;
+                  if (report == null) return const SizedBox();
+                  return IconButton(
+                    icon: const Icon(Icons.download_rounded),
+                    tooltip: strings.downloadReceipt,
+                    onPressed: () => _downloadReportCard(context, report, landing),
+                  );
+                },
+              ),
+          ],
+        ),
+        body: yearIdAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text('$e')),
+          data: (yearId) {
+            if (yearId == null) {
+              return Center(child: Text(strings.academicYearNotSet));
+            }
+            final termsAsync = ref.watch(termsForYearProvider(yearId));
+
+            return termsAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(child: Text('$e')),
+              data: (terms) {
+                if (terms.isEmpty) return Center(child: Text(strings.academicYearNotSet));
+                _selectedTermId ??= terms.firstWhere((t) => t.isCurrent, orElse: () => terms.first).id;
+
+                return Column(
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        Responsive.pagePadding(context), Responsive.pagePadding(context), Responsive.pagePadding(context), 8,
+                      ),
+                      child: brandedSubpageHeader(
+                        context,
+                        schoolName: landing.schoolName,
+                        logoUrl: landing.logoUrl,
+                        subtitle: widget.child.fullName,
+                      ),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: Responsive.pagePadding(context)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            strings.isFrench
+                                ? 'Choisissez un trimestre pour voir le bulletin publié par l\'école.'
+                                : 'Choose a term to view the report card published by the school.',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.outline),
+                          ),
+                          const SizedBox(height: 10),
+                          DropdownButtonFormField<String>(
+                            initialValue: _selectedTermId,
+                            decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(14))),
+                            items: terms.map((t) => DropdownMenuItem(value: t.id, child: Text(t.termName))).toList(),
+                            onChanged: (value) => setState(() => _selectedTermId = value),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: Consumer(
+                        builder: (context, ref, _) {
+                          final reportAsync = ref.watch(
+                            reportCardProvider((studentId: widget.child.studentId, termId: _selectedTermId!)),
+                          );
+                          return reportAsync.when(
+                            loading: () => const Center(child: CircularProgressIndicator()),
+                            error: (e, _) => Center(child: Text('$e')),
+                            data: (report) {
+                              if (report == null) {
+                                return _NotPublishedView(landing: landing, strings: strings);
+                              }
+                              return _ReportCardView(report: report, strings: strings);
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   Future<void> _downloadReportCard(BuildContext context, ReportCardSummary report, dynamic landing) async {
     final doc = pw.Document();
 
@@ -58,7 +165,6 @@ class _ReportCardPageState extends ConsumerState<ReportCardPage> {
                 child: pw.Text('STUDENT REPORT CARD', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
               ),
               pw.SizedBox(height: 20),
-
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
@@ -72,8 +178,6 @@ class _ReportCardPageState extends ConsumerState<ReportCardPage> {
                 child: pw.Text('Term: ${report.termName}', style: const pw.TextStyle(fontSize: 11)),
               ),
               pw.SizedBox(height: 16),
-
-              // Subjects table
               pw.Table(
                 border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey400),
                 columnWidths: {
@@ -104,16 +208,13 @@ class _ReportCardPageState extends ConsumerState<ReportCardPage> {
                     ]),
                 ],
               ),
-
               pw.SizedBox(height: 20),
               pw.Divider(),
-              if (report.overallAverage != null)
-                _summaryLine('Average', report.overallAverage!.toStringAsFixed(2)),
+              if (report.overallAverage != null) _summaryLine('Average', report.overallAverage!.toStringAsFixed(2)),
               if (report.classRank != null && report.totalStudents != null)
                 _summaryLine('Class Rank', '${report.classRank} / ${report.totalStudents}'),
               if (report.principalComment != null && report.principalComment!.isNotEmpty)
                 _summaryLine('Principal\'s Remark', report.principalComment!),
-
               pw.SizedBox(height: 24),
               pw.Text('Generated automatically by the school management system.',
                   style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
@@ -149,89 +250,6 @@ class _ReportCardPageState extends ConsumerState<ReportCardPage> {
       ),
     );
   }
-  @override
-  Widget build(BuildContext context) {
-    final landing = ref.watch(landingProvider).value;
-    if (landing == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    final strings = AppStrings(ref.watch(activeLocaleProvider));
-    final yearIdAsync = ref.watch(currentAcademicYearIdProvider(widget.child.schoolId));
-
-    return Theme(
-      data: buildSchoolTheme(landing.primaryColor, landing.secondaryColor),
-      child: Scaffold(
-                appBar: AppBar(
-          title: Text(strings.reportCards),
-          actions: [
-            if (_selectedTermId != null)
-              Consumer(
-                builder: (context, ref, _) {
-                  final reportAsync = ref.watch(
-                    reportCardProvider((studentId: widget.child.studentId, termId: _selectedTermId!)),
-                  );
-                  final report = reportAsync.valueOrNull;
-                  if (report == null) return const SizedBox();
-                  return IconButton(
-                    icon: const Icon(Icons.download_rounded),
-                    tooltip: strings.downloadReceipt,
-                    onPressed: () => _downloadReportCard(context, report, landing),
-                  );
-                },
-              ),
-          ],
-        ),
-        body: yearIdAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('$e')),
-          data: (yearId) {
-            if (yearId == null) return Center(child: Text(strings.academicYearNotSet));
-            final termsAsync = ref.watch(termsForYearProvider(yearId));
-
-            return termsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('$e')),
-              data: (terms) {
-                if (terms.isEmpty) return Center(child: Text(strings.academicYearNotSet));
-                _selectedTermId ??= terms.firstWhere((t) => t.isCurrent, orElse: () => terms.first).id;
-
-                return Column(
-                  children: [
-                    Padding(
-                      padding: EdgeInsets.all(Responsive.pagePadding(context)),
-                      child: DropdownButtonFormField<String>(
-                        initialValue: _selectedTermId,
-                        decoration: const InputDecoration(border: OutlineInputBorder()),
-                        items: terms.map((t) => DropdownMenuItem(value: t.id, child: Text(t.termName))).toList(),
-                        onChanged: (value) => setState(() => _selectedTermId = value),
-                      ),
-                    ),
-                    Expanded(
-                      child: Consumer(
-                        builder: (context, ref, _) {
-                          final reportAsync = ref.watch(
-                            reportCardProvider((studentId: widget.child.studentId, termId: _selectedTermId!)),
-                          );
-                          return reportAsync.when(
-                            loading: () => const Center(child: CircularProgressIndicator()),
-                            error: (e, _) => Center(child: Text('$e')),
-                            data: (report) {
-                              if (report == null) {
-                                return _NotPublishedView(landing: landing, strings: strings);
-                              }
-                              return _ReportCardView(report: report, strings: strings);
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                );
-              },
-            );
-          },
-        ),
-      ),
-    );
-  }
 }
 
 class _NotPublishedView extends StatelessWidget {
@@ -248,14 +266,7 @@ class _NotPublishedView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (landing.logoUrl.isNotEmpty)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(landing.logoUrl, width: 64, height: 64, fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => Icon(Icons.school_rounded, size: 64, color: theme.colorScheme.primary)),
-              )
-            else
-              Icon(Icons.assignment_late_outlined, size: 64, color: theme.colorScheme.primary),
+            Icon(Icons.assignment_late_outlined, size: 64, color: theme.colorScheme.primary),
             const SizedBox(height: 20),
             Text(strings.reportCardNotPublishedTitle,
                 textAlign: TextAlign.center, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
@@ -284,7 +295,7 @@ class _ReportCardView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
       children: [
         Container(
           padding: const EdgeInsets.all(20),
@@ -298,7 +309,16 @@ class _ReportCardView extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text(
+            strings.isFrench
+                ? 'Ce tableau montre la note et le coefficient de chaque matière. Utilisez l\'icône de téléchargement en haut pour obtenir une copie PDF de ce bulletin.'
+                : 'This table shows each subject\'s mark and coefficient. Use the download icon at the top to get a PDF copy of this report card.',
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+          ),
+        ),
         Container(
           decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(18)),
           child: Column(
@@ -397,7 +417,15 @@ class ReviewChildPage extends ConsumerWidget {
             return ListView(
               padding: const EdgeInsets.all(20),
               children: [
+                brandedSubpageHeader(context, schoolName: landing.schoolName, logoUrl: landing.logoUrl, subtitle: child.fullName),
                 Text(strings.attendanceSummary, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                Text(
+                  strings.isFrench
+                      ? 'Ce résumé montre combien de fois votre enfant a été présent, absent ou en retard cette année.'
+                      : 'This summary shows how many times your child has been present, absent, or late this year.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.outline),
+                ),
                 const SizedBox(height: 12),
                 attendanceAsync.when(
                   loading: () => const Center(child: CircularProgressIndicator()),
@@ -412,6 +440,13 @@ class ReviewChildPage extends ConsumerWidget {
                 ),
                 const SizedBox(height: 28),
                 Text(strings.schoolComments, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                Text(
+                  strings.isFrench
+                      ? 'Ces commentaires sont écrits par les enseignants et approuvés par le Directeur avant d\'apparaître ici.'
+                      : 'These comments are written by teachers and approved by the Principal before appearing here.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.outline),
+                ),
                 const SizedBox(height: 12),
                 commentsAsync.when(
                   loading: () => const Center(child: CircularProgressIndicator()),

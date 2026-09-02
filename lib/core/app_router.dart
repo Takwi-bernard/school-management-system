@@ -63,6 +63,22 @@ final appRouter = GoRouter(
   path: '/parent',
   pageBuilder: (c, s) => _page(const ParentHome(), s),
   routes: [
+        GoRoute(
+      path: 'payment-status',
+      pageBuilder: (c, s) {
+        final args = s.extra as Map<String, dynamic>;
+        return _page(
+          PaymentStatusPage(
+            transactionId: args['transactionId'] as String,
+            landing: args['landing'],
+            child: args['child'] as EnrolledChild?,
+            paymentPurpose: args['paymentPurpose'] as String,
+            amount: args['amount'] as double,
+          ),
+          s,
+        );
+      },
+    ),
     GoRoute(
       path: 'enroll',
       pageBuilder: (c, s) => _page(EnrollChildPage(schoolId: s.extra as String), s),
