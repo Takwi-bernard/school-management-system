@@ -20,6 +20,13 @@ class TeacherAssignmentDetailPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final isMobile = Responsive.isMobile(context);
+    final isTablet = Responsive.isTablet(context);
+    // FLAG (fixed): this used to jump straight from 1 column on
+    // mobile to 3 on anything else, so on a tablet-width window the
+    // three action cards got squeezed uncomfortably narrow. Now steps
+    // through 1 / 2 / 3 in line with Responsive's own breakpoints.
+    final columns = isMobile ? 1 : (isTablet ? 2 : 3);
+    final aspect = isMobile ? 3.2 : (isTablet ? 1.7 : 1.3);
     final strings = AppStrings(ref.watch(activeLocaleProvider));
 
     return Scaffold(
@@ -79,10 +86,10 @@ class TeacherAssignmentDetailPage extends ConsumerWidget {
                   GridView.count(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: isMobile ? 1 : 3,
+                    crossAxisCount: columns,
                     crossAxisSpacing: 14,
                     mainAxisSpacing: 14,
-                    childAspectRatio: isMobile ? 3.2 : 1.3,
+                    childAspectRatio: aspect,
                     children: [
                       _ActionCard(
                         icon: Icons.groups_outlined,

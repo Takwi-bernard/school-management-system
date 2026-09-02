@@ -90,6 +90,7 @@ class AppStrings {
       : "This account belongs to a different school.";
 
   // Teacher module
+  String get dashboard => isFrench ? 'Tableau de bord' : 'Dashboard';
   String get welcomeBack => isFrench ? 'Bon retour,' : 'Welcome back,';
   String get approvalPending => isFrench ? 'Approbation en attente' : 'Approval Pending';
   String get applicationNotApproved => isFrench ? 'Candidature non approuvée' : 'Application Not Approved';
@@ -252,11 +253,10 @@ class AppStrings {
   String get noCommentYet => isFrench
       ? "Aucun commentaire de l'école n'a encore été publié pour cet enfant."
       : 'No school comment has been published for this child yet.';
-        String get changePassword => isFrench ? 'Changer le mot de passe' : 'Change Password';
+  String get changePassword => isFrench ? 'Changer le mot de passe' : 'Change Password';
   String get cancel => isFrench ? 'Annuler' : 'Cancel';
   String get currentPassword => isFrench ? 'Mot de passe actuel' : 'Current Password';
   String get newPassword => isFrench ? 'Nouveau mot de passe' : 'New Password';
   String get passwordTooShort => isFrench ? 'Au moins 8 caractères.' : 'At least 8 characters.';
   String get passwordsDoNotMatch => isFrench ? 'Les mots de passe ne correspondent pas.' : 'Passwords do not match.';
-  
 }
