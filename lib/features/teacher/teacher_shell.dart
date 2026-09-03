@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/app_strings.dart';
-import '../../core/motion.dart';
 import '../../core/responsive.dart';
 import '../auth/auth_providers.dart';
 import '../landing/landing_providers.dart';
@@ -13,12 +12,19 @@ import 'teacher_profile.dart';
 import 'teacher_providers.dart';
 import 'teacher_timetable.dart';
 
-/// The three top-level destinations a teacher moves between day to
-/// day. Everything else (class list, marks entry, attendance,
-/// assignment detail) is a drill-down workflow reached FROM the
-/// dashboard and stays a pushed full-screen route with a back arrow -
-/// that's intentional, not an oversight: it keeps the sidebar short
-/// and stable instead of growing a new entry per assignment.
+/// Fixed, theme-independent ink tones for the sidebar. Deliberately
+/// NOT derived from the school's seed color: the sidebar's whole job
+/// is to read as a distinct navigation plane from the content canvas
+/// beneath it, for every school, regardless of how light or dark
+/// their brand color is. Text/icons on it are always white-based for
+/// guaranteed contrast; the school's own primary color only ever
+/// shows up as the slim accent bar on the active item.
+const _sidebarInk = Color(0xFF14161B);
+const _sidebarInkBorder = Color(0x1AFFFFFF); // white @ 10%
+const _sidebarHoverFill = Color(0x0DFFFFFF); // white @ 5%
+const _sidebarSelectedFill = Color(0x14FFFFFF); // white @ 8%
+const _sidebarDanger = Color(0xFFFF8A80);
+
 enum TeacherDestination { dashboard, timetable, profile }
 
 final teacherActiveDestinationProvider =
@@ -65,20 +71,25 @@ class TeacherShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final destination = ref.watch(teacherActiveDestinationProvider);
     final items = _items();
-    final content = KeyedSubtree(
+    final canvas = theme.colorScheme.surfaceContainerLowest;
+    final content = Container(
       key: ValueKey(destination),
+      color: canvas,
       child: _bodyFor(destination),
     );
 
     if (Responsive.isMobile(context)) {
       return Scaffold(
+        backgroundColor: canvas,
         appBar: AppBar(
           title: Text(items.firstWhere((i) => i.destination == destination).label),
         ),
         drawer: Drawer(
           width: 288,
+          backgroundColor: _sidebarInk,
           child: SafeArea(
             child: _SidebarContent(
               collapsed: false,
@@ -96,18 +107,19 @@ class TeacherShell extends ConsumerWidget {
             ),
           ),
         ),
-        body: AnimatedSwitcher(duration: const Duration(milliseconds: 200), child: content),
+        body: AnimatedSwitcher(duration: const Duration(milliseconds: 180), child: content),
       );
     }
 
     final collapsed = Responsive.isTablet(context);
 
     return Scaffold(
+      backgroundColor: canvas,
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Material(
-            color: Theme.of(context).colorScheme.surface,
+            color: _sidebarInk,
             child: SizedBox(
               width: collapsed ? 84 : 264,
               child: _SidebarContent(
@@ -124,7 +136,7 @@ class TeacherShell extends ConsumerWidget {
             ),
           ),
           Expanded(
-            child: AnimatedSwitcher(duration: const Duration(milliseconds: 200), child: content),
+            child: AnimatedSwitcher(duration: const Duration(milliseconds: 180), child: content),
           ),
         ],
       ),
@@ -140,9 +152,6 @@ class _NavItem {
   const _NavItem(this.destination, this.icon, this.activeIcon, this.label);
 }
 
-/// Shared between the desktop sidebar, the tablet icon rail and the
-/// mobile drawer, so all three stay visually identical - only the
-/// width and label visibility change.
 class _SidebarContent extends StatelessWidget {
   final bool collapsed;
   final String schoolName;
@@ -169,7 +178,6 @@ class _SidebarContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final borderColor = theme.colorScheme.outlineVariant.withValues(alpha: 0.4);
 
     return Column(
       children: [
@@ -186,13 +194,13 @@ class _SidebarContent extends StatelessWidget {
                         schoolName,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15, height: 1.2),
                       ),
                     ),
                   ],
                 ),
         ),
-        Divider(height: 1, color: borderColor),
+        const Divider(height: 1, color: _sidebarInkBorder),
         Expanded(
           child: ListView(
             padding: EdgeInsets.symmetric(vertical: 14, horizontal: collapsed ? 12 : 14),
@@ -202,6 +210,7 @@ class _SidebarContent extends StatelessWidget {
                   item: item,
                   collapsed: collapsed,
                   selected: item.destination == active,
+                  primary: theme.colorScheme.primary,
                   onTap: () => onSelect(item.destination),
                 ),
                 const SizedBox(height: 4),
@@ -209,7 +218,7 @@ class _SidebarContent extends StatelessWidget {
             ],
           ),
         ),
-        Divider(height: 1, color: borderColor),
+        const Divider(height: 1, color: _sidebarInkBorder),
         Padding(
           padding: EdgeInsets.all(collapsed ? 12 : 16),
           child: collapsed
@@ -222,7 +231,7 @@ class _SidebarContent extends StatelessWidget {
                       child: IconButton(
                         onPressed: onSignOut,
                         icon: const Icon(Icons.logout_rounded, size: 20),
-                        color: theme.colorScheme.error,
+                        color: _sidebarDanger,
                       ),
                     ),
                   ],
@@ -238,9 +247,8 @@ class _SidebarContent extends StatelessWidget {
                           Text(profile.fullName,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700)),
-                          Text(strings.teacher,
-                              style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.outline)),
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
+                          Text(strings.teacher, style: const TextStyle(color: Colors.white54, fontSize: 12)),
                         ],
                       ),
                     ),
@@ -249,7 +257,7 @@ class _SidebarContent extends StatelessWidget {
                       child: IconButton(
                         onPressed: onSignOut,
                         icon: const Icon(Icons.logout_rounded, size: 20),
-                        color: theme.colorScheme.error,
+                        color: _sidebarDanger,
                       ),
                     ),
                   ],
@@ -267,23 +275,25 @@ class _Logo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     if (logoUrl.isEmpty) {
       return Container(
         width: size,
         height: size,
-        decoration: BoxDecoration(color: theme.colorScheme.primaryContainer, borderRadius: BorderRadius.circular(11)),
-        child: Icon(Icons.school_rounded, color: theme.colorScheme.primary, size: size * 0.55),
+        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(11)),
+        child: Icon(Icons.school_rounded, color: Colors.white, size: size * 0.55),
       );
     }
     return ClipRRect(
       borderRadius: BorderRadius.circular(11),
-      child: Image.network(
-        logoUrl,
-        width: size,
-        height: size,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => Icon(Icons.school_rounded, color: theme.colorScheme.primary, size: size * 0.55),
+      child: Container(
+        color: Colors.white.withValues(alpha: 0.9),
+        child: Image.network(
+          logoUrl,
+          width: size,
+          height: size,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => Icon(Icons.school_rounded, size: size * 0.55),
+        ),
       ),
     );
   }
@@ -296,14 +306,13 @@ class _Avatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return CircleAvatar(
       radius: radius,
-      backgroundColor: theme.colorScheme.primaryContainer,
+      backgroundColor: Colors.white.withValues(alpha: 0.1),
       backgroundImage: profile.photoUrl != null ? NetworkImage(profile.photoUrl!) : null,
       child: profile.photoUrl == null
           ? Text(_initials(profile.fullName),
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: radius * 0.65, color: theme.colorScheme.primary))
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: radius * 0.65, color: Colors.white))
           : null,
     );
   }
@@ -316,56 +325,83 @@ class _Avatar extends StatelessWidget {
   }
 }
 
-class _NavTile extends StatelessWidget {
+class _NavTile extends StatefulWidget {
   final _NavItem item;
   final bool collapsed;
   final bool selected;
+  final Color primary;
   final VoidCallback onTap;
 
-  const _NavTile({required this.item, required this.collapsed, required this.selected, required this.onTap});
+  const _NavTile({
+    required this.item,
+    required this.collapsed,
+    required this.selected,
+    required this.primary,
+    required this.onTap,
+  });
+
+  @override
+  State<_NavTile> createState() => _NavTileState();
+}
+
+class _NavTileState extends State<_NavTile> {
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    // Active state is tinted with the SCHOOL's own primary color (from
-    // the seeded ColorScheme), never a hardcoded hex - so it always
-    // matches this school's branding and can't clash with another
-    // school's palette. Inactive/chrome colors come from Material's
-    // neutral surface tones for the same reason.
-    final fg = selected ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant;
+    final fg = widget.selected ? Colors.white : Colors.white70;
+    final fill = widget.selected ? _sidebarSelectedFill : (_hovered ? _sidebarHoverFill : Colors.transparent);
 
-    final tile = Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: EdgeInsets.symmetric(horizontal: collapsed ? 0 : 14, vertical: 12),
-          alignment: collapsed ? Alignment.center : Alignment.centerLeft,
-          decoration: BoxDecoration(
-            color: selected ? theme.colorScheme.primary.withValues(alpha: 0.12) : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: collapsed
-              ? Icon(selected ? item.activeIcon : item.icon, color: fg, size: 22)
-              : Row(
-                  children: [
-                    Icon(selected ? item.activeIcon : item.icon, color: fg, size: 20),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(item.label,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: fg,
-                            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                          )),
-                    ),
-                  ],
+    final row = widget.collapsed
+        ? Icon(widget.selected ? widget.item.activeIcon : widget.item.icon, color: fg, size: 22)
+        : Row(
+            children: [
+              Icon(widget.selected ? widget.item.activeIcon : widget.item.icon, color: fg, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(widget.item.label,
+                    style: TextStyle(
+                      color: fg,
+                      fontSize: 14,
+                      fontWeight: widget.selected ? FontWeight.w700 : FontWeight.w500,
+                    )),
+              ),
+            ],
+          );
+
+    final tile = MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Stack(
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 140),
+                padding: EdgeInsets.symmetric(horizontal: widget.collapsed ? 0 : 14, vertical: 12),
+                alignment: widget.collapsed ? Alignment.center : Alignment.centerLeft,
+                decoration: BoxDecoration(color: fill, borderRadius: BorderRadius.circular(12)),
+                child: row,
+              ),
+              if (widget.selected)
+                Positioned(
+                  left: 0,
+                  top: 8,
+                  bottom: 8,
+                  child: Container(
+                    width: 3,
+                    decoration: BoxDecoration(color: widget.primary, borderRadius: BorderRadius.circular(4)),
+                  ),
                 ),
+            ],
+          ),
         ),
       ),
     );
 
-    return collapsed ? Tooltip(message: item.label, child: tile) : tile;
+    return widget.collapsed ? Tooltip(message: widget.item.label, child: tile) : tile;
   }
 }

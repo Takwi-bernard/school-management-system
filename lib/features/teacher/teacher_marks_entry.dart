@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/l10n/app_strings.dart';
-import '../../core/motion.dart';
 import '../../core/responsive.dart';
 import '../landing/landing_providers.dart';
 import 'teacher_models.dart';
 import 'teacher_providers.dart';
+import 'teacher_ui.dart';
 
 class TeacherMarksEntryPage extends ConsumerStatefulWidget {
   final TeacherProfile profile;
@@ -94,6 +94,7 @@ class _TeacherMarksEntryPageState extends ConsumerState<TeacherMarksEntryPage> {
     );
 
     return Scaffold(
+      backgroundColor: theme.colorScheme.surfaceContainerLowest,
       appBar: AppBar(title: Text('${widget.assignment.subjectName} - ${strings.marksLabel}')),
       body: periodsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -105,11 +106,14 @@ class _TeacherMarksEntryPageState extends ConsumerState<TeacherMarksEntryPage> {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.lock_clock_outlined, size: 48, color: theme.colorScheme.outline),
-                  const SizedBox(height: 16),
-                  Text(strings.marksNotOpenYet, textAlign: TextAlign.center, style: theme.textTheme.bodyMedium),
-                ]),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: TeacherEmptyState(
+                    icon: Icons.lock_clock_outlined,
+                    title: strings.marksLabel,
+                    description: strings.marksNotOpenYet,
+                  ),
+                ),
               ),
             );
           }
@@ -142,40 +146,37 @@ class _TeacherMarksEntryPageState extends ConsumerState<TeacherMarksEntryPage> {
                     padding: EdgeInsets.all(Responsive.pagePadding(context)),
                     child: Center(
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 1100),
+                        constraints: const BoxConstraints(maxWidth: 1080),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            RevealOnScroll(
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(22),
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(colors: [theme.colorScheme.primary, theme.colorScheme.secondary]),
-                                  borderRadius: BorderRadius.circular(20),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(currentPeriod.name,
+                                          style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.3)),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '${strings.coefficientLabel} ${widget.assignment.coefficient}'
+                                        '${currentPeriod.dueDate != null ? ' · ${strings.dueLabel} ${_fmt(currentPeriod.dueDate!)}' : ''}',
+                                        style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(currentPeriod.name,
-                                        style: theme.textTheme.titleLarge
-                                            ?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      '${strings.coefficientLabel} ${widget.assignment.coefficient}'
-                                      '${currentPeriod.dueDate != null ? ' · ${strings.dueLabel} ${_fmt(currentPeriod.dueDate!)}' : ''}',
-                                      style: const TextStyle(color: Colors.white70),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                              ],
                             ),
                             const SizedBox(height: 20),
-                            Card(
-                              clipBehavior: Clip.antiAlias,
+                            TeacherCard(
+                              padding: EdgeInsets.zero,
                               child: Column(
                                 children: [
-                                  for (final s in students)
+                                  for (int i = 0; i < students.length; i++) ...[
+                                    if (i > 0) Divider(height: 1, color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5)),
                                     Padding(
                                       padding: const EdgeInsets.all(14),
                                       child: Column(
@@ -183,17 +184,24 @@ class _TeacherMarksEntryPageState extends ConsumerState<TeacherMarksEntryPage> {
                                         children: [
                                           Row(children: [
                                             Expanded(
-                                              child: Text(s.fullName,
+                                              child: Text(students[i].fullName,
                                                   style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
                                             ),
                                             for (final p in otherPeriods)
                                               Builder(builder: (context) {
                                                 final prev = allMarks.where(
-                                                    (m) => m.studentId == s.studentId && m.examPeriodId == p.id);
+                                                    (m) => m.studentId == students[i].studentId && m.examPeriodId == p.id);
                                                 if (prev.isEmpty) return const SizedBox.shrink();
                                                 return Padding(
                                                   padding: const EdgeInsets.only(left: 8),
-                                                  child: Chip(label: Text('${p.name}: ${prev.first.score}')),
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                    decoration: BoxDecoration(
+                                                      color: theme.colorScheme.surfaceContainerHighest,
+                                                      borderRadius: BorderRadius.circular(8),
+                                                    ),
+                                                    child: Text('${p.name}: ${prev.first.score}', style: theme.textTheme.labelSmall),
+                                                  ),
                                                 );
                                               }),
                                           ]),
@@ -202,22 +210,31 @@ class _TeacherMarksEntryPageState extends ConsumerState<TeacherMarksEntryPage> {
                                             SizedBox(
                                               width: 110,
                                               child: TextField(
-                                                controller: _scoreFor(s.studentId),
+                                                controller: _scoreFor(students[i].studentId),
                                                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                                decoration: InputDecoration(labelText: strings.scoreLabel, isDense: true),
+                                                decoration: InputDecoration(
+                                                  labelText: strings.scoreLabel,
+                                                  isDense: true,
+                                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                                ),
                                               ),
                                             ),
                                             const SizedBox(width: 12),
                                             Expanded(
                                               child: TextField(
-                                                controller: _remarkFor(s.studentId),
-                                                decoration: InputDecoration(labelText: strings.commentOptional, isDense: true),
+                                                controller: _remarkFor(students[i].studentId),
+                                                decoration: InputDecoration(
+                                                  labelText: strings.commentOptional,
+                                                  isDense: true,
+                                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                                ),
                                               ),
                                             ),
                                           ]),
                                         ],
                                       ),
                                     ),
+                                  ],
                                 ],
                               ),
                             ),

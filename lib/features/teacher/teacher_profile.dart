@@ -3,17 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/l10n/app_strings.dart';
-import '../../core/motion.dart';
 import '../../core/responsive.dart';
 import '../landing/landing_providers.dart';
 import 'teacher_models.dart';
 import 'teacher_providers.dart';
+import 'teacher_ui.dart';
 
-/// Now a shell tab, not its own pushed page/Scaffold. The old
-/// standalone "Sign Out" button at the bottom was removed here - it's
-/// redundant now that the sidebar (desktop/tablet) and drawer
-/// (mobile) always carry one, and having it twice just added clutter
-/// without adding capability.
+/// Shell tab, not its own pushed page. No standalone "Sign Out"
+/// button here anymore - the sidebar/drawer always has one, so a
+/// second copy was just clutter.
 class TeacherProfileTab extends ConsumerStatefulWidget {
   final TeacherProfile profile;
   const TeacherProfileTab({super.key, required this.profile});
@@ -93,128 +91,119 @@ class _TeacherProfileTabState extends ConsumerState<TeacherProfileTab> {
     final p = widget.profile;
     final locale = ref.watch(activeLocaleProvider);
     final strings = AppStrings(locale);
+    final pad = Responsive.pagePadding(context);
 
     return SafeArea(
       child: SingleChildScrollView(
-        padding: EdgeInsets.all(Responsive.pagePadding(context)),
+        padding: EdgeInsets.fromLTRB(pad, 24, pad, 32),
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 640),
-            child: RevealOnScroll(
-              child: Column(
-                children: [
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(28),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [
-                        theme.colorScheme.primary,
-                        theme.colorScheme.primary.withValues(alpha: 0.8),
-                      ]),
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: Column(
-                      children: [
-                        Stack(
-                          children: [
-                            CircleAvatar(
-                              radius: 52,
-                              backgroundColor: Colors.white24,
-                              backgroundImage: p.photoUrl != null ? NetworkImage(p.photoUrl!) : null,
-                              child: p.photoUrl == null
-                                  ? Text(
-                                      _initials(p.fullName),
-                                      style: const TextStyle(
-                                          fontSize: 32, fontWeight: FontWeight.w800, color: Colors.white),
-                                    )
-                                  : null,
-                            ),
-                            Positioned(
-                              bottom: 0,
-                              right: 0,
-                              child: HoverLift(
-                                liftPixels: 2,
-                                onTap: _uploadingPhoto ? null : () => _changePhoto(strings),
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                                  child: _uploadingPhoto
-                                      ? const SizedBox(
-                                          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                                      : Icon(Icons.camera_alt_rounded, size: 18, color: theme.colorScheme.primary),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TeacherPageHeader(title: strings.myProfile),
+                const SizedBox(height: 20),
+                TeacherCard(
+                  child: Row(
+                    children: [
+                      Stack(
+                        children: [
+                          CircleAvatar(
+                            radius: 34,
+                            backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
+                            backgroundImage: p.photoUrl != null ? NetworkImage(p.photoUrl!) : null,
+                            child: p.photoUrl == null
+                                ? Text(_initials(p.fullName),
+                                    style: TextStyle(fontWeight: FontWeight.w800, color: theme.colorScheme.primary, fontSize: 20))
+                                : null,
+                          ),
+                          Positioned(
+                            bottom: -2,
+                            right: -2,
+                            child: TeacherPressable(
+                              borderRadius: BorderRadius.circular(20),
+                              onTap: _uploadingPhoto ? null : () => _changePhoto(strings),
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.surface,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6)),
                                 ),
+                                child: _uploadingPhoto
+                                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                                    : Icon(Icons.camera_alt_rounded, size: 15, color: theme.colorScheme.primary),
                               ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(p.fullName, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                            if (p.email != null) ...[
+                              const SizedBox(height: 2),
+                              Text(p.email!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                            ],
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(strings.teacher,
+                                  style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.primary, fontWeight: FontWeight.w700)),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 16),
-                        Text(p.fullName,
-                            style: theme.textTheme.headlineSmall
-                                ?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
-                        if (p.email != null) ...[
-                          const SizedBox(height: 4),
-                          Text(p.email!, style: const TextStyle(color: Colors.white70)),
-                        ],
-                        const SizedBox(height: 10),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration:
-                              BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(20)),
-                          child: Text(strings.teacher, style: theme.textTheme.labelMedium?.copyWith(color: Colors.white)),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 24),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(22),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.12)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(strings.personalInformation,
-                            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: _nameController,
-                          decoration: InputDecoration(
-                            labelText: strings.fullName,
-                            prefixIcon: const Icon(Icons.person_outline),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                          ),
+                ),
+                const SizedBox(height: 16),
+                TeacherCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(strings.personalInformation, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _nameController,
+                        decoration: InputDecoration(
+                          labelText: strings.fullName,
+                          prefixIcon: const Icon(Icons.person_outline),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        const SizedBox(height: 14),
-                        TextField(
-                          controller: _phoneController,
-                          keyboardType: TextInputType.phone,
-                          decoration: InputDecoration(
-                            labelText: strings.phoneNumber,
-                            prefixIcon: const Icon(Icons.phone_outlined),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                          ),
+                      ),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: _phoneController,
+                        keyboardType: TextInputType.phone,
+                        decoration: InputDecoration(
+                          labelText: strings.phoneNumber,
+                          prefixIcon: const Icon(Icons.phone_outlined),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        const SizedBox(height: 20),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton(
-                            onPressed: _saving ? null : () => _save(strings),
-                            child: _saving
-                                ? const SizedBox(
-                                    width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                                : Text(strings.saveChanges),
-                          ),
+                      ),
+                      const SizedBox(height: 18),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: _saving ? null : () => _save(strings),
+                          child: _saving
+                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                              : Text(strings.saveChanges),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 24),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),

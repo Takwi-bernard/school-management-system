@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/l10n/app_strings.dart';
-import '../../core/motion.dart';
 import '../../core/responsive.dart';
 import '../landing/landing_providers.dart';
 import 'teacher_models.dart';
 import 'teacher_providers.dart';
+import 'teacher_ui.dart';
 
 class TeacherAttendancePage extends ConsumerStatefulWidget {
   final TeacherProfile profile;
@@ -88,6 +88,7 @@ class _TeacherAttendancePageState extends ConsumerState<TeacherAttendancePage> {
     };
 
     return Scaffold(
+      backgroundColor: theme.colorScheme.surfaceContainerLowest,
       appBar: AppBar(title: Text('${widget.assignment.className} - ${strings.attendanceLabel}')),
       body: rosterAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -113,54 +114,41 @@ class _TeacherAttendancePageState extends ConsumerState<TeacherAttendancePage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        RevealOnScroll(
-                          child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(colors: [theme.colorScheme.primary, theme.colorScheme.secondary]),
-                              borderRadius: BorderRadius.circular(20),
+                        TeacherCard(
+                          child: Row(children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(strings.dateLabel,
+                                      style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                                  const SizedBox(height: 2),
+                                  Text(_fmt(_date), style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                                ],
+                              ),
                             ),
-                            child: Row(children: [
-                              Expanded(
-                                child: Text('${strings.dateLabel}: ${_fmt(_date)}',
-                                    style: theme.textTheme.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.w700)),
-                              ),
-                              HoverLift(
-                                liftPixels: 2,
-                                onTap: _pickDate,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-                                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                    Icon(Icons.calendar_today_outlined, size: 16, color: theme.colorScheme.primary),
-                                    const SizedBox(width: 8),
-                                    Text(strings.changeDate, style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.w700)),
-                                  ]),
-                                ),
-                              ),
-                            ]),
-                          ),
+                            OutlinedButton.icon(
+                              onPressed: _pickDate,
+                              icon: const Icon(Icons.calendar_today_outlined, size: 16),
+                              label: Text(strings.changeDate),
+                            ),
+                          ]),
                         ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 18),
                         Expanded(
-                          child: ListView.separated(
-                            itemCount: students.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 8),
-                            itemBuilder: (context, i) {
-                              final s = students[i];
-                              return RevealOnScroll(
-                                delay: Duration(milliseconds: (i * 25).clamp(0, 250)),
-                                child: Container(
-                                  padding: const EdgeInsets.all(14),
-                                  decoration: BoxDecoration(
-                                    color: theme.colorScheme.surfaceContainerHighest,
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
+                          child: TeacherCard(
+                            padding: EdgeInsets.zero,
+                            child: ListView.separated(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              itemCount: students.length,
+                              separatorBuilder: (_, __) => Divider(height: 1, color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5)),
+                              itemBuilder: (context, i) {
+                                final s = students[i];
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                                   child: Row(children: [
                                     Expanded(
-                                      child: Text(s.fullName,
-                                          style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                                      child: Text(s.fullName, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
                                     ),
                                     DropdownButton<String>(
                                       value: _status[s.studentId] ?? 'present',
@@ -171,12 +159,12 @@ class _TeacherAttendancePageState extends ConsumerState<TeacherAttendancePage> {
                                       onChanged: (v) => setState(() => _status[s.studentId] = v ?? 'present'),
                                     ),
                                   ]),
-                                ),
-                              );
-                            },
+                                );
+                              },
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 14),
                         SizedBox(
                           width: double.infinity,
                           child: FilledButton.icon(

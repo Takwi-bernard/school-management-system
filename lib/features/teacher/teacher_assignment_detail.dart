@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/l10n/app_strings.dart';
-import '../../core/motion.dart';
 import '../../core/responsive.dart';
 import '../landing/landing_providers.dart';
 import 'teacher_attendance.dart';
 import 'teacher_class_list.dart';
 import 'teacher_marks_entry.dart';
 import 'teacher_models.dart';
+import 'teacher_ui.dart';
 
 class TeacherAssignmentDetailPage extends ConsumerWidget {
   final TeacherProfile profile;
@@ -21,75 +21,63 @@ class TeacherAssignmentDetailPage extends ConsumerWidget {
     final theme = Theme.of(context);
     final isMobile = Responsive.isMobile(context);
     final isTablet = Responsive.isTablet(context);
-    // FLAG (fixed): this used to jump straight from 1 column on
-    // mobile to 3 on anything else, so on a tablet-width window the
-    // three action cards got squeezed uncomfortably narrow. Now steps
-    // through 1 / 2 / 3 in line with Responsive's own breakpoints.
     final columns = isMobile ? 1 : (isTablet ? 2 : 3);
-    final aspect = isMobile ? 3.2 : (isTablet ? 1.7 : 1.3);
     final strings = AppStrings(ref.watch(activeLocaleProvider));
 
     return Scaffold(
+      backgroundColor: theme.colorScheme.surfaceContainerLowest,
       appBar: AppBar(title: Text(assignment.subjectName)),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: EdgeInsets.all(Responsive.pagePadding(context)),
           child: Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 900),
+              constraints: const BoxConstraints(maxWidth: 960),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  RevealOnScroll(
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(26),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [theme.colorScheme.primary, theme.colorScheme.secondary],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(13),
                         ),
-                        borderRadius: BorderRadius.circular(24),
+                        child: Icon(Icons.menu_book_outlined, color: theme.colorScheme.primary, size: 24),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: 52,
-                            height: 52,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.18),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: const Icon(Icons.menu_book_outlined, color: Colors.white, size: 26),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(assignment.subjectName,
-                              style: theme.textTheme.headlineSmall
-                                  ?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
-                          const SizedBox(height: 4),
-                          Text(assignment.className,
-                              style: theme.textTheme.titleMedium?.copyWith(color: Colors.white70)),
-                          const SizedBox(height: 16),
-                          Wrap(spacing: 10, runSpacing: 10, children: [
-                            _Badge(label: '${strings.coefficientLabel} ${assignment.coefficient}'),
-                            _Badge(label: '${assignment.periodsPerWeek} ${strings.periodsPerWeekLabel}'),
-                          ]),
-                        ],
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(assignment.subjectName,
+                                style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.3)),
+                            const SizedBox(height: 2),
+                            Text(assignment.className,
+                                style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                            const SizedBox(height: 10),
+                            Wrap(spacing: 8, runSpacing: 8, children: [
+                              _Badge(label: '${strings.coefficientLabel} ${assignment.coefficient}'),
+                              _Badge(label: '${assignment.periodsPerWeek} ${strings.periodsPerWeekLabel}'),
+                            ]),
+                          ],
+                        ),
                       ),
-                    ),
+                    ],
                   ),
-                  const SizedBox(height: 26),
-                  Text(strings.whatWouldYouLikeToDo, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 28),
+                  Text(strings.whatWouldYouLikeToDo, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 14),
                   GridView.count(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     crossAxisCount: columns,
-                    crossAxisSpacing: 14,
-                    mainAxisSpacing: 14,
-                    childAspectRatio: aspect,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: isMobile ? 3.2 : (isTablet ? 1.9 : 1.5),
                     children: [
                       _ActionCard(
                         icon: Icons.groups_outlined,
@@ -129,10 +117,15 @@ class _Badge extends StatelessWidget {
   const _Badge({required this.label});
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
-      child: Text(label, style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.white, fontSize: 13)),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6)),
+      ),
+      child: Text(label, style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w600)),
     );
   }
 }
@@ -147,28 +140,28 @@ class _ActionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return RevealOnScroll(
-      child: HoverLift(
+    return TeacherCard(
+      padding: EdgeInsets.zero,
+      child: TeacherPressable(
         onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(18)),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 44,
-                height: 44,
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: [theme.colorScheme.primary, theme.colorScheme.secondary]),
-                  borderRadius: BorderRadius.circular(12),
+                  color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(11),
                 ),
-                child: Icon(icon, color: Colors.white, size: 22),
+                child: Icon(icon, color: theme.colorScheme.primary, size: 20),
               ),
-              const SizedBox(height: 14),
-              Text(label, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 12),
+              Text(label, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
               const SizedBox(height: 4),
-              Text(description, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+              Text(description, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
             ],
           ),
         ),
