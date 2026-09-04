@@ -22,6 +22,7 @@ class EnrollChildPage extends ConsumerStatefulWidget {
 class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
   int _step = 0;
   bool _submitting = false;
+    String? _gender;
 
   final _firstName = TextEditingController();
   final _lastName = TextEditingController();
@@ -99,7 +100,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
   int get _totalSteps => _hasSubjectStep ? 5 : 4;
 
   void _goNext() {
-    if (_step == 0 && !_childInfoKey.currentState!.validate()) return;
+      if (_step == 0 && (!_childInfoKey.currentState!.validate() || _gender == null)) return;
     if (_step == 1 && _selectedClass == null) return;
     setState(() => _step++);
   }
@@ -363,6 +364,26 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
                 ),
               ),
             ),
+          ),
+                    const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _GenderOption(
+                  label: strings.isFrench ? 'Masculin' : 'Male',
+                  selected: _gender == 'male',
+                  onTap: () => setState(() => _gender = 'male'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _GenderOption(
+                  label: strings.isFrench ? 'Féminin' : 'Female',
+                  selected: _gender == 'female',
+                  onTap: () => setState(() => _gender = 'female'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -686,6 +707,34 @@ class _NavigationBar extends StatelessWidget {
   }
 }
 
+class _GenderOption extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _GenderOption({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: selected ? theme.colorScheme.primary.withValues(alpha: 0.1) : theme.colorScheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: selected ? theme.colorScheme.primary : Colors.transparent, width: 1.5),
+          ),
+          child: Text(label, style: TextStyle(fontWeight: FontWeight.w600, color: selected ? theme.colorScheme.primary : null)),
+        ),
+      ),
+    );
+  }
+}
 class _SelectableCard extends StatelessWidget {
   final String title;
   final bool selected;
