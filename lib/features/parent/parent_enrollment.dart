@@ -132,6 +132,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
             academicYearId: academicYearId,
             firstName: _firstName.text.trim(),
             lastName: _lastName.text.trim(),
+            gender: _gender!,
             dateOfBirth: _dateOfBirth,
             guardianName: _guardianName.text.trim().isEmpty ? null : _guardianName.text.trim(),
             emergencyContactName: _emergencyName.text.trim().isEmpty ? null : _emergencyName.text.trim(),
