@@ -90,7 +90,30 @@ class AppStrings {
       : "This account belongs to a different school.";
 
   // Teacher module
-  String get dashboard => isFrench ? 'Tableau de bord' : 'Dashboard';
+  String get dashboard => isFrench ? 'Mon tableau de bord' : 'My Dashboard';
+
+  /// A warm, time-of-day-aware line shown under the "Welcome back"
+  /// greeting on the teacher dashboard. Pass DateTime.now().hour.
+  String greetingForHour(int hour) {
+    if (hour >= 5 && hour < 12) {
+      return isFrench
+          ? 'Belle journée en perspective - vos élèves ont de la chance de vous avoir.'
+          : "Hope today's lessons go wonderfully - your students are lucky to have you.";
+    }
+    if (hour >= 12 && hour < 17) {
+      return isFrench
+          ? 'Bon après-midi ! Continuez votre excellent travail.'
+          : 'Good afternoon! Keep up the great work.';
+    }
+    if (hour >= 17 && hour < 21) {
+      return isFrench
+          ? "Bonne soirée - merci pour tout ce que vous faites."
+          : 'Good evening - thank you for everything you do.';
+    }
+    return isFrench
+        ? 'Vous travaillez tard ? Pensez aussi à bien vous reposer.'
+        : "Working late? Don't forget to get some rest too.";
+  }
   String get welcomeBack => isFrench ? 'Bon retour,' : 'Welcome back,';
   String get approvalPending => isFrench ? 'Approbation en attente' : 'Approval Pending';
   String get applicationNotApproved => isFrench ? 'Candidature non approuvée' : 'Application Not Approved';
@@ -260,4 +283,3 @@ class AppStrings {
   String get passwordTooShort => isFrench ? 'Au moins 8 caractères.' : 'At least 8 characters.';
   String get passwordsDoNotMatch => isFrench ? 'Les mots de passe ne correspondent pas.' : 'Passwords do not match.';
 }
-

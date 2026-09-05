@@ -20,7 +20,7 @@ class TeacherDashboardTab extends ConsumerWidget {
     final assignmentsAsync = ref.watch(teacherAssignmentsProvider);
     final isMobile = Responsive.isMobile(context);
     final pad = Responsive.pagePadding(context);
-    final statColumns = isMobile ? 1 : 3;
+    final statColumns = isMobile ? 2 : 3;
     final assignmentColumns = isMobile ? 1 : 2;
 
     return SafeArea(
@@ -31,7 +31,10 @@ class TeacherDashboardTab extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              TeacherPageHeader(title: '${strings.welcomeBack} ${profile.fullName}'),
+              TeacherPageHeader(
+                title: '${strings.welcomeBack} ${profile.fullName}',
+                subtitle: strings.greetingForHour(DateTime.now().hour),
+              ),
               const SizedBox(height: 24),
               assignmentsAsync.when(
                 loading: () => const Padding(
@@ -50,9 +53,9 @@ class TeacherDashboardTab extends ConsumerWidget {
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         crossAxisCount: statColumns,
-                        crossAxisSpacing: 14,
-                        mainAxisSpacing: 14,
-                        childAspectRatio: isMobile ? 3.6 : 2.6,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 10,
+                        childAspectRatio: isMobile ? 1.6 : 2.6,
                         children: [
                           TeacherStatCard(
                             icon: Icons.menu_book_outlined,
