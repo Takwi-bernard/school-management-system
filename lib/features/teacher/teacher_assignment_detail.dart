@@ -83,22 +83,49 @@ class TeacherAssignmentDetailPage extends ConsumerWidget {
                         icon: Icons.groups_outlined,
                         label: strings.classListLabel,
                         description: strings.viewEnrolledStudents,
-                        onTap: () => Navigator.push(context,
-                            MaterialPageRoute(builder: (_) => TeacherClassListPage(profile: profile, assignment: assignment))),
+                        // Re-applying `theme` (already captured above via
+                        // Theme.of(context), which correctly sees the
+                        // school-seeded theme) because Navigator.push lands
+                        // the new page in a sibling Overlay entry, not a
+                        // descendant of this tree - without this it would
+                        // silently fall back to the app's default theme.
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => Theme(
+                              data: theme,
+                              child: TeacherClassListPage(profile: profile, assignment: assignment),
+                            ),
+                          ),
+                        ),
                       ),
                       _ActionCard(
                         icon: Icons.edit_note_outlined,
                         label: strings.marksLabel,
                         description: strings.enterSubmitMarks,
-                        onTap: () => Navigator.push(context,
-                            MaterialPageRoute(builder: (_) => TeacherMarksEntryPage(profile: profile, assignment: assignment))),
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => Theme(
+                              data: theme,
+                              child: TeacherMarksEntryPage(profile: profile, assignment: assignment),
+                            ),
+                          ),
+                        ),
                       ),
                       _ActionCard(
                         icon: Icons.fact_check_outlined,
                         label: strings.attendanceLabel,
                         description: strings.recordDailyAttendance,
-                        onTap: () => Navigator.push(context,
-                            MaterialPageRoute(builder: (_) => TeacherAttendancePage(profile: profile, assignment: assignment))),
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => Theme(
+                              data: theme,
+                              child: TeacherAttendancePage(profile: profile, assignment: assignment),
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),

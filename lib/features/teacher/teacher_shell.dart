@@ -12,19 +12,16 @@ import 'teacher_profile.dart';
 import 'teacher_providers.dart';
 import 'teacher_timetable.dart';
 
-/// Fixed, theme-independent ink tones for the sidebar. Deliberately
-/// NOT derived from the school's seed color: the sidebar's whole job
-/// is to read as a distinct navigation plane from the content canvas
-/// beneath it, for every school, regardless of how light or dark
-/// their brand color is. Text/icons on it are always white-based for
-/// guaranteed contrast; the school's own primary color only ever
-/// shows up as the slim accent bar on the active item.
-const _sidebarInk = Color(0xFF14161B);
-const _sidebarInkBorder = Color(0x1AFFFFFF); // white @ 10%
-const _sidebarHoverFill = Color(0x0DFFFFFF); // white @ 5%
-const _sidebarSelectedFill = Color(0x14FFFFFF); // white @ 8%
-const _sidebarDanger = Color(0xFFFF8A80);
-
+/// Every color on the sidebar comes from Theme.of(context).colorScheme,
+/// which is built in teacher_home.dart from THIS school's
+/// landing.primaryColor / landing.secondaryColor (see
+/// ColorScheme.fromSeed in _TeacherProfileGate) - never a hardcoded
+/// hex. It still reads as visually distinct from the content canvas
+/// because inverseSurface/onInverseSurface are, by Material 3's own
+/// design, always at the opposite end of the lightness scale from
+/// surface/onSurface - so the contrast is guaranteed without picking
+/// a fixed color that could drift out of sync with the school's
+/// actual palette.
 enum TeacherDestination { dashboard, timetable, profile }
 
 final teacherActiveDestinationProvider =
@@ -75,6 +72,7 @@ class TeacherShell extends ConsumerWidget {
     final destination = ref.watch(teacherActiveDestinationProvider);
     final items = _items();
     final canvas = theme.colorScheme.surfaceContainerLowest;
+    final sidebarInk = theme.colorScheme.inverseSurface;
     final content = Container(
       key: ValueKey(destination),
       color: canvas,
@@ -89,7 +87,7 @@ class TeacherShell extends ConsumerWidget {
         ),
         drawer: Drawer(
           width: 288,
-          backgroundColor: _sidebarInk,
+          backgroundColor: sidebarInk,
           child: SafeArea(
             child: _SidebarContent(
               collapsed: false,
@@ -119,7 +117,7 @@ class TeacherShell extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Material(
-            color: _sidebarInk,
+            color: sidebarInk,
             child: SizedBox(
               width: collapsed ? 84 : 264,
               child: _SidebarContent(
@@ -177,7 +175,9 @@ class _SidebarContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final ink = scheme.onInverseSurface;
+    final border = ink.withValues(alpha: 0.14);
 
     return Column(
       children: [
@@ -194,13 +194,13 @@ class _SidebarContent extends StatelessWidget {
                         schoolName,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15, height: 1.2),
+                        style: TextStyle(color: ink, fontWeight: FontWeight.w800, fontSize: 15, height: 1.2),
                       ),
                     ),
                   ],
                 ),
         ),
-        const Divider(height: 1, color: _sidebarInkBorder),
+        Divider(height: 1, color: border),
         Expanded(
           child: ListView(
             padding: EdgeInsets.symmetric(vertical: 14, horizontal: collapsed ? 12 : 14),
@@ -210,7 +210,6 @@ class _SidebarContent extends StatelessWidget {
                   item: item,
                   collapsed: collapsed,
                   selected: item.destination == active,
-                  primary: theme.colorScheme.primary,
                   onTap: () => onSelect(item.destination),
                 ),
                 const SizedBox(height: 4),
@@ -218,7 +217,7 @@ class _SidebarContent extends StatelessWidget {
             ],
           ),
         ),
-        const Divider(height: 1, color: _sidebarInkBorder),
+        Divider(height: 1, color: border),
         Padding(
           padding: EdgeInsets.all(collapsed ? 12 : 16),
           child: collapsed
@@ -231,7 +230,7 @@ class _SidebarContent extends StatelessWidget {
                       child: IconButton(
                         onPressed: onSignOut,
                         icon: const Icon(Icons.logout_rounded, size: 20),
-                        color: _sidebarDanger,
+                        color: scheme.error,
                       ),
                     ),
                   ],
@@ -247,8 +246,8 @@ class _SidebarContent extends StatelessWidget {
                           Text(profile.fullName,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
-                          Text(strings.teacher, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                              style: TextStyle(color: ink, fontWeight: FontWeight.w700, fontSize: 13)),
+                          Text(strings.teacher, style: TextStyle(color: ink.withValues(alpha: 0.6), fontSize: 12)),
                         ],
                       ),
                     ),
@@ -257,7 +256,7 @@ class _SidebarContent extends StatelessWidget {
                       child: IconButton(
                         onPressed: onSignOut,
                         icon: const Icon(Icons.logout_rounded, size: 20),
-                        color: _sidebarDanger,
+                        color: scheme.error,
                       ),
                     ),
                   ],
@@ -275,24 +274,25 @@ class _Logo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     if (logoUrl.isEmpty) {
       return Container(
         width: size,
         height: size,
-        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(11)),
-        child: Icon(Icons.school_rounded, color: Colors.white, size: size * 0.55),
+        decoration: BoxDecoration(color: scheme.onInverseSurface.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(11)),
+        child: Icon(Icons.school_rounded, color: scheme.onInverseSurface, size: size * 0.55),
       );
     }
     return ClipRRect(
       borderRadius: BorderRadius.circular(11),
       child: Container(
-        color: Colors.white.withValues(alpha: 0.9),
+        color: scheme.onInverseSurface.withValues(alpha: 0.92),
         child: Image.network(
           logoUrl,
           width: size,
           height: size,
           fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => Icon(Icons.school_rounded, size: size * 0.55),
+          errorBuilder: (_, __, ___) => Icon(Icons.school_rounded, color: scheme.inverseSurface, size: size * 0.55),
         ),
       ),
     );
@@ -306,13 +306,14 @@ class _Avatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return CircleAvatar(
       radius: radius,
-      backgroundColor: Colors.white.withValues(alpha: 0.1),
+      backgroundColor: scheme.onInverseSurface.withValues(alpha: 0.14),
       backgroundImage: profile.photoUrl != null ? NetworkImage(profile.photoUrl!) : null,
       child: profile.photoUrl == null
           ? Text(_initials(profile.fullName),
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: radius * 0.65, color: Colors.white))
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: radius * 0.65, color: scheme.onInverseSurface))
           : null,
     );
   }
@@ -329,14 +330,12 @@ class _NavTile extends StatefulWidget {
   final _NavItem item;
   final bool collapsed;
   final bool selected;
-  final Color primary;
   final VoidCallback onTap;
 
   const _NavTile({
     required this.item,
     required this.collapsed,
     required this.selected,
-    required this.primary,
     required this.onTap,
   });
 
@@ -349,8 +348,12 @@ class _NavTileState extends State<_NavTile> {
 
   @override
   Widget build(BuildContext context) {
-    final fg = widget.selected ? Colors.white : Colors.white70;
-    final fill = widget.selected ? _sidebarSelectedFill : (_hovered ? _sidebarHoverFill : Colors.transparent);
+    final scheme = Theme.of(context).colorScheme;
+    final ink = scheme.onInverseSurface;
+    final fg = widget.selected ? ink : ink.withValues(alpha: 0.7);
+    final fill = widget.selected
+        ? ink.withValues(alpha: 0.1)
+        : (_hovered ? ink.withValues(alpha: 0.05) : Colors.transparent);
 
     final row = widget.collapsed
         ? Icon(widget.selected ? widget.item.activeIcon : widget.item.icon, color: fg, size: 22)
@@ -386,6 +389,8 @@ class _NavTileState extends State<_NavTile> {
                 decoration: BoxDecoration(color: fill, borderRadius: BorderRadius.circular(12)),
                 child: row,
               ),
+              // The ONE place the school's own primary color appears in
+              // the sidebar - a slim accent bar on the active item.
               if (widget.selected)
                 Positioned(
                   left: 0,
@@ -393,7 +398,7 @@ class _NavTileState extends State<_NavTile> {
                   bottom: 8,
                   child: Container(
                     width: 3,
-                    decoration: BoxDecoration(color: widget.primary, borderRadius: BorderRadius.circular(4)),
+                    decoration: BoxDecoration(color: scheme.primary, borderRadius: BorderRadius.circular(4)),
                   ),
                 ),
             ],

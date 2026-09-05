@@ -99,10 +99,24 @@ class TeacherDashboardTab extends ConsumerWidget {
                             return TeacherCard(
                               padding: EdgeInsets.zero,
                               child: TeacherPressable(
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(builder: (_) => TeacherAssignmentDetailPage(profile: profile, assignment: a)),
-                                ),
+                                onTap: () {
+                                  // Navigator.push inserts the new page as a
+                                  // sibling Overlay entry, NOT a descendant of
+                                  // this tree - so it would otherwise miss the
+                                  // school-seeded Theme applied in
+                                  // teacher_home.dart. Capture it here (where
+                                  // it's correct) and re-apply it explicitly.
+                                  final schoolTheme = Theme.of(context);
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => Theme(
+                                        data: schoolTheme,
+                                        child: TeacherAssignmentDetailPage(profile: profile, assignment: a),
+                                      ),
+                                    ),
+                                  );
+                                },
                                 child: Padding(
                                   padding: const EdgeInsets.all(16),
                                   child: Row(children: [

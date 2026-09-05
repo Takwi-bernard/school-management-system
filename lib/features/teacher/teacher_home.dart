@@ -190,7 +190,12 @@ class _PendingApproval extends ConsumerWidget {
                             child: Icon(
                               rejected ? Icons.block_rounded : Icons.hourglass_top_rounded,
                               size: 38,
-                              color: Colors.white,
+                              // onError/onPrimary instead of a fixed white:
+                              // if a school picks a very light primary/error
+                              // tone, Material computes the correct contrast
+                              // color automatically instead of assuming white
+                              // always reads well.
+                              color: rejected ? theme.colorScheme.onError : theme.colorScheme.onPrimary,
                             ),
                           ),
                         ),

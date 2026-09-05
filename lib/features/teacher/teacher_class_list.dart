@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pdf/pdf.dart';
 
 import '../../core/error_state.dart';
 import '../../core/export/export_service.dart';
@@ -91,7 +92,7 @@ class TeacherClassListPage extends ConsumerWidget {
                         IconButton(
                           icon: const Icon(Icons.picture_as_pdf_outlined),
                           tooltip: 'PDF',
-                          onPressed: students.isEmpty ? null : () => _exportPdf(students, schoolName),
+                          onPressed: students.isEmpty ? null : () => _exportPdf(students, schoolName, theme.colorScheme.primary),
                         ),
                       ]),
                       const SizedBox(height: 8),
@@ -175,12 +176,15 @@ class TeacherClassListPage extends ConsumerWidget {
     );
   }
 
-  Future<void> _exportPdf(List<RosterStudent> students, String schoolName) async {
+  Future<void> _exportPdf(List<RosterStudent> students, String schoolName, Color primary) async {
     await ExportService.exportPdf(
       fileName: '${assignment.className}_${assignment.subjectName}_class_list.pdf',
       title: '$schoolName - ${assignment.className}',
       subtitle: '${assignment.subjectName} - Class List (${students.length} students)',
       headers: const ['#', 'Full Name', 'Admission No.', 'Gender'],
+      // This school's own brand color, not a fixed blueGrey - matches
+      // what the Flutter side already pulls from landing.primaryColor.
+      accentColor: PdfColor.fromInt(primary.toARGB32()),
       rows: [
         for (var i = 0; i < students.length; i++)
           [

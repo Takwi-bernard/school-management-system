@@ -45,14 +45,27 @@ class ExportService {
 
   /// Generates a simple table PDF (title + header + rows) and triggers
   /// the browser's save dialog via the printing package.
+  ///
+  /// [accentColor] should be THIS school's own brand color (e.g.
+  /// derived from landing.primaryColor), not a fixed value - every
+  /// caller should pass it. It's optional only so the service still
+  /// compiles/works for a caller that genuinely has no school context;
+  /// the fallback is a neutral gray, not a "default brand."
   static Future<void> exportPdf({
     required String fileName,
     required String title,
     required String subtitle,
     required List<String> headers,
     required List<List<String>> rows,
+    PdfColor? accentColor,
   }) async {
     final doc = pw.Document();
+    final accent = accentColor ?? PdfColors.blueGrey700;
+    // Computed from the accent itself, not assumed: a school with a
+    // light/pastel brand color needs dark header text, not white-on-
+    // white. Same reasoning as Material's onPrimary on the Flutter side.
+    final luminance = 0.299 * accent.red + 0.587 * accent.green + 0.114 * accent.blue;
+    final onAccent = luminance > 0.6 ? PdfColors.black : PdfColors.white;
 
     doc.addPage(
       pw.MultiPage(
@@ -65,8 +78,8 @@ class ExportService {
           pw.TableHelper.fromTextArray(
             headers: headers,
             data: rows,
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
-            headerDecoration: const pw.BoxDecoration(color: PdfColors.blueGrey700),
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: onAccent),
+            headerDecoration: pw.BoxDecoration(color: accent),
             cellPadding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             cellAlignment: pw.Alignment.centerLeft,
           ),
