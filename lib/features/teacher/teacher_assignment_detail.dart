@@ -8,8 +8,12 @@ import 'teacher_attendance.dart';
 import 'teacher_class_list.dart';
 import 'teacher_marks_entry.dart';
 import 'teacher_models.dart';
+import 'teacher_navigation.dart';
 import 'teacher_ui.dart';
 
+/// Reached via pushTeacherContent (see teacher_navigation.dart), not
+/// Navigator.push - so it stays inside TeacherShell and keeps the
+/// sidebar/drawer, instead of escaping to a full-screen route.
 class TeacherAssignmentDetailPage extends ConsumerWidget {
   final TeacherProfile profile;
   final TeachingAssignment assignment;
@@ -24,113 +28,78 @@ class TeacherAssignmentDetailPage extends ConsumerWidget {
     final columns = isMobile ? 1 : (isTablet ? 2 : 3);
     final strings = AppStrings(ref.watch(activeLocaleProvider));
 
-    return Scaffold(
-      backgroundColor: theme.colorScheme.surfaceContainerLowest,
-      appBar: AppBar(title: Text(assignment.subjectName)),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.all(Responsive.pagePadding(context)),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 960),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(13),
-                        ),
-                        child: Icon(Icons.menu_book_outlined, color: theme.colorScheme.primary, size: 24),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(assignment.subjectName,
-                                style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.3)),
-                            const SizedBox(height: 2),
-                            Text(assignment.className,
-                                style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                            const SizedBox(height: 10),
-                            Wrap(spacing: 8, runSpacing: 8, children: [
-                              _Badge(label: '${strings.coefficientLabel} ${assignment.coefficient}'),
-                              _Badge(label: '${assignment.periodsPerWeek} ${strings.periodsPerWeekLabel}'),
-                            ]),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 28),
-                  Text(strings.whatWouldYouLikeToDo, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 14),
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: columns,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: isMobile ? 3.2 : (isTablet ? 1.9 : 1.5),
-                    children: [
-                      _ActionCard(
-                        icon: Icons.groups_outlined,
-                        label: strings.classListLabel,
-                        description: strings.viewEnrolledStudents,
-                        // Re-applying `theme` (already captured above via
-                        // Theme.of(context), which correctly sees the
-                        // school-seeded theme) because Navigator.push lands
-                        // the new page in a sibling Overlay entry, not a
-                        // descendant of this tree - without this it would
-                        // silently fall back to the app's default theme.
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => Theme(
-                              data: theme,
-                              child: TeacherClassListPage(profile: profile, assignment: assignment),
-                            ),
-                          ),
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.all(Responsive.pagePadding(context)),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 960),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TeacherBackHeader(
+                  title: assignment.subjectName,
+                  subtitle: assignment.className,
+                  onBack: () => popTeacherContent(ref),
+                ),
+                const SizedBox(height: 14),
+                Padding(
+                  padding: const EdgeInsets.only(left: 54),
+                  child: Wrap(spacing: 8, runSpacing: 8, children: [
+                    _Badge(label: '${strings.coefficientLabel} ${assignment.coefficient}'),
+                    _Badge(label: '${assignment.periodsPerWeek} ${strings.periodsPerWeekLabel}'),
+                  ]),
+                ),
+                const SizedBox(height: 28),
+                Text(strings.whatWouldYouLikeToDo, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 14),
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: columns,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: isMobile ? 3.2 : (isTablet ? 1.9 : 1.5),
+                  children: [
+                    _ActionCard(
+                      icon: Icons.groups_outlined,
+                      label: strings.classListLabel,
+                      description: strings.viewEnrolledStudents,
+                      onTap: () => pushTeacherContent(
+                        ref,
+                        TeacherContentPage(
+                          title: strings.classListLabel,
+                          builder: (context) => TeacherClassListPage(profile: profile, assignment: assignment),
                         ),
                       ),
-                      _ActionCard(
-                        icon: Icons.edit_note_outlined,
-                        label: strings.marksLabel,
-                        description: strings.enterSubmitMarks,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => Theme(
-                              data: theme,
-                              child: TeacherMarksEntryPage(profile: profile, assignment: assignment),
-                            ),
-                          ),
+                    ),
+                    _ActionCard(
+                      icon: Icons.edit_note_outlined,
+                      label: strings.marksLabel,
+                      description: strings.enterSubmitMarks,
+                      onTap: () => pushTeacherContent(
+                        ref,
+                        TeacherContentPage(
+                          title: '${assignment.subjectName} - ${strings.marksLabel}',
+                          builder: (context) => TeacherMarksEntryPage(profile: profile, assignment: assignment),
                         ),
                       ),
-                      _ActionCard(
-                        icon: Icons.fact_check_outlined,
-                        label: strings.attendanceLabel,
-                        description: strings.recordDailyAttendance,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => Theme(
-                              data: theme,
-                              child: TeacherAttendancePage(profile: profile, assignment: assignment),
-                            ),
-                          ),
+                    ),
+                    _ActionCard(
+                      icon: Icons.fact_check_outlined,
+                      label: strings.attendanceLabel,
+                      description: strings.recordDailyAttendance,
+                      onTap: () => pushTeacherContent(
+                        ref,
+                        TeacherContentPage(
+                          title: '${assignment.className} - ${strings.attendanceLabel}',
+                          builder: (context) => TeacherAttendancePage(profile: profile, assignment: assignment),
                         ),
                       ),
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ),

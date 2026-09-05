@@ -5,6 +5,53 @@ import 'package:flutter/material.dart';
 /// the one bold gesture in this module; everything here just needs
 /// to be legible and consistent, not decorative.
 
+/// Same as TeacherPageHeader but for content pushed onto the in-shell
+/// stack (see teacher_navigation.dart) - adds a back button, since
+/// there's no real Navigator here to supply one automatically.
+class TeacherBackHeader extends StatelessWidget {
+  final String title;
+  final String? subtitle;
+  final VoidCallback onBack;
+  final Widget? trailing;
+
+  const TeacherBackHeader({
+    super.key,
+    required this.title,
+    required this.onBack,
+    this.subtitle,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        IconButton.filledTonal(
+          onPressed: onBack,
+          icon: const Icon(Icons.arrow_back_rounded, size: 20),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title,
+                  style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.3)),
+              if (subtitle != null) ...[
+                const SizedBox(height: 4),
+                Text(subtitle!, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+              ],
+            ],
+          ),
+        ),
+        if (trailing != null) trailing!,
+      ],
+    );
+  }
+}
+
 class TeacherPageHeader extends StatelessWidget {
   final String title;
   final String? subtitle;

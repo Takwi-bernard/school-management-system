@@ -8,6 +8,7 @@ import '../auth/auth_providers.dart';
 import '../landing/landing_providers.dart';
 import 'teacher_dashboard_tab.dart';
 import 'teacher_models.dart';
+import 'teacher_navigation.dart';
 import 'teacher_profile.dart';
 import 'teacher_providers.dart';
 import 'teacher_timetable.dart';
@@ -66,25 +67,40 @@ class TeacherShell extends ConsumerWidget {
     if (context.mounted) context.go('/');
   }
 
+  /// Switching top-level destination always resets the in-shell
+  /// stack (see teacher_navigation.dart) - so tapping "My Timetable"
+  /// while three levels deep in Dashboard drill-down takes you to
+  /// Timetable's own root, not a stale nested screen from another tab.
+  void _selectDestination(WidgetRef ref, TeacherDestination d) {
+    ref.read(teacherContentStackProvider.notifier).state = [];
+    ref.read(teacherActiveDestinationProvider.notifier).state = d;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final destination = ref.watch(teacherActiveDestinationProvider);
+    final stack = ref.watch(teacherContentStackProvider);
     final items = _items();
     final canvas = theme.colorScheme.surfaceContainerLowest;
     final sidebarInk = theme.colorScheme.inverseSurface;
+    final rootLabel = items.firstWhere((i) => i.destination == destination).label;
+    final currentTitle = stack.isEmpty ? rootLabel : stack.last.title;
+    // Stays inside the SAME Theme-wrapped subtree as the rest of the
+    // shell no matter how deep `stack` goes - unlike Navigator.push,
+    // there's no separate Overlay entry to escape into, so both the
+    // sidebar/drawer AND the school's seeded colors are guaranteed to
+    // still be there at any depth.
     final content = Container(
-      key: ValueKey(destination),
+      key: ValueKey('$destination-${stack.length}'),
       color: canvas,
-      child: _bodyFor(destination),
+      child: stack.isEmpty ? _bodyFor(destination) : stack.last.builder(context),
     );
 
     if (Responsive.isMobile(context)) {
       return Scaffold(
         backgroundColor: canvas,
-        appBar: AppBar(
-          title: Text(items.firstWhere((i) => i.destination == destination).label),
-        ),
+        appBar: AppBar(title: Text(currentTitle)),
         drawer: Drawer(
           width: 288,
           backgroundColor: sidebarInk,
@@ -98,7 +114,7 @@ class TeacherShell extends ConsumerWidget {
               items: items,
               active: destination,
               onSelect: (d) {
-                ref.read(teacherActiveDestinationProvider.notifier).state = d;
+                _selectDestination(ref, d);
                 Navigator.of(context).pop();
               },
               onSignOut: () => _signOut(context, ref),
@@ -128,7 +144,7 @@ class TeacherShell extends ConsumerWidget {
                 strings: strings,
                 items: items,
                 active: destination,
-                onSelect: (d) => ref.read(teacherActiveDestinationProvider.notifier).state = d,
+                onSelect: (d) => _selectDestination(ref, d),
                 onSignOut: () => _signOut(context, ref),
               ),
             ),

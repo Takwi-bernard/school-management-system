@@ -5,9 +5,12 @@ import '../../core/l10n/app_strings.dart';
 import '../../core/responsive.dart';
 import '../landing/landing_providers.dart';
 import 'teacher_models.dart';
+import 'teacher_navigation.dart';
 import 'teacher_providers.dart';
 import 'teacher_ui.dart';
 
+/// Reached via pushTeacherContent, not Navigator.push - stays inside
+/// TeacherShell so the sidebar/drawer is always still reachable.
 class TeacherMarksEntryPage extends ConsumerStatefulWidget {
   final TeacherProfile profile;
   final TeachingAssignment assignment;
@@ -93,178 +96,176 @@ class _TeacherMarksEntryPageState extends ConsumerState<TeacherMarksEntryPage> {
       marksProvider((classId: widget.assignment.classId, subjectId: widget.assignment.subjectId)),
     );
 
-    return Scaffold(
-      backgroundColor: theme.colorScheme.surfaceContainerLowest,
-      appBar: AppBar(title: Text('${widget.assignment.subjectName} - ${strings.marksLabel}')),
-      body: periodsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('$e')),
-        data: (periods) {
-          final openPeriods = periods.where((p) => p.isOpen).toList();
-
-          if (openPeriods.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  child: TeacherEmptyState(
-                    icon: Icons.lock_clock_outlined,
-                    title: strings.marksLabel,
-                    description: strings.marksNotOpenYet,
-                  ),
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.all(Responsive.pagePadding(context)),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1080),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TeacherBackHeader(
+                  title: '${widget.assignment.subjectName} - ${strings.marksLabel}',
+                  onBack: () => popTeacherContent(ref),
                 ),
-              ),
-            );
-          }
+                const SizedBox(height: 20),
+                Expanded(
+                  child: periodsAsync.when(
+                    loading: () => const Center(child: CircularProgressIndicator()),
+                    error: (e, _) => Center(child: Text('$e')),
+                    data: (periods) {
+                      final openPeriods = periods.where((p) => p.isOpen).toList();
 
-          final currentPeriod = openPeriods.first;
-
-          return rosterAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text('$e')),
-            data: (students) {
-              return marksAsync.when(
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Center(child: Text('$e')),
-                data: (allMarks) {
-                  for (final s in students) {
-                    final existing = allMarks
-                        .where((m) => m.studentId == s.studentId && m.examPeriodId == currentPeriod.id)
-                        .toList();
-                    if (existing.isNotEmpty && _scoreFor(s.studentId).text.isEmpty) {
-                      _scoreFor(s.studentId).text = existing.first.score.toString();
-                      if (existing.first.remarks != null) {
-                        _remarkFor(s.studentId).text = existing.first.remarks!;
-                      }
-                    }
-                  }
-
-                  final otherPeriods = periods.where((p) => p.id != currentPeriod.id).toList();
-
-                  return SingleChildScrollView(
-                    padding: EdgeInsets.all(Responsive.pagePadding(context)),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 1080),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(currentPeriod.name,
-                                          style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.3)),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        '${strings.coefficientLabel} ${widget.assignment.coefficient}'
-                                        '${currentPeriod.dueDate != null ? ' · ${strings.dueLabel} ${_fmt(currentPeriod.dueDate!)}' : ''}',
-                                        style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
+                      if (openPeriods.isEmpty) {
+                        return Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 420),
+                            child: TeacherEmptyState(
+                              icon: Icons.lock_clock_outlined,
+                              title: strings.marksLabel,
+                              description: strings.marksNotOpenYet,
                             ),
-                            const SizedBox(height: 20),
-                            TeacherCard(
-                              padding: EdgeInsets.zero,
-                              child: Column(
-                                children: [
-                                  for (int i = 0; i < students.length; i++) ...[
-                                    if (i > 0) Divider(height: 1, color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5)),
-                                    Padding(
-                                      padding: const EdgeInsets.all(14),
+                          ),
+                        );
+                      }
+
+                      final currentPeriod = openPeriods.first;
+
+                      return rosterAsync.when(
+                        loading: () => const Center(child: CircularProgressIndicator()),
+                        error: (e, _) => Center(child: Text('$e')),
+                        data: (students) {
+                          return marksAsync.when(
+                            loading: () => const Center(child: CircularProgressIndicator()),
+                            error: (e, _) => Center(child: Text('$e')),
+                            data: (allMarks) {
+                              for (final s in students) {
+                                final existing = allMarks
+                                    .where((m) => m.studentId == s.studentId && m.examPeriodId == currentPeriod.id)
+                                    .toList();
+                                if (existing.isNotEmpty && _scoreFor(s.studentId).text.isEmpty) {
+                                  _scoreFor(s.studentId).text = existing.first.score.toString();
+                                  if (existing.first.remarks != null) {
+                                    _remarkFor(s.studentId).text = existing.first.remarks!;
+                                  }
+                                }
+                              }
+
+                              final otherPeriods = periods.where((p) => p.id != currentPeriod.id).toList();
+
+                              return SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(currentPeriod.name,
+                                        style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${strings.coefficientLabel} ${widget.assignment.coefficient}'
+                                      '${currentPeriod.dueDate != null ? ' · ${strings.dueLabel} ${_fmt(currentPeriod.dueDate!)}' : ''}',
+                                      style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                                    ),
+                                    const SizedBox(height: 20),
+                                    TeacherCard(
+                                      padding: EdgeInsets.zero,
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Row(children: [
-                                            Expanded(
-                                              child: Text(students[i].fullName,
-                                                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-                                            ),
-                                            for (final p in otherPeriods)
-                                              Builder(builder: (context) {
-                                                final prev = allMarks.where(
-                                                    (m) => m.studentId == students[i].studentId && m.examPeriodId == p.id);
-                                                if (prev.isEmpty) return const SizedBox.shrink();
-                                                return Padding(
-                                                  padding: const EdgeInsets.only(left: 8),
-                                                  child: Container(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                                    decoration: BoxDecoration(
-                                                      color: theme.colorScheme.surfaceContainerHighest,
-                                                      borderRadius: BorderRadius.circular(8),
+                                          for (int i = 0; i < students.length; i++) ...[
+                                            if (i > 0) Divider(height: 1, color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5)),
+                                            Padding(
+                                              padding: const EdgeInsets.all(14),
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Row(children: [
+                                                    Expanded(
+                                                      child: Text(students[i].fullName,
+                                                          style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
                                                     ),
-                                                    child: Text('${p.name}: ${prev.first.score}', style: theme.textTheme.labelSmall),
-                                                  ),
-                                                );
-                                              }),
-                                          ]),
-                                          const SizedBox(height: 8),
-                                          Row(children: [
-                                            SizedBox(
-                                              width: 110,
-                                              child: TextField(
-                                                controller: _scoreFor(students[i].studentId),
-                                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                                decoration: InputDecoration(
-                                                  labelText: strings.scoreLabel,
-                                                  isDense: true,
-                                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                                                ),
+                                                    for (final p in otherPeriods)
+                                                      Builder(builder: (context) {
+                                                        final prev = allMarks.where(
+                                                            (m) => m.studentId == students[i].studentId && m.examPeriodId == p.id);
+                                                        if (prev.isEmpty) return const SizedBox.shrink();
+                                                        return Padding(
+                                                          padding: const EdgeInsets.only(left: 8),
+                                                          child: Container(
+                                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                            decoration: BoxDecoration(
+                                                              color: theme.colorScheme.surfaceContainerHighest,
+                                                              borderRadius: BorderRadius.circular(8),
+                                                            ),
+                                                            child:
+                                                                Text('${p.name}: ${prev.first.score}', style: theme.textTheme.labelSmall),
+                                                          ),
+                                                        );
+                                                      }),
+                                                  ]),
+                                                  const SizedBox(height: 8),
+                                                  Row(children: [
+                                                    SizedBox(
+                                                      width: 110,
+                                                      child: TextField(
+                                                        controller: _scoreFor(students[i].studentId),
+                                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                                        decoration: InputDecoration(
+                                                          labelText: strings.scoreLabel,
+                                                          isDense: true,
+                                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 12),
+                                                    Expanded(
+                                                      child: TextField(
+                                                        controller: _remarkFor(students[i].studentId),
+                                                        decoration: InputDecoration(
+                                                          labelText: strings.commentOptional,
+                                                          isDense: true,
+                                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ]),
+                                                ],
                                               ),
                                             ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: TextField(
-                                                controller: _remarkFor(students[i].studentId),
-                                                decoration: InputDecoration(
-                                                  labelText: strings.commentOptional,
-                                                  isDense: true,
-                                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                                                ),
-                                              ),
-                                            ),
-                                          ]),
+                                          ],
                                         ],
                                       ),
                                     ),
+                                    const SizedBox(height: 20),
+                                    Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                                      OutlinedButton(
+                                        onPressed: _saving
+                                            ? null
+                                            : () => _save('draft', currentPeriod, widget.assignment.academicYearId, strings),
+                                        child: Text(strings.saveDraft),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      FilledButton.icon(
+                                        onPressed: _saving
+                                            ? null
+                                            : () => _save('submitted', currentPeriod, widget.assignment.academicYearId, strings),
+                                        icon: const Icon(Icons.send_outlined),
+                                        label: Text(strings.submitToPrincipal),
+                                      ),
+                                    ]),
                                   ],
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-                              OutlinedButton(
-                                onPressed: _saving
-                                    ? null
-                                    : () => _save('draft', currentPeriod, widget.assignment.academicYearId, strings),
-                                child: Text(strings.saveDraft),
-                              ),
-                              const SizedBox(width: 10),
-                              FilledButton.icon(
-                                onPressed: _saving
-                                    ? null
-                                    : () => _save('submitted', currentPeriod, widget.assignment.academicYearId, strings),
-                                icon: const Icon(Icons.send_outlined),
-                                label: Text(strings.submitToPrincipal),
-                              ),
-                            ]),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          );
-        },
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

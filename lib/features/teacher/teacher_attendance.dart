@@ -5,9 +5,12 @@ import '../../core/l10n/app_strings.dart';
 import '../../core/responsive.dart';
 import '../landing/landing_providers.dart';
 import 'teacher_models.dart';
+import 'teacher_navigation.dart';
 import 'teacher_providers.dart';
 import 'teacher_ui.dart';
 
+/// Reached via pushTeacherContent, not Navigator.push - stays inside
+/// TeacherShell so the sidebar/drawer is always still reachable.
 class TeacherAttendancePage extends ConsumerStatefulWidget {
   final TeacherProfile profile;
   final TeachingAssignment assignment;
@@ -87,100 +90,109 @@ class _TeacherAttendancePageState extends ConsumerState<TeacherAttendancePage> {
       'excused': strings.statusExcused,
     };
 
-    return Scaffold(
-      backgroundColor: theme.colorScheme.surfaceContainerLowest,
-      appBar: AppBar(title: Text('${widget.assignment.className} - ${strings.attendanceLabel}')),
-      body: rosterAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('$e')),
-        data: (students) {
-          return existingAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text('$e')),
-            data: (existing) {
-              if (!_loadedForDate) {
-                for (final s in students) {
-                  final match = existing.where((a) => a.studentId == s.studentId);
-                  _status[s.studentId] = match.isNotEmpty ? match.first.status : 'present';
-                }
-                _loadedForDate = true;
-              }
+    return Padding(
+      padding: EdgeInsets.all(Responsive.pagePadding(context)),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TeacherBackHeader(
+                title: '${widget.assignment.className} - ${strings.attendanceLabel}',
+                onBack: () => popTeacherContent(ref),
+              ),
+              const SizedBox(height: 18),
+              Expanded(
+                child: rosterAsync.when(
+                  loading: () => const Center(child: CircularProgressIndicator()),
+                  error: (e, _) => Center(child: Text('$e')),
+                  data: (students) {
+                    return existingAsync.when(
+                      loading: () => const Center(child: CircularProgressIndicator()),
+                      error: (e, _) => Center(child: Text('$e')),
+                      data: (existing) {
+                        if (!_loadedForDate) {
+                          for (final s in students) {
+                            final match = existing.where((a) => a.studentId == s.studentId);
+                            _status[s.studentId] = match.isNotEmpty ? match.first.status : 'present';
+                          }
+                          _loadedForDate = true;
+                        }
 
-              return Padding(
-                padding: EdgeInsets.all(Responsive.pagePadding(context)),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 900),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        TeacherCard(
-                          child: Row(children: [
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            TeacherCard(
+                              child: Row(children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(strings.dateLabel,
+                                          style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                                      const SizedBox(height: 2),
+                                      Text(_fmt(_date), style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                                    ],
+                                  ),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: _pickDate,
+                                  icon: const Icon(Icons.calendar_today_outlined, size: 16),
+                                  label: Text(strings.changeDate),
+                                ),
+                              ]),
+                            ),
+                            const SizedBox(height: 18),
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(strings.dateLabel,
-                                      style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                                  const SizedBox(height: 2),
-                                  Text(_fmt(_date), style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-                                ],
+                              child: TeacherCard(
+                                padding: EdgeInsets.zero,
+                                child: ListView.separated(
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  itemCount: students.length,
+                                  separatorBuilder: (_, __) =>
+                                      Divider(height: 1, color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5)),
+                                  itemBuilder: (context, i) {
+                                    final s = students[i];
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                                      child: Row(children: [
+                                        Expanded(
+                                          child: Text(s.fullName, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                                        ),
+                                        DropdownButton<String>(
+                                          value: _status[s.studentId] ?? 'present',
+                                          underline: const SizedBox.shrink(),
+                                          items: statusLabels.entries
+                                              .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+                                              .toList(),
+                                          onChanged: (v) => setState(() => _status[s.studentId] = v ?? 'present'),
+                                        ),
+                                      ]),
+                                    );
+                                  },
+                                ),
                               ),
                             ),
-                            OutlinedButton.icon(
-                              onPressed: _pickDate,
-                              icon: const Icon(Icons.calendar_today_outlined, size: 16),
-                              label: Text(strings.changeDate),
+                            const SizedBox(height: 14),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: _saving ? null : () => _save(strings),
+                                icon: const Icon(Icons.save_outlined),
+                                label: Text(strings.saveAttendance),
+                              ),
                             ),
-                          ]),
-                        ),
-                        const SizedBox(height: 18),
-                        Expanded(
-                          child: TeacherCard(
-                            padding: EdgeInsets.zero,
-                            child: ListView.separated(
-                              padding: const EdgeInsets.symmetric(vertical: 4),
-                              itemCount: students.length,
-                              separatorBuilder: (_, __) => Divider(height: 1, color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5)),
-                              itemBuilder: (context, i) {
-                                final s = students[i];
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                                  child: Row(children: [
-                                    Expanded(
-                                      child: Text(s.fullName, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-                                    ),
-                                    DropdownButton<String>(
-                                      value: _status[s.studentId] ?? 'present',
-                                      underline: const SizedBox.shrink(),
-                                      items: statusLabels.entries
-                                          .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
-                                          .toList(),
-                                      onChanged: (v) => setState(() => _status[s.studentId] = v ?? 'present'),
-                                    ),
-                                  ]),
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed: _saving ? null : () => _save(strings),
-                            icon: const Icon(Icons.save_outlined),
-                            label: Text(strings.saveAttendance),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                          ],
+                        );
+                      },
+                    );
+                  },
                 ),
-              );
-            },
-          );
-        },
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
