@@ -79,6 +79,12 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     }
   }
 
+  Color _parseColor(String hex) {
+    var v = hex.replaceAll('#', '');
+    if (v.length == 6) v = 'FF$v';
+    return Color(int.tryParse(v, radix: 16) ?? 0xFF1A73E8);
+  }
+
   @override
   Widget build(BuildContext context) {
     final landing = ref.watch(landingProvider);
@@ -121,99 +127,115 @@ class _SignInPageState extends ConsumerState<SignInPage> {
 
         final strings = AppStrings(locale);
 
-        return AuthScaffold(
-          school: school,
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AuthBrandingHeader(school: school, subtitle: strings.signInTitle),
-                const SizedBox(height: 24),
-                TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: InputDecoration(
-                    labelText: strings.email,
-                    prefixIcon: const Icon(Icons.email_outlined),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  validator: (v) => (v == null || !v.contains('@')) ? 'Enter a valid email' : null,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _passwordController,
-                  obscureText: _obscure,
-                  decoration: InputDecoration(
-                    labelText: strings.password,
-                    prefixIcon: const Icon(Icons.lock_outline),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                    suffixIcon: IconButton(
-                      icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
-                      onPressed: () => setState(() => _obscure = !_obscure),
+        // FIX: this page never seeded a theme from the school's own
+        // colors, so every Theme.of(context) call below (the sign-in
+        // button's background, focus colors, etc.) was silently
+        // falling back to the app's root/default theme instead of
+        // school.primaryColor - the sign-in button showing blue on an
+        // orange-branded school was this, not a hardcoded color.
+        final primary = _parseColor(school.primaryColor);
+        final secondary = _parseColor(school.secondaryColor);
+        final schoolTheme = ThemeData(
+          useMaterial3: true,
+          colorScheme: ColorScheme.fromSeed(seedColor: primary, primary: primary, secondary: secondary),
+        );
+
+        return Theme(
+          data: schoolTheme,
+          child: AuthScaffold(
+            school: school,
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AuthBrandingHeader(school: school, subtitle: strings.signInTitle),
+                  const SizedBox(height: 24),
+                  TextFormField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: InputDecoration(
+                      labelText: strings.email,
+                      prefixIcon: const Icon(Icons.email_outlined),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
                     ),
+                    validator: (v) => (v == null || !v.contains('@')) ? 'Enter a valid email' : null,
                   ),
-                  validator: (v) => (v == null || v.isEmpty) ? 'Enter your password' : null,
-                ),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Password recovery is coming soon.')),
-                    ),
-                    child: Text(strings.forgotPassword),
-                  ),
-                ),
-                AuthErrorBanner(
-                  message: authState.errorMessage,
-                  onDismiss: () => ref.read(authControllerProvider.notifier).clearError(),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: HoverLift(
-                    liftPixels: 2,
-                    onTap: authState.isLoading ? null : () => _signIn(school.schoolId, school.schoolName),
-                    child: Container(
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primary,
-                        borderRadius: BorderRadius.circular(14),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _passwordController,
+                    obscureText: _obscure,
+                    decoration: InputDecoration(
+                      labelText: strings.password,
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                        onPressed: () => setState(() => _obscure = !_obscure),
                       ),
-                      child: authState.isLoading
-                          ? const SizedBox(
-                              width: 22, height: 22,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : Text(strings.signInTitle,
-                              style: TextStyle(
-                                  color: Theme.of(context).colorScheme.onPrimary,
-                                  fontWeight: FontWeight.w700)),
+                    ),
+                    validator: (v) => (v == null || v.isEmpty) ? 'Enter your password' : null,
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Password recovery is coming soon.')),
+                      ),
+                      child: Text(strings.forgotPassword),
                     ),
                   ),
-                ),
-                const SizedBox(height: 20),
-                Row(children: [
-                  const Expanded(child: Divider()),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Text(strings.orDivider, style: Theme.of(context).textTheme.labelSmall),
+                  AuthErrorBanner(
+                    message: authState.errorMessage,
+                    onDismiss: () => ref.read(authControllerProvider.notifier).clearError(),
                   ),
-                  const Expanded(child: Divider()),
-                ]),
-                const SizedBox(height: 20),
-                GoogleSignInButton(
-                  onPressed: authState.isLoading
-                      ? null
-                      : () => ref.read(authControllerProvider.notifier).signInWithGoogle(),
-                  label: strings.continueWithGoogle,
-                ),
-                const SizedBox(height: 20),
-                TextButton(
-                  onPressed: () => context.push('/sign-up'),
-                  child: Text('${strings.noAccount} ${strings.createAccount}'),
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: HoverLift(
+                      liftPixels: 2,
+                      onTap: authState.isLoading ? null : () => _signIn(school.schoolId, school.schoolName),
+                      child: Container(
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primary,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: authState.isLoading
+                            ? const SizedBox(
+                                width: 22, height: 22,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : Text(strings.signInTitle,
+                                style: TextStyle(
+                                    color: Theme.of(context).colorScheme.onPrimary,
+                                    fontWeight: FontWeight.w700)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(children: [
+                    const Expanded(child: Divider()),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(strings.orDivider, style: Theme.of(context).textTheme.labelSmall),
+                    ),
+                    const Expanded(child: Divider()),
+                  ]),
+                  const SizedBox(height: 20),
+                  GoogleSignInButton(
+                    onPressed: authState.isLoading
+                        ? null
+                        : () => ref.read(authControllerProvider.notifier).signInWithGoogle(),
+                    label: strings.continueWithGoogle,
+                  ),
+                  const SizedBox(height: 20),
+                  TextButton(
+                    onPressed: () => context.push('/sign-up'),
+                    child: Text('${strings.noAccount} ${strings.createAccount}'),
+                  ),
+                ],
+              ),
             ),
           ),
         );

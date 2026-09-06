@@ -20,9 +20,37 @@
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="A new Flutter project.">
 
+  <!--
+    ADDED: without viewport-fit=cover, iOS Safari won't let the page
+    draw under the notch/status-bar area at all, which is part of
+    what makes the forced-black status bar below look like a solid
+    "missing color" gap instead of something Flutter can paint under.
+  -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+  <!--
+    ADDED: this is the tag Safari actually reads to tint its own
+    chrome (address bar area) to match your content - it was missing
+    entirely before. White is a safe neutral default since the real
+    per-school color isn't known yet at this point (nothing has
+    fetched it from Supabase before Flutter even mounts) - this just
+    needs to not look broken for the split second before Flutter
+    paints the real, school-colored UI.
+  -->
+  <meta name="theme-color" content="#ffffff">
+
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <!--
+    CHANGED from "black": that value forces a solid black status bar
+    whenever this runs as an installed/"Add to Home Screen" app,
+    completely independent of what your Flutter app draws - almost
+    certainly the exact black strip you're seeing. "black-translucent"
+    instead lets your own app's content (correctly inset by Flutter's
+    SafeArea, now that viewport-fit=cover is set above) show through
+    that area instead of a fixed black block.
+  -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="school_management_systems">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
@@ -31,6 +59,20 @@
 
   <title>school_management_systems</title>
   <link rel="manifest" href="manifest.json">
+
+  <!--
+    ADDED: sets a real background instead of the browser's unstyled
+    default, and disables the elastic bounce-scroll on iOS Safari that
+    was revealing it in the first place - belt and suspenders with the
+    two changes above, in case any scroll surface still bounces.
+  -->
+  <style>
+    html, body {
+      background-color: #ffffff;
+      height: 100%;
+      overscroll-behavior-y: none;
+    }
+  </style>
 </head>
 <body>
   <!--
