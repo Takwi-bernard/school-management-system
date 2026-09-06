@@ -14,6 +14,7 @@ import '../features/parent/parent_fees.dart';
 import '../features/parent/parent_report_card.dart';
 import '../features/parent/parent_profile.dart';
 import '../features/parent/parent_models.dart';
+
 /// FIX: default GoRouter navigation is an abrupt cut with no
 /// transition at all. This gives every route the same soft
 /// fade + gentle upward slide - noticeably smoother/more "alive"
@@ -55,68 +56,70 @@ final appRouter = GoRouter(
       name: 'sign-up-teacher',
       pageBuilder: (c, s) => _page(const TeacherSignUpPage(), s),
     ),
+
+    // Single /parent route with all sub-pages nested underneath -
+    // there was previously a duplicate top-level '/parent' entry,
+    // which is invalid; this is the one, correct version.
     GoRoute(
       path: '/parent',
       pageBuilder: (c, s) => _page(const ParentHome(), s),
-    ),
-    GoRoute(
-  path: '/parent',
-  pageBuilder: (c, s) => _page(const ParentHome(), s),
-  routes: [
+      routes: [
         GoRoute(
-      path: 'payment-status',
-      pageBuilder: (c, s) {
-        final args = s.extra as Map<String, dynamic>;
-        return _page(
-          PaymentStatusPage(
-            transactionId: args['transactionId'] as String,
-            landing: args['landing'],
-            child: args['child'] as EnrolledChild?,
-            paymentPurpose: args['paymentPurpose'] as String,
-            amount: args['amount'] as double,
-          ),
-          s,
-        );
-      },
+          path: 'enroll',
+          pageBuilder: (c, s) => _page(EnrollChildPage(schoolId: s.extra as String), s),
+        ),
+        GoRoute(
+          path: 'fees',
+          pageBuilder: (c, s) => _page(ChildFeesPage(child: s.extra as EnrolledChild), s),
+        ),
+        GoRoute(
+          path: 'report-card',
+          pageBuilder: (c, s) => _page(ReportCardPage(child: s.extra as EnrolledChild), s),
+        ),
+        GoRoute(
+          path: 'review',
+          pageBuilder: (c, s) => _page(ReviewChildPage(child: s.extra as EnrolledChild), s),
+        ),
+        GoRoute(
+          path: 'profile',
+          pageBuilder: (c, s) => _page(const ParentProfilePage(), s),
+        ),
+        GoRoute(
+          path: 'payment',
+          pageBuilder: (c, s) {
+            final args = s.extra as Map<String, dynamic>;
+            return _page(
+              MobileMoneyPaymentPage(
+                child: args['child'] as EnrolledChild?,
+                admissionRequestId: args['admissionRequestId'] as String?,
+                installmentId: args['installmentId'] as String?,
+                landing: args['landing'],
+                amount: args['amount'] as double,
+                paymentPurpose: args['paymentPurpose'] as String,
+              ),
+              s,
+            );
+          },
+        ),
+        GoRoute(
+          path: 'payment-status',
+          pageBuilder: (c, s) {
+            final args = s.extra as Map<String, dynamic>;
+            return _page(
+              PaymentStatusPage(
+                transactionId: args['transactionId'] as String,
+                landing: args['landing'],
+                child: args['child'] as EnrolledChild?,
+                paymentPurpose: args['paymentPurpose'] as String,
+                amount: args['amount'] as double,
+              ),
+              s,
+            );
+          },
+        ),
+      ],
     ),
-    GoRoute(
-      path: 'enroll',
-      pageBuilder: (c, s) => _page(EnrollChildPage(schoolId: s.extra as String), s),
-    ),
-    GoRoute(
-      path: 'fees',
-      pageBuilder: (c, s) => _page(ChildFeesPage(child: s.extra as EnrolledChild), s),
-    ),
-    GoRoute(
-      path: 'report-card',
-      pageBuilder: (c, s) => _page(ReportCardPage(child: s.extra as EnrolledChild), s),
-    ),
-    GoRoute(
-      path: 'review',
-      pageBuilder: (c, s) => _page(ReviewChildPage(child: s.extra as EnrolledChild), s),
-    ),
-    GoRoute(
-      path: 'profile',
-      pageBuilder: (c, s) => _page(const ParentProfilePage(), s),
-    ),
-    GoRoute(
-      path: 'payment',
-      pageBuilder: (c, s) {
-        final args = s.extra as Map<String, dynamic>;
-        return _page(
-          MobileMoneyPaymentPage(
-            child: args['child'] as EnrolledChild?,
-            admissionRequestId: args['admissionRequestId'] as String?,
-            landing: args['landing'],
-            amount: args['amount'] as double,
-            paymentPurpose: args['paymentPurpose'] as String,
-          ),
-          s,
-        );
-      },
-    ),
-  ],
-),
+
     GoRoute(
       path: '/teacher',
       pageBuilder: (c, s) => _page(const TeacherHome(), s),
@@ -138,4 +141,3 @@ final appRouter = GoRouter(
     ),
   ],
 );
-

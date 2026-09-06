@@ -73,10 +73,6 @@ class ParentRepository {
     return rows.map((r) => ClassOption.fromMap(r)).toList();
   }
 
-  /// Looks up offerings for the class first; if none exist, falls back
-  /// to the class's department (per the school's own chosen scope -
-  /// see subject_offerings design). Empty result = no subject choice
-  /// step needed for this class at all.
   Future<List<SubjectOfferingOption>> getSubjectOfferings({
     required String classId,
     required String? departmentId,
@@ -100,7 +96,7 @@ class ParentRepository {
     return byDepartment.map((r) => SubjectOfferingOption.fromMap(r)).toList();
   }
 
-   Future<String> submitAdmissionRequest({
+  Future<String> submitAdmissionRequest({
     required String schoolId,
     required String parentId,
     required String requestedClassId,
@@ -140,11 +136,6 @@ class ParentRepository {
           'emergency_contact_phone': emergencyContactPhone,
           'address': address,
           'photo_url': photoUrl,
-          // FIX: was 'submitted', which PendingAdmission.needsPayment
-          // never matches - the dashboard showed "under review" the
-          // instant the form was submitted, before any payment. A
-          // brand-new admission is ALWAYS unpaid at this point, so it
-          // must start in the payment-pending state, not "under review".
           'status': 'awaiting_payment',
         })
         .select()
@@ -159,9 +150,9 @@ class ParentRepository {
 
     return request['id'] as String;
   }
+
   // --------------------------------------------------
-  // ACADEMIC TERMS (for the report card term picker - dynamic, not
-  // assumed to always be exactly 3)
+  // ACADEMIC TERMS
   // --------------------------------------------------
 
   Future<List<AcademicTermOption>> getTermsForYear(String academicYearId) async {
@@ -174,8 +165,7 @@ class ParentRepository {
   }
 
   // --------------------------------------------------
-  // REPORT CARD - a row only exists once the school has generated
-  // it; absence of a row IS the "not yet published" state, not an error.
+  // REPORT CARD
   // --------------------------------------------------
 
   Future<ReportCardSummary?> getReportCard({
@@ -251,10 +241,6 @@ class ParentRepository {
 
   // --------------------------------------------------
   // CHANGE PASSWORD
-  // Supabase's updateUser() alone does NOT verify the current
-  // password - it just needs an active session. So we re-authenticate
-  // with the CURRENT password first, as a real check, before allowing
-  // the change - otherwise "Current Password" would just be theater.
   // --------------------------------------------------
 
   Future<void> changePassword({
@@ -272,7 +258,7 @@ class ParentRepository {
   }
 
   // --------------------------------------------------
-  // APPROVED TEACHER COMMENTS ONLY - never drafts
+  // APPROVED TEACHER COMMENTS ONLY
   // --------------------------------------------------
 
   Future<List<TeacherComment>> getApprovedComments(String studentId) async {
@@ -286,11 +272,7 @@ class ParentRepository {
   }
 
   // --------------------------------------------------
-  // FEES - fees are keyed by class_id + academic_year_id, with
-  // registration_fee and total_school_fee living DIRECTLY on the fees
-  // row (not a "name"/"amount" per row - that was a wrong assumption
-  // in an earlier draft). Installments use `installment_name`, not
-  // `name`.
+  // FEES
   // --------------------------------------------------
 
   Future<List<FeeSummary>> getChildFees({
@@ -341,9 +323,6 @@ class ParentRepository {
     ];
   }
 
-  /// The registration fee is a single amount per class+year (a column
-  /// on `fees`, not a separate row) - used for the pending-admission
-  /// "Pay Now" step before a student even exists.
   Future<double?> getRegistrationFee({
     required String classId,
     required String academicYearId,
@@ -367,9 +346,7 @@ class ParentRepository {
   }
 
   // --------------------------------------------------
-  // CURRENT ACADEMIC YEAR (by ID, not display name - needed for
-  // admission_requests.academic_year_id, which is a UUID foreign key,
-  // not the "2025/2026" string LandingModel exposes for display).
+  // CURRENT ACADEMIC YEAR
   // --------------------------------------------------
 
   Future<String?> getCurrentAcademicYearId(String schoolId) async {
@@ -390,6 +367,7 @@ class ParentRepository {
     required String schoolId,
     String? childId,
     String? admissionRequestId,
+    String? installmentId,
     required double amount,
     required String paymentPurpose,
     required String phoneNumber,
@@ -398,6 +376,7 @@ class ParentRepository {
       'school_id': schoolId,
       if (childId != null) 'child_id': childId,
       if (admissionRequestId != null) 'admission_request_id': admissionRequestId,
+      if (installmentId != null) 'installment_id': installmentId,
       'amount': amount,
       'payment_purpose': paymentPurpose,
       'phone_number': phoneNumber,

@@ -34,28 +34,35 @@ class ChildFeesPage extends ConsumerWidget {
           error: (e, _) => Center(child: Text('$e')),
           data: (yearId) {
             if (yearId == null) {
-              return _InfoState(icon: Icons.event_busy_rounded, message: strings.academicYearNotSet);
+              return _FeesInfoState(icon: Icons.event_busy_rounded, message: strings.academicYearNotSet);
             }
             if (child.classId == null) {
-              return _InfoState(
+              return _FeesInfoState(
                 icon: Icons.info_outline_rounded,
                 message: strings.isFrench
                     ? 'La classe de cet enfant n\'est pas encore confirmée par l\'école.'
                     : 'This child\'s class has not been confirmed by the school yet.',
               );
             }
-            final feesAsync = ref.watch(childFeesProvider((studentId: child.studentId, classId: child.classId!, academicYearId: yearId)));
+            final feesAsync = ref.watch(
+              childFeesProvider((studentId: child.studentId, classId: child.classId!, academicYearId: yearId)),
+            );
             return feesAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text('$e')),
               data: (fees) {
                 if (fees.isEmpty) {
-                  return _InfoState(icon: Icons.receipt_long_outlined, message: strings.noFeesConfigured);
+                  return _FeesInfoState(icon: Icons.receipt_long_outlined, message: strings.noFeesConfigured);
                 }
                 return ListView(
                   padding: EdgeInsets.all(Responsive.pagePadding(context)),
                   children: [
-                    brandedSubpageHeader(context, schoolName: landing.schoolName, logoUrl: landing.logoUrl, subtitle: child.fullName),
+                    brandedSubpageHeader(
+                      context,
+                      schoolName: landing.schoolName,
+                      logoUrl: landing.logoUrl,
+                      subtitle: child.fullName,
+                    ),
 
                     // Explicit confirmation - this screen only exists for a
                     // real enrolled student, which by definition means
@@ -97,10 +104,10 @@ class ChildFeesPage extends ConsumerWidget {
   }
 }
 
-class _InfoState extends StatelessWidget {
+class _FeesInfoState extends StatelessWidget {
   final IconData icon;
   final String message;
-  const _InfoState({required this.icon, required this.message});
+  const _FeesInfoState({required this.icon, required this.message});
 
   @override
   Widget build(BuildContext context) {
@@ -120,9 +127,9 @@ class _InfoState extends StatelessWidget {
   }
 }
 
-/// The four states an installment can be in, purely computed from
-/// data already available (isPaid + dueDate vs today) - nothing new
-/// to store, just clearer presentation of what's already there.
+/// The states an installment can be in, purely computed from data
+/// already available (isPaid + dueDate vs today) - nothing new to
+/// store, just clearer presentation of what's already there.
 enum _InstallmentUrgency { paid, overdue, dueSoon, upcoming, noDueDate }
 
 _InstallmentUrgency _urgencyOf(InstallmentSummary i) {
@@ -299,6 +306,7 @@ class _InstallmentRow extends StatelessWidget {
                   'landing': landing,
                   'amount': installment.amount,
                   'paymentPurpose': installment.name,
+                  'installmentId': installment.installmentId,
                 }),
                 icon: const Icon(Icons.payments_outlined, size: 16),
                 label: Text(strings.payNow),
@@ -315,13 +323,13 @@ class _InstallmentRow extends StatelessWidget {
 
   String _formatDate(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 }
-  
 
 /// Also used directly for registration fees (child == null in that
 /// case, admissionRequestId set instead).
 class MobileMoneyPaymentPage extends ConsumerStatefulWidget {
   final EnrolledChild? child;
   final String? admissionRequestId;
+  final String? installmentId;
   final LandingModel landing;
   final double amount;
   final String paymentPurpose;
@@ -330,6 +338,7 @@ class MobileMoneyPaymentPage extends ConsumerStatefulWidget {
     super.key,
     this.child,
     this.admissionRequestId,
+    this.installmentId,
     required this.landing,
     required this.amount,
     required this.paymentPurpose,
@@ -352,6 +361,7 @@ class _MobileMoneyPaymentPageState extends ConsumerState<MobileMoneyPaymentPage>
             schoolId: widget.landing.schoolId,
             childId: widget.child?.studentId,
             admissionRequestId: widget.admissionRequestId,
+            installmentId: widget.installmentId,
             amount: widget.amount,
             paymentPurpose: widget.paymentPurpose,
             phoneNumber: _phoneController.text.trim(),
