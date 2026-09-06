@@ -7,11 +7,13 @@ import '../../core/responsive.dart';
 import '../landing/landing_providers.dart';
 import 'teacher_models.dart';
 import 'teacher_providers.dart';
+import 'teacher_sign_out.dart';
 import 'teacher_ui.dart';
 
-/// Shell tab, not its own pushed page. No standalone "Sign Out"
-/// button here anymore - the sidebar/drawer always has one, so a
-/// second copy was just clutter.
+/// Shell tab, not its own pushed page. Has its own Sign Out button
+/// (with confirm + loading, see teacher_sign_out.dart) alongside the
+/// sidebar/drawer's - both use the exact same confirm-and-sign-out
+/// logic, so behavior is identical no matter which one is tapped.
 class TeacherProfileTab extends ConsumerStatefulWidget {
   final TeacherProfile profile;
   const TeacherProfileTab({super.key, required this.profile});
@@ -203,6 +205,8 @@ class _TeacherProfileTabState extends ConsumerState<TeacherProfileTab> {
                     ],
                   ),
                 ),
+                const SizedBox(height: 16),
+                TeacherSignOutButton(strings: strings),
               ],
             ),
           ),

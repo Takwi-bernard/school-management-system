@@ -55,35 +55,36 @@ class ChildFeesPage extends ConsumerWidget {
                 return ListView(
                   padding: EdgeInsets.all(Responsive.pagePadding(context)),
                   children: [
-                    brandedSubpageHeader(
-                      context,
-                      schoolName: landing.schoolName,
-                      logoUrl: landing.logoUrl,
-                      subtitle: child.fullName,
-                    ),
+                    brandedSubpageHeader(context, schoolName: landing.schoolName, logoUrl: landing.logoUrl, subtitle: child.fullName),
+
+                    // Explicit confirmation - this screen only exists for a
+                    // real enrolled student, which by definition means
+                    // registration is already paid. Say so plainly instead
+                    // of leaving the parent to infer it.
                     Container(
-                      margin: const EdgeInsets.only(bottom: 20),
+                      margin: const EdgeInsets.only(bottom: 16),
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+                        color: Colors.green.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
                       ),
                       child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(Icons.info_outline_rounded, color: Theme.of(context).colorScheme.primary, size: 20),
+                          const Icon(Icons.check_circle_rounded, color: Colors.green, size: 22),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               strings.isFrench
-                                  ? 'Ci-dessous, les frais scolaires fixés par l\'école pour ${child.fullName}. Chaque tranche non payée est visible ci-dessous - appuyez sur "Payer maintenant" pour la régler par Mobile Money.'
-                                  : 'Below are the school fees set by the school for ${child.fullName}. Any unpaid installment is shown below - tap "Pay Now" to settle it by Mobile Money.',
-                              style: Theme.of(context).textTheme.bodySmall,
+                                  ? 'Frais d\'inscription payés. ${child.firstName} est officiellement inscrit(e) à ${landing.schoolName}.'
+                                  : 'Registration fee paid. ${child.firstName} is officially enrolled at ${landing.schoolName}.',
+                              style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.w600, fontSize: 13),
                             ),
                           ),
                         ],
                       ),
                     ),
+
                     ...fees.map((fee) => _FeeCard(fee: fee, child: child, landing: landing, strings: strings)),
                   ],
                 );
@@ -119,6 +120,20 @@ class _InfoState extends StatelessWidget {
   }
 }
 
+/// The four states an installment can be in, purely computed from
+/// data already available (isPaid + dueDate vs today) - nothing new
+/// to store, just clearer presentation of what's already there.
+enum _InstallmentUrgency { paid, overdue, dueSoon, upcoming, noDueDate }
+
+_InstallmentUrgency _urgencyOf(InstallmentSummary i) {
+  if (i.isPaid) return _InstallmentUrgency.paid;
+  if (i.dueDate == null) return _InstallmentUrgency.noDueDate;
+  final daysLeft = i.dueDate!.difference(DateTime.now()).inDays;
+  if (daysLeft < 0) return _InstallmentUrgency.overdue;
+  if (daysLeft <= 7) return _InstallmentUrgency.dueSoon;
+  return _InstallmentUrgency.upcoming;
+}
+
 class _FeeCard extends StatelessWidget {
   final FeeSummary fee;
   final EnrolledChild child;
@@ -130,6 +145,7 @@ class _FeeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final progress = fee.totalAmount <= 0 ? 0.0 : (fee.amountPaid / fee.totalAmount).clamp(0.0, 1.0);
+    final unpaidCount = fee.installments.where((i) => !i.isPaid).length;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -138,29 +154,55 @@ class _FeeCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(fee.feeName, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 10),
-          LinearProgressIndicator(value: progress, minHeight: 8, borderRadius: BorderRadius.circular(20)),
+          Row(
+            children: [
+              Expanded(
+                child: Text(fee.feeName, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+              ),
+              Text('${fee.totalAmount.toStringAsFixed(0)} FCFA', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+            ],
+          ),
+          const SizedBox(height: 4),
+
+          // Explains the PLAN itself, dynamically - never assumes a
+          // fixed number of installments.
+          Text(
+            fee.fullyPaid
+                ? (strings.isFrench
+                    ? 'Tous les frais de scolarité ont été réglés.'
+                    : 'All school fees have been settled.')
+                : strings.isFrench
+                    ? 'L\'école a divisé ces frais en ${fee.installments.length} versements. Il reste $unpaidCount versement${unpaidCount > 1 ? 's' : ''} à payer.'
+                    : 'The school has split this fee into ${fee.installments.length} installment${fee.installments.length > 1 ? 's' : ''}. $unpaidCount remain${unpaidCount == 1 ? 's' : ''} unpaid.',
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+          ),
+          const SizedBox(height: 14),
+
+          ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: LinearProgressIndicator(value: progress, minHeight: 10),
+          ),
           const SizedBox(height: 8),
           Text(
             '${fee.amountPaid.toStringAsFixed(0)} / ${fee.totalAmount.toStringAsFixed(0)} FCFA  ·  '
             '${(progress * 100).toStringAsFixed(0)}% ${strings.isFrench ? 'payé' : 'paid'}',
-            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+            style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
+
           if (fee.fullyPaid)
             Row(
               children: [
-                const Icon(Icons.check_circle_rounded, color: Colors.green, size: 18),
+                const Icon(Icons.celebration_rounded, color: Colors.green, size: 20),
                 const SizedBox(width: 8),
                 Text(
-                  strings.isFrench ? 'Tous les frais ont été payés.' : 'All fees have been paid.',
-                  style: theme.textTheme.bodySmall?.copyWith(color: Colors.green, fontWeight: FontWeight.w600),
+                  strings.isFrench ? 'Rien d\'autre à payer pour le moment.' : 'Nothing else to pay right now.',
+                  style: theme.textTheme.bodyMedium?.copyWith(color: Colors.green.shade700, fontWeight: FontWeight.w600),
                 ),
               ],
             )
           else
-            ...fee.installments.map((i) => _InstallmentRow(installment: i, fee: fee, child: child, landing: landing, strings: strings)),
+            ...fee.installments.map((i) => _InstallmentRow(installment: i, child: child, landing: landing, strings: strings)),
         ],
       ),
     );
@@ -169,13 +211,11 @@ class _FeeCard extends StatelessWidget {
 
 class _InstallmentRow extends StatelessWidget {
   final InstallmentSummary installment;
-  final FeeSummary fee;
   final EnrolledChild child;
   final LandingModel landing;
   final AppStrings strings;
   const _InstallmentRow({
     required this.installment,
-    required this.fee,
     required this.child,
     required this.landing,
     required this.strings,
@@ -184,42 +224,90 @@ class _InstallmentRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final urgency = _urgencyOf(installment);
+
+    final (Color badgeColor, String badgeText, IconData badgeIcon) = switch (urgency) {
+      _InstallmentUrgency.paid => (Colors.green, strings.isFrench ? 'Payé' : 'Paid', Icons.check_circle_rounded),
+      _InstallmentUrgency.overdue => (Colors.red, strings.isFrench ? 'En retard' : 'Overdue', Icons.error_rounded),
+      _InstallmentUrgency.dueSoon => (Colors.orange, strings.isFrench ? 'Échéance proche' : 'Due soon', Icons.schedule_rounded),
+      _InstallmentUrgency.upcoming => (theme.colorScheme.primary, strings.isFrench ? 'À venir' : 'Upcoming', Icons.event_rounded),
+      _InstallmentUrgency.noDueDate => (theme.colorScheme.outline, strings.isFrench ? 'Non payé' : 'Unpaid', Icons.radio_button_unchecked_rounded),
+    };
+
+    String? explanation;
+    if (urgency == _InstallmentUrgency.overdue) {
+      final daysLate = DateTime.now().difference(installment.dueDate!).inDays;
+      explanation = strings.isFrench
+          ? 'La date limite était il y a $daysLate jour${daysLate > 1 ? 's' : ''}. Veuillez régulariser dès que possible pour éviter tout retard supplémentaire.'
+          : 'This was due $daysLate day${daysLate > 1 ? 's' : ''} ago. Please settle it as soon as possible to avoid falling further behind.';
+    } else if (urgency == _InstallmentUrgency.dueSoon) {
+      final daysLeft = installment.dueDate!.difference(DateTime.now()).inDays;
+      explanation = strings.isFrench
+          ? 'Échéance dans $daysLeft jour${daysLeft > 1 ? 's' : ''}.'
+          : 'Due in $daysLeft day${daysLeft > 1 ? 's' : ''}.';
+    }
+
     return Container(
       margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: installment.isPaid ? Colors.green.withValues(alpha: 0.06) : theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        color: urgency == _InstallmentUrgency.overdue
+            ? Colors.red.withValues(alpha: 0.05)
+            : theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: urgency == _InstallmentUrgency.overdue ? Colors.red.withValues(alpha: 0.3) : theme.colorScheme.outlineVariant,
+        ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(installment.isPaid ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-              color: installment.isPaid ? Colors.green : theme.colorScheme.outline, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(installment.name, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
-                if (installment.dueDate != null)
-                  Text('${strings.due}: ${_formatDate(installment.dueDate!)}',
-                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-              ],
-            ),
+          Row(
+            children: [
+              Icon(badgeIcon, color: badgeColor, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(installment.name, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+                    if (installment.dueDate != null)
+                      Text('${strings.due}: ${_formatDate(installment.dueDate!)}',
+                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(color: badgeColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+                child: Text(badgeText, style: TextStyle(color: badgeColor, fontSize: 11, fontWeight: FontWeight.w700)),
+              ),
+            ],
           ),
-          Text('${installment.amount.toStringAsFixed(0)} FCFA', style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(width: 10),
-          if (!installment.isPaid)
-            FilledButton(
-              onPressed: () => context.push('/parent/payment', extra: {
-                'child': child,
-                'landing': landing,
-                'amount': installment.amount,
-                'paymentPurpose': installment.name,
-              }),
-              child: Text(strings.payNow),
-            ),
+          if (explanation != null) ...[
+            const SizedBox(height: 8),
+            Text(explanation, style: theme.textTheme.bodySmall?.copyWith(color: badgeColor)),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Text('${installment.amount.toStringAsFixed(0)} FCFA', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+              const Spacer(),
+              FilledButton.icon(
+                onPressed: () => context.push('/parent/payment', extra: {
+                  'child': child,
+                  'landing': landing,
+                  'amount': installment.amount,
+                  'paymentPurpose': installment.name,
+                }),
+                icon: const Icon(Icons.payments_outlined, size: 16),
+                label: Text(strings.payNow),
+                style: urgency == _InstallmentUrgency.overdue
+                    ? FilledButton.styleFrom(backgroundColor: Colors.red.shade600)
+                    : null,
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -227,6 +315,7 @@ class _InstallmentRow extends StatelessWidget {
 
   String _formatDate(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 }
+  
 
 /// Also used directly for registration fees (child == null in that
 /// case, admissionRequestId set instead).

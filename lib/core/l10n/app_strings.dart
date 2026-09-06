@@ -124,6 +124,9 @@ class AppStrings {
       ? "Votre candidature d'enseignant pour cette école n'a pas été approuvée. Si vous pensez qu'il s'agit d'une erreur, veuillez contacter le Directeur."
       : "Your teacher application for this school was not approved. If you believe this is a mistake, please contact the Principal.";
   String get contactSchool => isFrench ? "Contactez l'école" : 'Contact the school';
+  String get stepAccountCreated => isFrench ? 'Compte créé' : 'Account Created';
+  String get stepAwaitingApproval => isFrench ? "En attente d'approbation" : 'Awaiting Approval';
+  String get stepFullAccess => isFrench ? 'Accès complet' : 'Full Access';
   String get myTeaching => isFrench ? 'Mes cours' : 'My Teaching';
   String get noAssignmentsTitle =>
       isFrench ? "Aucune affectation d'enseignement pour le moment" : 'No teaching assignments yet';
@@ -136,6 +139,11 @@ class AppStrings {
   String get coefficientLabel => isFrench ? 'Coefficient' : 'Coefficient';
   String get coefficientShort => 'Coef.';
   String get signOut => isFrench ? 'Se déconnecter' : 'Sign Out';
+  String get signOutConfirmTitle => isFrench ? 'Se déconnecter ?' : 'Sign out?';
+  String get signOutConfirmMessage => isFrench
+      ? 'Voulez-vous vraiment vous déconnecter de votre compte ?'
+      : 'Are you sure you want to sign out of your account?';
+  String get signingOut => isFrench ? 'Déconnexion...' : 'Signing out...';
   String get periodsPerWeekLabel => isFrench ? 'périodes/semaine' : 'periods/week';
   String get myProfile => isFrench ? 'Mon profil' : 'My Profile';
   String get personalInformation => isFrench ? 'Informations personnelles' : 'Personal Information';
@@ -180,6 +188,13 @@ class AppStrings {
       ? 'Impossible d\'enregistrer la présence. Veuillez réessayer.'
       : 'Could not save attendance. Please try again.';
   String get myTimetable => isFrench ? 'Mon emploi du temps' : 'My Timetable';
+  String get upNextLabel => isFrench ? 'À suivre' : 'Up Next';
+  String get todayLabel => isFrench ? "Aujourd'hui" : 'Today';
+  String get tomorrowLabel => isFrench ? 'Demain' : 'Tomorrow';
+  String get fullWeekLabel => isFrench ? 'Semaine complète' : 'Full Week';
+  String get noUpcomingClasses => isFrench
+      ? "Aucun cours à venir n'est programmé pour le moment."
+      : 'No upcoming classes are scheduled right now.';
   String get timetableEmpty =>
       isFrench ? "Votre emploi du temps n'a pas encore été configuré." : 'Your timetable has not been configured yet.';
   String get photoUpdatedMessage => isFrench ? 'Photo mise à jour.' : 'Photo updated.';

@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/app_strings.dart';
 import '../../core/responsive.dart';
-import '../auth/auth_providers.dart';
 import '../landing/landing_providers.dart';
 import 'teacher_dashboard_tab.dart';
 import 'teacher_models.dart';
 import 'teacher_navigation.dart';
 import 'teacher_profile.dart';
 import 'teacher_providers.dart';
+import 'teacher_sign_out.dart';
 import 'teacher_timetable.dart';
 
 /// Every color on the sidebar comes from Theme.of(context).colorScheme,
@@ -60,11 +59,6 @@ class TeacherShell extends ConsumerWidget {
       case TeacherDestination.profile:
         return TeacherProfileTab(profile: profile);
     }
-  }
-
-  Future<void> _signOut(BuildContext context, WidgetRef ref) async {
-    await ref.read(authControllerProvider.notifier).signOut();
-    if (context.mounted) context.go('/');
   }
 
   /// Switching top-level destination always resets the in-shell
@@ -117,7 +111,6 @@ class TeacherShell extends ConsumerWidget {
                 _selectDestination(ref, d);
                 Navigator.of(context).pop();
               },
-              onSignOut: () => _signOut(context, ref),
             ),
           ),
         ),
@@ -145,7 +138,6 @@ class TeacherShell extends ConsumerWidget {
                 items: items,
                 active: destination,
                 onSelect: (d) => _selectDestination(ref, d),
-                onSignOut: () => _signOut(context, ref),
               ),
             ),
           ),
@@ -175,7 +167,6 @@ class _SidebarContent extends StatelessWidget {
   final List<_NavItem> items;
   final TeacherDestination active;
   final ValueChanged<TeacherDestination> onSelect;
-  final VoidCallback onSignOut;
 
   const _SidebarContent({
     required this.collapsed,
@@ -186,7 +177,6 @@ class _SidebarContent extends StatelessWidget {
     required this.items,
     required this.active,
     required this.onSelect,
-    required this.onSignOut,
   });
 
   @override
@@ -241,14 +231,7 @@ class _SidebarContent extends StatelessWidget {
                   children: [
                     _Avatar(profile: profile, radius: 18),
                     const SizedBox(height: 10),
-                    Tooltip(
-                      message: strings.signOut,
-                      child: IconButton(
-                        onPressed: onSignOut,
-                        icon: const Icon(Icons.logout_rounded, size: 20),
-                        color: scheme.error,
-                      ),
-                    ),
+                    TeacherSignOutIconButton(strings: strings, color: scheme.error),
                   ],
                 )
               : Row(
@@ -267,14 +250,7 @@ class _SidebarContent extends StatelessWidget {
                         ],
                       ),
                     ),
-                    Tooltip(
-                      message: strings.signOut,
-                      child: IconButton(
-                        onPressed: onSignOut,
-                        icon: const Icon(Icons.logout_rounded, size: 20),
-                        color: scheme.error,
-                      ),
-                    ),
+                    TeacherSignOutIconButton(strings: strings, color: scheme.error),
                   ],
                 ),
         ),
