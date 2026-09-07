@@ -336,10 +336,10 @@ class ParentRepository {
     return (row?['registration_fee'] as num?)?.toDouble();
   }
 
-    Future<List<PaymentTransaction>> getPaymentHistory(String parentId) async {
+     Future<List<PaymentTransaction>> getPaymentHistory(String parentId) async {
     final rows = await _client
         .from('payments')
-        .select('*, students(first_name, last_name), admission_requests(first_name, last_name)')
+        .select('*, students(first_name, last_name), admission_requests!payments_admission_request_id_fkey(first_name, last_name)')
         .eq('parent_id', parentId)
         .order('created_at', ascending: false);
     return rows.map((r) => PaymentTransaction.fromMap(r)).toList();
