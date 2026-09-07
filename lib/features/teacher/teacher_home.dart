@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/app_strings.dart';
 import '../../core/motion.dart';
+import '../../core/browser_chrome.dart';
 import '../auth/auth_gate.dart';
 import '../landing/landing_providers.dart';
 import 'teacher_models.dart';
@@ -75,6 +76,10 @@ class _TeacherProfileGate extends ConsumerWidget {
           useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(seedColor: primary, primary: primary, secondary: secondary),
         );
+        // Keeps Safari's own overscroll/bounce area in sync with THIS
+        // school's actual color, instead of the static white/black
+        // index.html can only ever guess at before this point.
+        updateBrowserChromeColor(primary);
 
         return Theme(
           data: theme,

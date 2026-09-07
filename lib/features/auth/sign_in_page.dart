@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/app_strings.dart';
 import '../../core/motion.dart';
+import '../../core/browser_chrome.dart';
 import '../landing/landing_providers.dart';
 import 'auth_branding_header.dart';
 import 'auth_error_banner.dart';
@@ -139,6 +140,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
           useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(seedColor: primary, primary: primary, secondary: secondary),
         );
+        updateBrowserChromeColor(primary);
 
         return Theme(
           data: schoolTheme,
