@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'landing_model.dart';
 
@@ -78,8 +79,19 @@ class LandingRepository {
       schoolId: schoolId,
       schoolName: school['school_name'] as String? ?? '',
       motto: school['motto'] as String? ?? '',
-      primaryColor: school['primary_color'] as String? ?? '#1A73E8',
-      secondaryColor: school['secondary_color'] as String? ?? '#34A853',
+      // FIX: this was the actual root cause of the sign-in button
+      // (and everything else theme-colored) showing blue. The old
+      // fallback here was '#1A73E8' / '#34A853' - real, legitimate-
+      // looking Google-blue/green hex values - so if a school's row
+      // simply has no primary_color set yet, the app would silently
+      // and CONSISTENTLY render a plausible-looking blue theme with
+      // zero indication anything was wrong. Every fix earlier in this
+      // conversation (school_color.dart's parser, AuthScaffold, etc.)
+      // was correctly parsing this fallback value - there was never
+      // anything invalid for them to catch, because the string itself
+      // was a valid, just-wrong-on-purpose color coming from HERE.
+      primaryColor: school['primary_color'] as String? ?? _missingColorFallback(schoolId, 'primary_color'),
+      secondaryColor: school['secondary_color'] as String? ?? _missingColorFallback(schoolId, 'secondary_color'),
       logoUrl: branding['logo'] ?? '',
       heroImageUrl: branding['hero_banner'] ?? '',
       languageMode: school['language_mode'] as String? ?? 'english',
@@ -98,6 +110,21 @@ class LandingRepository {
       announcements: announcements,
       events: events,
     );
+  }
+
+  /// Neutral gray, not a brand-like color - and logs exactly which
+  /// school and column is missing, so this is never silent again.
+  /// This does NOT make the school's real color show up - that still
+  /// requires setting primary_color/secondary_color on the schools
+  /// row in Supabase for this school. This just makes it obvious when
+  /// that hasn't been done yet, instead of quietly faking a theme.
+  String _missingColorFallback(String schoolId, String column) {
+    debugPrint(
+      '[LandingRepository] schools.$column is null for school $schoolId - '
+      'falling back to neutral gray instead of a brand-like color. '
+      'Set this column in Supabase to show the real school color.',
+    );
+    return '#9E9E9E';
   }
 
   Future<String?> _loadCurrentAcademicYear(String schoolId) async {
