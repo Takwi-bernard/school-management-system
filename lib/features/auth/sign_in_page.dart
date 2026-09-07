@@ -4,9 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/app_strings.dart';
 import '../../core/motion.dart';
-import '../../core/browser_chrome.dart';
 import '../landing/landing_providers.dart';
-import 'auth_branding_header.dart';
 import 'auth_error_banner.dart';
 import 'auth_gate.dart';
 import 'auth_providers.dart';
@@ -80,12 +78,6 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     }
   }
 
-  Color _parseColor(String hex) {
-    var v = hex.replaceAll('#', '');
-    if (v.length == 6) v = 'FF$v';
-    return Color(int.tryParse(v, radix: 16) ?? 0xFF1A73E8);
-  }
-
   @override
   Widget build(BuildContext context) {
     final landing = ref.watch(landingProvider);
@@ -128,31 +120,21 @@ class _SignInPageState extends ConsumerState<SignInPage> {
 
         final strings = AppStrings(locale);
 
-        // FIX: this page never seeded a theme from the school's own
-        // colors, so every Theme.of(context) call below (the sign-in
-        // button's background, focus colors, etc.) was silently
-        // falling back to the app's root/default theme instead of
-        // school.primaryColor - the sign-in button showing blue on an
-        // orange-branded school was this, not a hardcoded color.
-        final primary = _parseColor(school.primaryColor);
-        final secondary = _parseColor(school.secondaryColor);
-        final schoolTheme = ThemeData(
-          useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(seedColor: primary, primary: primary, secondary: secondary),
-        );
-        updateBrowserChromeColor(primary);
-
-        return Theme(
-          data: schoolTheme,
-          child: AuthScaffold(
-            school: school,
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AuthBrandingHeader(school: school, subtitle: strings.signInTitle),
-                  const SizedBox(height: 24),
+        // NOTE: AuthScaffold (auth_gate.dart) already builds the
+        // school theme AND syncs the browser chrome color itself now
+        // - this page doesn't need to duplicate either. The earlier
+        // fix here was redundant with what AuthScaffold already did;
+        // the real bug was a silent color-parsing fallback to blue,
+        // now fixed centrally in core/school_color.dart.
+        return AuthScaffold(
+          school: school,
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AuthBrandingHeader(school: school, subtitle: strings.signInTitle),
+                const SizedBox(height: 24),
                   TextFormField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
@@ -239,7 +221,6 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                 ],
               ),
             ),
-          ),
         );
       },
     );

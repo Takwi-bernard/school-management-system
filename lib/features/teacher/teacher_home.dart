@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/l10n/app_strings.dart';
 import '../../core/motion.dart';
 import '../../core/browser_chrome.dart';
+import '../../core/school_color.dart';
 import '../auth/auth_gate.dart';
 import '../landing/landing_providers.dart';
 import 'teacher_models.dart';
@@ -70,8 +71,8 @@ class _TeacherProfileGate extends ConsumerWidget {
           return Scaffold(body: Center(child: Text(strings.profileNotFound)));
         }
 
-        final primary = _parseColor(landing.primaryColor);
-        final secondary = _parseColor(landing.secondaryColor);
+        final primary = parseSchoolColor(landing.primaryColor, debugLabel: 'TeacherShell primary');
+        final secondary = parseSchoolColor(landing.secondaryColor, debugLabel: 'TeacherShell secondary');
         final theme = ThemeData(
           useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(seedColor: primary, primary: primary, secondary: secondary),
@@ -101,12 +102,6 @@ class _TeacherProfileGate extends ConsumerWidget {
         );
       },
     );
-  }
-
-  Color _parseColor(String hex) {
-    var v = hex.replaceAll('#', '');
-    if (v.length == 6) v = 'FF$v';
-    return Color(int.tryParse(v, radix: 16) ?? 0xFF1A73E8);
   }
 }
 
