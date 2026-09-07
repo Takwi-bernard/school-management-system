@@ -103,6 +103,14 @@ class _ParentShell extends ConsumerWidget {
             : 'View attendance and school comments.',
         onTap: () => _pickChildThen(context, children, (child) => context.push('/parent/review', extra: child)),
       ),
+            _NavItem(
+        icon: Icons.history_rounded,
+        title: strings.paymentHistory,
+        description: strings.isFrench
+            ? 'Voir toutes vos transactions passées.'
+            : 'View all your past transactions.',
+        onTap: () => context.push('/parent/payment-history'),
+      ),
       _NavItem(
         icon: Icons.person_outline_rounded,
         title: strings.myProfile,

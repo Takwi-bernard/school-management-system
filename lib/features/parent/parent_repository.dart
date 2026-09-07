@@ -336,15 +336,14 @@ class ParentRepository {
     return (row?['registration_fee'] as num?)?.toDouble();
   }
 
-  Future<List<PaymentTransaction>> getPaymentHistory(String parentId) async {
+    Future<List<PaymentTransaction>> getPaymentHistory(String parentId) async {
     final rows = await _client
         .from('payments')
-        .select()
+        .select('*, students(first_name, last_name), admission_requests(first_name, last_name)')
         .eq('parent_id', parentId)
         .order('created_at', ascending: false);
     return rows.map((r) => PaymentTransaction.fromMap(r)).toList();
   }
-
   // --------------------------------------------------
   // CURRENT ACADEMIC YEAR
   // --------------------------------------------------
@@ -399,4 +398,29 @@ class ParentRepository {
     }
     return PaymentTransaction.fromMap(Map<String, dynamic>.from(data['transaction']));
   }
+
+    // --------------------------------------------------
+  // OFFICIAL DOCUMENT BRANDING - letterhead + stamps, same
+  // school_assets table/pattern already used for the logo on the
+  // landing page. Missing assets simply produce an empty map entry -
+  // never blocks document generation.
+  // --------------------------------------------------
+
+  Future<Map<String, String>> getOfficialBranding(String schoolId) async {
+    final rows = await _client
+        .from('school_assets')
+        .select()
+        .eq('school_id', schoolId)
+        .eq('is_active', true)
+        .inFilter('asset_type', ['letterhead', 'principal_stamp', 'proprietor_stamp', 'discipline_master_stamp']);
+
+    final result = <String, String>{};
+    for (final row in rows) {
+      final type = row['asset_type'] as String?;
+      final url = row['file_url'] as String?;
+      if (type != null && url != null) result[type] = url;
+    }
+    return result;
+  }
 }
+

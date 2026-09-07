@@ -4,12 +4,13 @@ import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-
+import '../../shared/official_document_branding.dart';
 import '../../core/l10n/app_strings.dart';
 import '../../core/responsive.dart';
 import '../landing/landing_providers.dart';
 import 'parent_models.dart';
 import 'parent_providers.dart';
+import '../../features/landing/landing_model.dart';
 
 class ReportCardPage extends ConsumerStatefulWidget {
   final EnrolledChild child;
@@ -132,19 +133,19 @@ class _ReportCardPageState extends ConsumerState<ReportCardPage> {
     );
   }
 
-  Future<void> _downloadReportCard(BuildContext context, ReportCardSummary report, dynamic landing) async {
-    final doc = pw.Document();
+    Future<void> _downloadReportCard(BuildContext context, ReportCardSummary report, LandingModel landing) async {
+    final assets = await ref.read(officialBrandingProvider(landing.schoolId).future);
+    final branding = await OfficialBranding.fetch(assets);
 
-    pw.MemoryImage? logo;
-    if (landing.logoUrl.isNotEmpty) {
+    pw.MemoryImage? fallbackLogo;
+    if (branding.letterhead == null && landing.logoUrl.isNotEmpty) {
       try {
         final res = await http.get(Uri.parse(landing.logoUrl));
-        if (res.statusCode == 200) logo = pw.MemoryImage(res.bodyBytes);
-      } catch (_) {
-        // Missing/unreachable logo should never block the report card itself.
-      }
+        if (res.statusCode == 200) fallbackLogo = pw.MemoryImage(res.bodyBytes);
+      } catch (_) {}
     }
 
+    final doc = pw.Document();
     doc.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.a4,
@@ -153,12 +154,13 @@ class _ReportCardPageState extends ConsumerState<ReportCardPage> {
           child: pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.center,
             children: [
-              if (logo != null) pw.Image(logo, width: 64, height: 64),
-              pw.SizedBox(height: 10),
-              pw.Text(landing.schoolName, style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
-              if (landing.motto.isNotEmpty)
-                pw.Text(landing.motto, style:  pw.TextStyle(fontSize: 11, fontStyle: pw.FontStyle.italic)),
-              pw.SizedBox(height: 18),
+              buildDocumentHeader(
+                branding: branding,
+                schoolName: landing.schoolName,
+                motto: landing.motto,
+                fallbackLogo: fallbackLogo,
+              ),
+              pw.SizedBox(height: 16),
               pw.Container(
                 padding: const pw.EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                 decoration: pw.BoxDecoration(border: pw.Border.all(width: 0.5)),
@@ -215,7 +217,15 @@ class _ReportCardPageState extends ConsumerState<ReportCardPage> {
                 _summaryLine('Class Rank', '${report.classRank} / ${report.totalStudents}'),
               if (report.principalComment != null && report.principalComment!.isNotEmpty)
                 _summaryLine('Principal\'s Remark', report.principalComment!),
-              pw.SizedBox(height: 24),
+              pw.SizedBox(height: 20),
+              // A report card is an ACADEMIC document - stamped by the
+              // Principal, not the Proprietor (whose stamp belongs on
+              // financial documents like the receipt instead).
+              pw.Align(
+                alignment: pw.Alignment.centerRight,
+                child: buildStampBlock(branding.principalStamp),
+              ),
+              pw.SizedBox(height: 16),
               pw.Text('Generated automatically by the school management system.',
                   style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
             ],
@@ -226,7 +236,6 @@ class _ReportCardPageState extends ConsumerState<ReportCardPage> {
 
     await Printing.sharePdf(bytes: await doc.save(), filename: 'report_card_${report.studentName.replaceAll(' ', '_')}.pdf');
   }
-
   pw.Widget _cell(String text, {bool bold = false, bool center = false}) {
     return pw.Padding(
       padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 6),

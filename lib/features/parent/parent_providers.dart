@@ -84,6 +84,10 @@ final approvedCommentsProvider = FutureProvider.family<List<TeacherComment>, Str
   return ref.watch(parentRepositoryProvider).getApprovedComments(studentId);
 });
 
+final officialBrandingProvider = FutureProvider.family<Map<String, String>, String>((ref, schoolId) {
+  return ref.watch(parentRepositoryProvider).getOfficialBranding(schoolId);
+});
+
 class ParentProfileActions {
   ParentProfileActions(this._ref);
   final Ref _ref;

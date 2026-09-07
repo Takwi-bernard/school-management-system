@@ -8,10 +8,15 @@ import 'package:printing/printing.dart';
 
 import '../../core/l10n/app_strings.dart';
 import '../../core/responsive.dart';
+import '../../shared/official_document_branding.dart';
 import '../landing/landing_model.dart';
 import '../landing/landing_providers.dart';
 import 'parent_models.dart';
 import 'parent_providers.dart';
+
+// ============================================================
+// CHILD FEES PAGE
+// ============================================================
 
 class ChildFeesPage extends ConsumerWidget {
   final EnrolledChild child;
@@ -171,8 +176,6 @@ class _FeeCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
 
-          // Explains the PLAN itself, dynamically - never assumes a
-          // fixed number of installments.
           Text(
             fee.fullyPaid
                 ? (strings.isFrench
@@ -324,8 +327,12 @@ class _InstallmentRow extends StatelessWidget {
   String _formatDate(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 }
 
-/// Also used directly for registration fees (child == null in that
-/// case, admissionRequestId set instead).
+// ============================================================
+// MOBILE MONEY PAYMENT PAGE
+// Also used directly for registration fees (child == null in that
+// case, admissionRequestId set instead).
+// ============================================================
+
 class MobileMoneyPaymentPage extends ConsumerStatefulWidget {
   final EnrolledChild? child;
   final String? admissionRequestId;
@@ -478,6 +485,10 @@ class _MobileMoneyPaymentPageState extends ConsumerState<MobileMoneyPaymentPage>
   }
 }
 
+// ============================================================
+// PAYMENT STATUS PAGE
+// ============================================================
+
 class PaymentStatusPage extends ConsumerStatefulWidget {
   final String transactionId;
   final LandingModel landing;
@@ -527,6 +538,10 @@ class _PaymentStatusPageState extends ConsumerState<PaymentStatusPage> {
     } finally {
       if (mounted) setState(() => _checking = false);
     }
+  }
+
+  Future<void> _generateReceipt(BuildContext context) async {
+    await generateReceiptPdf(ref: ref, transaction: _transaction!, landing: widget.landing);
   }
 
   @override
@@ -595,63 +610,233 @@ class _PaymentStatusPageState extends ConsumerState<PaymentStatusPage> {
       ),
     );
   }
+}
 
-  Future<void> _generateReceipt(BuildContext context) async {
-    final t = _transaction!;
-    final doc = pw.Document();
+// ============================================================
+// SHARED RECEIPT PDF GENERATOR - used by BOTH the payment-status
+// screen (right after paying) and the payment history screen (any
+// past transaction), so a receipt looks identical no matter where
+// it's generated from.
+// ============================================================
 
-    pw.MemoryImage? logo;
-    if (widget.landing.logoUrl.isNotEmpty) {
-      try {
-        final res = await http.get(Uri.parse(widget.landing.logoUrl));
-        if (res.statusCode == 200) logo = pw.MemoryImage(res.bodyBytes);
-      } catch (_) {
-        // Missing/unreachable logo should never block the receipt itself.
-      }
-    }
+Future<void> generateReceiptPdf({
+  required WidgetRef ref,
+  required PaymentTransaction transaction,
+  required LandingModel landing,
+}) async {
+  final assets = await ref.read(officialBrandingProvider(landing.schoolId).future);
+  final branding = await OfficialBranding.fetch(assets);
 
-    doc.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a5,
-        build: (context) => pw.Padding(
-          padding: const pw.EdgeInsets.all(28),
-          child: pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.center,
-            children: [
-              if (logo != null) pw.Image(logo, width: 56, height: 56),
-              pw.SizedBox(height: 10),
-              pw.Text(widget.landing.schoolName, style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-              if (widget.landing.motto.isNotEmpty)
-                pw.Text(widget.landing.motto, style:  pw.TextStyle(fontSize: 10, fontStyle: pw.FontStyle.italic)),
-              pw.SizedBox(height: 20),
-              pw.Text('PAYMENT RECEIPT', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
-              pw.Divider(),
-              _receiptRow('Student', widget.child?.fullName ?? '-'),
-              _receiptRow('Payment purpose', widget.paymentPurpose),
-              _receiptRow('Amount', '${widget.amount.toStringAsFixed(0)} FCFA'),
-              _receiptRow('Transaction reference', t.transactionReference ?? '-'),
-              _receiptRow('Date', t.createdAt.toString().split('.').first),
-              _receiptRow('Status', 'PAID'),
-              pw.Divider(),
-              pw.SizedBox(height: 10),
-              pw.Text('Generated automatically by the school management system.',
-                  style: const pw.TextStyle(fontSize: 8)),
-            ],
-          ),
+  pw.MemoryImage? fallbackLogo;
+  if (branding.letterhead == null && landing.logoUrl.isNotEmpty) {
+    try {
+      final res = await http.get(Uri.parse(landing.logoUrl));
+      if (res.statusCode == 200) fallbackLogo = pw.MemoryImage(res.bodyBytes);
+    } catch (_) {}
+  }
+
+  final doc = pw.Document();
+  doc.addPage(
+    pw.Page(
+      pageFormat: PdfPageFormat.a5,
+      build: (context) => pw.Padding(
+        padding: const pw.EdgeInsets.all(28),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.center,
+          children: [
+            buildDocumentHeader(
+              branding: branding,
+              schoolName: landing.schoolName,
+              motto: landing.motto,
+              fallbackLogo: fallbackLogo,
+            ),
+            pw.SizedBox(height: 16),
+            pw.Text('PAYMENT RECEIPT', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+            pw.Divider(),
+            _pdfRow('Student', transaction.childName ?? '-'),
+            _pdfRow('Payment purpose', transaction.paymentPurpose),
+            _pdfRow('Amount', '${transaction.amount.toStringAsFixed(0)} FCFA'),
+            _pdfRow('Transaction reference', transaction.transactionReference ?? '-'),
+            _pdfRow('Date', transaction.createdAt.toString().split('.').first),
+            _pdfRow('Status', 'PAID'),
+            pw.Divider(),
+            pw.SizedBox(height: 10),
+            // A receipt is a financial document - stamped by the
+            // Proprietor's seal, not the Principal's (academic
+            // documents like report cards use the Principal stamp
+            // instead - see parent_report_cards.dart).
+            pw.Align(alignment: pw.Alignment.centerRight, child: buildStampBlock(branding.proprietorStamp)),
+            pw.SizedBox(height: 10),
+            pw.Text('Generated automatically by the school management system.',
+                style: const pw.TextStyle(fontSize: 8)),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  await Printing.sharePdf(bytes: await doc.save(), filename: 'receipt_${transaction.id}.pdf');
+}
+
+pw.Widget _pdfRow(String label, String value) {
+  return pw.Padding(
+    padding: const pw.EdgeInsets.symmetric(vertical: 4),
+    child: pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      children: [pw.Text(label, style: const pw.TextStyle(fontSize: 10)), pw.Text(value, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold))],
+    ),
+  );
+}
+
+// ============================================================
+// PAYMENT HISTORY PAGE - every transaction across every child,
+// newest first, with a download option on each successful one.
+// ============================================================
+
+class PaymentHistoryPage extends ConsumerWidget {
+  const PaymentHistoryPage({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final landing = ref.watch(landingProvider).value;
+    if (landing == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    final strings = AppStrings(ref.watch(activeLocaleProvider));
+    final historyAsync = ref.watch(paymentHistoryProvider);
+
+    return Theme(
+      data: buildSchoolTheme(landing.primaryColor, landing.secondaryColor),
+      child: Scaffold(
+        appBar: AppBar(title: Text(strings.paymentHistory)),
+        body: historyAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text('$e')),
+          data: (transactions) {
+            if (transactions.isEmpty) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.history_rounded, size: 48, color: Theme.of(context).colorScheme.outline),
+                      const SizedBox(height: 12),
+                      Text(strings.noPaymentsYet, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
+                    ],
+                  ),
+                ),
+              );
+            }
+            return ListView(
+              padding: EdgeInsets.all(Responsive.pagePadding(context)),
+              children: [
+                brandedSubpageHeader(context, schoolName: landing.schoolName, logoUrl: landing.logoUrl),
+                Text(
+                  strings.isFrench
+                      ? 'Toutes vos transactions, pour tous vos enfants, les plus récentes en premier.'
+                      : 'All your transactions, across all your children, most recent first.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.outline),
+                ),
+                const SizedBox(height: 16),
+                ...transactions.map((t) => _PaymentHistoryTile(transaction: t, landing: landing, strings: strings)),
+              ],
+            );
+          },
         ),
       ),
     );
+  }
+}
 
-    await Printing.sharePdf(bytes: await doc.save(), filename: 'receipt_${t.id}.pdf');
+class _PaymentHistoryTile extends ConsumerStatefulWidget {
+  final PaymentTransaction transaction;
+  final LandingModel landing;
+  final AppStrings strings;
+  const _PaymentHistoryTile({required this.transaction, required this.landing, required this.strings});
+
+  @override
+  ConsumerState<_PaymentHistoryTile> createState() => _PaymentHistoryTileState();
+}
+
+class _PaymentHistoryTileState extends ConsumerState<_PaymentHistoryTile> {
+  bool _downloading = false;
+
+  Future<void> _download() async {
+    setState(() => _downloading = true);
+    try {
+      await generateReceiptPdf(ref: ref, transaction: widget.transaction, landing: widget.landing);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
   }
 
-  pw.Widget _receiptRow(String label, String value) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 4),
-      child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-        children: [pw.Text(label, style: const pw.TextStyle(fontSize: 10)), pw.Text(value, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold))],
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final t = widget.transaction;
+    final strings = widget.strings;
+
+    final (Color color, String label, IconData icon) = t.isSuccessful
+        ? (Colors.green, strings.isFrench ? 'Payé' : 'Paid', Icons.check_circle_rounded)
+        : t.isFailed
+            ? (Colors.red, strings.isFrench ? 'Échoué' : 'Failed', Icons.cancel_rounded)
+            : (Colors.orange, strings.isFrench ? 'En attente' : 'Pending', Icons.hourglass_top_rounded);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(t.paymentPurpose, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+                    if (t.childName != null)
+                      Text(t.childName!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+                  ],
+                ),
+              ),
+              Text('${t.amount.toStringAsFixed(0)} FCFA', style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+                child: Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+              ),
+              const SizedBox(width: 10),
+              Text(_formatDate(t.createdAt), style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+            ],
+          ),
+          if (t.isSuccessful) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _downloading ? null : _download,
+                icon: _downloading
+                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.download_rounded, size: 16),
+                label: Text(strings.downloadReceipt),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
+
+  String _formatDate(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 }

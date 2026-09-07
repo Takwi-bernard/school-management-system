@@ -246,36 +246,7 @@ class InstallmentSummary {
   });
 }
 
-class PaymentTransaction {
-  final String id;
-  final String status; // pending | success | failed
-  final double amount;
-  final String paymentPurpose;
-  final String? transactionReference;
-  final DateTime createdAt;
 
-  const PaymentTransaction({
-    required this.id,
-    required this.status,
-    required this.amount,
-    required this.paymentPurpose,
-    this.transactionReference,
-    required this.createdAt,
-  });
-
-  bool get isPending => status == 'pending';
-  bool get isSuccessful => status == 'success';
-  bool get isFailed => status == 'failed';
-
-  factory PaymentTransaction.fromMap(Map<String, dynamic> map) => PaymentTransaction(
-        id: map['id'] as String,
-        status: map['status'] as String? ?? 'pending',
-        amount: (map['amount'] as num?)?.toDouble() ?? 0,
-        paymentPurpose: (map['metadata'] as Map?)?['payment_purpose'] as String? ?? 'Payment',
-        transactionReference: map['transaction_reference'] as String?,
-        createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ?? DateTime.now(),
-      );
-}
 
 class AcademicTermOption {
   final String id;
@@ -411,4 +382,49 @@ Color _parseColor(String hex) {
   var v = hex.replaceAll('#', '');
   if (v.length == 6) v = 'FF$v';
   return Color(int.tryParse(v, radix: 16) ?? 0xFF1A73E8);
+}
+
+class PaymentTransaction {
+  final String id;
+  final String status; // pending | success | failed
+  final double amount;
+  final String paymentPurpose;
+  final String? childName;
+  final String? transactionReference;
+  final DateTime createdAt;
+
+  const PaymentTransaction({
+    required this.id,
+    required this.status,
+    required this.amount,
+    required this.paymentPurpose,
+    this.childName,
+    this.transactionReference,
+    required this.createdAt,
+  });
+
+  bool get isPending => status == 'pending';
+  bool get isSuccessful => status == 'success';
+  bool get isFailed => status == 'failed';
+
+  factory PaymentTransaction.fromMap(Map<String, dynamic> map) {
+    final student = map['students'] as Map?;
+    final admission = map['admission_requests'] as Map?;
+    String? childName;
+    if (student != null) {
+      childName = '${student['first_name'] ?? ''} ${student['last_name'] ?? ''}'.trim();
+    } else if (admission != null) {
+      childName = '${admission['first_name'] ?? ''} ${admission['last_name'] ?? ''}'.trim();
+    }
+
+    return PaymentTransaction(
+      id: map['id'] as String,
+      status: map['status'] as String? ?? 'pending',
+      amount: (map['amount'] as num?)?.toDouble() ?? 0,
+      paymentPurpose: (map['metadata'] as Map?)?['payment_purpose'] as String? ?? 'Payment',
+      childName: childName,
+      transactionReference: map['transaction_reference'] as String?,
+      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ?? DateTime.now(),
+    );
+  }
 }

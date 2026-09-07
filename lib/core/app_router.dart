@@ -84,6 +84,10 @@ final appRouter = GoRouter(
           path: 'profile',
           pageBuilder: (c, s) => _page(const ParentProfilePage(), s),
         ),
+                GoRoute(
+          path: 'payment-history',
+          pageBuilder: (c, s) => _page(const PaymentHistoryPage(), s),
+        ),
         GoRoute(
           path: 'payment',
           pageBuilder: (c, s) {

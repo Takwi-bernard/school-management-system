@@ -297,4 +297,8 @@ class AppStrings {
   String get newPassword => isFrench ? 'Nouveau mot de passe' : 'New Password';
   String get passwordTooShort => isFrench ? 'Au moins 8 caractères.' : 'At least 8 characters.';
   String get passwordsDoNotMatch => isFrench ? 'Les mots de passe ne correspondent pas.' : 'Passwords do not match.';
+    String get paymentHistory => isFrench ? 'Historique des paiements' : 'Payment History';
+  String get noPaymentsYet => isFrench
+      ? 'Vos transactions apparaîtront ici une fois que vous aurez effectué un paiement.'
+      : 'Your transactions will appear here once you\'ve made a payment.';
 }
