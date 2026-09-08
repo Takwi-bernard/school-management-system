@@ -639,8 +639,8 @@ Future<void> generateReceiptPdf({
   doc.addPage(
     pw.Page(
       pageFormat: PdfPageFormat.a5,
-      build: (context) => pw.Padding(
-        padding: const pw.EdgeInsets.all(28),
+            build: (context) => pw.Padding(
+        padding: const pw.EdgeInsets.all(24),
         child: pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.center,
           children: [
@@ -650,25 +650,30 @@ Future<void> generateReceiptPdf({
               motto: landing.motto,
               fallbackLogo: fallbackLogo,
             ),
-            pw.SizedBox(height: 16),
-            pw.Text('PAYMENT RECEIPT', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
-            pw.Divider(),
-            _pdfRow('Student', transaction.childName ?? '-'),
-            _pdfRow('Payment purpose', transaction.paymentPurpose),
-            _pdfRow('Amount', '${transaction.amount.toStringAsFixed(0)} FCFA'),
-            _pdfRow('Transaction reference', transaction.transactionReference ?? '-'),
-            _pdfRow('Date', transaction.createdAt.toString().split('.').first),
-            _pdfRow('Status', 'PAID'),
-            pw.Divider(),
-            pw.SizedBox(height: 10),
-            // A receipt is a financial document - stamped by the
-            // Proprietor's seal, not the Principal's (academic
-            // documents like report cards use the Principal stamp
-            // instead - see parent_report_cards.dart).
+            pw.SizedBox(height: 4),
+            pw.Container(height: 1.5, color: PdfColors.grey400, width: double.infinity),
+            pw.SizedBox(height: 14),
+            pw.Text('PAYMENT RECEIPT', style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold, letterSpacing: 1.2)),
+            pw.SizedBox(height: 12),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(14),
+              decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey400, width: 0.7), borderRadius: pw.BorderRadius.circular(6)),
+              child: pw.Column(
+                children: [
+                  _pdfRow('Student', transaction.childName ?? '-'),
+                  _pdfRow('Payment purpose', transaction.paymentPurpose),
+                  _pdfRow('Amount', '${transaction.amount.toStringAsFixed(0)} FCFA'),
+                  _pdfRow('Transaction reference', transaction.transactionReference ?? '-'),
+                  _pdfRow('Date', transaction.createdAt.toString().split('.').first),
+                  _pdfRow('Status', 'PAID'),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 20),
             pw.Align(alignment: pw.Alignment.centerRight, child: buildStampBlock(branding.proprietorStamp)),
-            pw.SizedBox(height: 10),
+            pw.SizedBox(height: 14),
             pw.Text('Generated automatically by the school management system.',
-                style: const pw.TextStyle(fontSize: 8)),
+                style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
           ],
         ),
       ),

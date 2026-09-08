@@ -54,25 +54,33 @@ pw.Widget buildDocumentHeader({
   pw.MemoryImage? fallbackLogo,
 }) {
   if (branding.letterhead != null) {
-    return pw.Image(branding.letterhead!, fit: pw.BoxFit.fitWidth);
+    // Fixed height ceiling instead of unconstrained fitWidth - stops
+    // a photographed letterhead's own baked-in white margins from
+    // being stretched into a large empty band on the page.
+    return pw.Container(
+      height: 90,
+      alignment: pw.Alignment.center,
+      child: pw.Image(branding.letterhead!, fit: pw.BoxFit.contain),
+    );
   }
   return pw.Column(
     children: [
       if (fallbackLogo != null) pw.Image(fallbackLogo, width: 56, height: 56),
       pw.SizedBox(height: 8),
       pw.Text(schoolName, style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-      if (motto.isNotEmpty) pw.Text(motto, style:  pw.TextStyle(fontSize: 10, fontStyle: pw.FontStyle.italic)),
+      if (motto.isNotEmpty) pw.Text(motto, style: pw.TextStyle(fontSize: 10, fontStyle: pw.FontStyle.italic)),
     ],
   );
 }
 
-/// The stamp block a document ends with. Pass null and it simply
-/// renders nothing - never leaves a broken-image gap.
 pw.Widget buildStampBlock(pw.MemoryImage? stamp, {double size = 90}) {
   if (stamp == null) return pw.SizedBox();
+  // No forced opacity - that only looks right on a transparent PNG.
+  // A plain photographed JPEG stamp needs to be shown at full
+  // strength or it visually disappears into the page background.
   return pw.Container(
     width: size,
     height: size,
-    child: pw.Opacity(opacity: 0.85, child: pw.Image(stamp)),
+    child: pw.Image(stamp, fit: pw.BoxFit.contain),
   );
 }

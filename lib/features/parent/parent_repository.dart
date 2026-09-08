@@ -69,6 +69,7 @@ class ParentRepository {
         .from('classes')
         .select('id, class_name, department_id')
         .eq('school_id', schoolId)
+        .eq('isactive', true)
         .order('level_order');
     return rows.map((r) => ClassOption.fromMap(r)).toList();
   }
