@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/l10n/app_strings.dart';
 import '../../core/motion.dart';
 import '../landing/landing_providers.dart';
+
 import 'auth_error_banner.dart';
 import 'auth_gate.dart';
 import 'auth_providers.dart';
@@ -52,7 +53,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     if (!mounted) return;
     final state = ref.read(authControllerProvider);
     if (state.profile != null) {
-      _redirectByRole(state.profile!.role);
+      context.go(_routeForRole(state.profile!.role));
     } else {
       // FIX: previously the password field kept the old value after a
       // failed attempt (or a forced sign-out from a school mismatch) -
@@ -61,22 +62,19 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     }
   }
 
-  void _redirectByRole(String role) {
-    switch (role) {
-      case 'parent':
-        context.go('/parent');
-      case 'teacher':
-        context.go('/teacher');
-      case 'principal':
-        context.go('/principal');
-      case 'secretary':
-        context.go('/secretary');
-      case 'proprietor':
-        context.go('/proprietor');
-      default:
-        context.go('/');
-    }
-  }
+  // Shared shape with LandingPage's _routeForRole (see
+  // redirectIfSignedIn in auth_gate.dart) - this one always returns a
+  // route (falls back to '/') since it's also used for the direct,
+  // synchronous post-sign-in redirect below, not just the reactive
+  // listener.
+  static String _routeForRole(String role) => switch (role) {
+        'parent' => '/parent',
+        'teacher' => '/teacher',
+        'principal' => '/principal',
+        'secretary' => '/secretary',
+        'proprietor' => '/proprietor',
+        _ => '/',
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -108,15 +106,10 @@ class _SignInPageState extends ConsumerState<SignInPage> {
         ),
       ),
       data: (school) {
-        // Same fix as the landing page: if there's already a valid
-        // session for this school (e.g. someone bookmarked /sign-in,
-        // or navigated back here after signing in), skip the form and
-        // go straight to their dashboard instead of showing it again.
-        ref.listen(sessionProfileProvider(school.schoolId), (previous, next) {
-          next.whenData((profile) {
-            if (profile != null) _redirectByRole(profile.role);
-          });
-        });
+        // Same fix as the landing page, now sharing the exact same
+        // helper (redirectIfSignedIn, auth_gate.dart) so both places
+        // handle Google's OAuth-redirect race the same way.
+        redirectIfSignedIn(ref, context, school.schoolId, _routeForRole);
 
         final strings = AppStrings(locale);
 

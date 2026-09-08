@@ -231,6 +231,42 @@ final sessionProfileProvider =
   return profile;
 });
 
+/// Redirects to the right dashboard the moment a valid session for
+/// THIS school is found - covers a fresh email/password sign-in,
+/// a returning already-signed-in visitor, AND Google's OAuth flow,
+/// where the whole page reloads on redirect and Supabase may have
+/// ALREADY established the session by the time a widget starts
+/// listening.
+///
+/// ref.listen alone only fires on FUTURE changes, which would miss a
+/// session that's already sitting there at registration time - and
+/// this Riverpod version's ref.listen doesn't support a
+/// fireImmediately parameter to cover that (confirmed: it doesn't
+/// compile here). So this checks the CURRENT value directly right
+/// after registering the listener - if the provider already resolved
+/// to a signed-in profile, that's handled immediately; if it's still
+/// loading, ref.listen above catches it normally once it completes.
+/// [routeFor] returns null for a role this call site doesn't want to
+/// redirect for.
+void redirectIfSignedIn(
+  WidgetRef ref,
+  BuildContext context,
+  String schoolId,
+  String? Function(String role) routeFor,
+) {
+  void handle(UserProfile? profile) {
+    if (profile == null) return;
+    final route = routeFor(profile.role);
+    if (route != null && context.mounted) context.go(route);
+  }
+
+  ref.listen(sessionProfileProvider(schoolId), (previous, next) {
+    next.whenData(handle);
+  });
+
+  ref.read(sessionProfileProvider(schoolId)).whenData(handle);
+}
+
 /// Route guard + role placeholder in one. Used for every /parent,
 /// /teacher, /principal, /secretary, /proprietor route until each
 /// role's real dashboard is built.

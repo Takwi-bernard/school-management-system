@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
+import '../../core/browser_chrome.dart';
 import '../../core/l10n/app_strings.dart';
 import '../../core/motion.dart';
+import '../../core/school_color.dart';
 import '../auth/auth_gate.dart';
 import 'landing_providers.dart';
 import 'landing_navbar.dart';
@@ -59,12 +60,12 @@ class _LandingPageState extends ConsumerState<LandingPage> {
     if (!context.mounted) return;
 
     if (profile == null) {
-      context.push('/sign-up/parent');
+      context.go('/sign-up/parent');
       return;
     }
 
     if (profile.role == 'parent') {
-      context.push('/parent');
+      context.go('/parent');
       return;
     }
 
@@ -72,6 +73,15 @@ class _LandingPageState extends ConsumerState<LandingPage> {
       const SnackBar(content: Text('Admission is managed from a parent account.')),
     );
   }
+
+  static String? _routeForRole(String role) => switch (role) {
+        'parent' => '/parent',
+        'teacher' => '/teacher',
+        'principal' => '/principal',
+        'secretary' => '/secretary',
+        'proprietor' => '/proprietor',
+        _ => null,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -118,28 +128,20 @@ class _LandingPageState extends ConsumerState<LandingPage> {
         // lands back on '/' (the landing page), but nothing here ever
         // checked whether a session had just been established.
         // RoleGate only protected the dashboard routes, never the
-        // landing page itself. Now, if there's already a valid session
-        // for THIS school, skip straight to the right dashboard - this
-        // also correctly handles a returning already-signed-in visitor.
-        ref.listen(sessionProfileProvider(school.schoolId), (previous, next) {
-          next.whenData((profile) {
-            if (profile == null) return;
-            final route = switch (profile.role) {
-              'parent' => '/parent',
-              'teacher' => '/teacher',
-              'principal' => '/principal',
-              'secretary' => '/secretary',
-              'proprietor' => '/proprietor',
-              _ => null,
-            };
-            if (route != null) context.go(route);
-          });
-        });
+        // landing page itself.
+        //
+        // Now shared with SignInPage via redirectIfSignedIn
+        // (auth_gate.dart), which handles that race by checking the
+        // CURRENT value immediately after listening (this Riverpod
+        // version's ref.listen has no fireImmediately parameter), not
+        // just future changes ref.listen alone would catch.
+        redirectIfSignedIn(ref, context, school.schoolId, _routeForRole);
 
         final strings = AppStrings(locale);
         final canToggleLanguage = school.languageMode == 'bilingual';
-        final primary = _parseColor(school.primaryColor);
-        final secondary = _parseColor(school.secondaryColor);
+        final primary = parseSchoolColor(school.primaryColor, debugLabel: 'LandingPage primary');
+        final secondary = parseSchoolColor(school.secondaryColor, debugLabel: 'LandingPage secondary');
+        updateBrowserChromeColor(primary);
 
         final schoolTheme = ThemeData(
           useMaterial3: true,
@@ -214,11 +216,5 @@ class _LandingPageState extends ConsumerState<LandingPage> {
         );
       },
     );
-  }
-
-  Color _parseColor(String hex) {
-    var value = hex.replaceAll('#', '');
-    if (value.length == 6) value = 'FF$value';
-    return Color(int.tryParse(value, radix: 16) ?? 0xFF1A73E8);
   }
 }
