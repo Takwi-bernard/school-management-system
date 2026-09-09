@@ -301,4 +301,10 @@ class AppStrings {
   String get noPaymentsYet => isFrench
       ? 'Vos transactions apparaîtront ici une fois que vous aurez effectué un paiement.'
       : 'Your transactions will appear here once you\'ve made a payment.';
+       String get comingSoonDescription => isFrench
+      ? "Cette section n'est pas encore disponible. Revenez bientôt."
+      : "This section isn't available yet. Check back soon.";
+  String get comingSoonTitle => isFrench ? 'Bientôt disponible' : 'Coming Soon';
+   String get messages => isFrench ? 'Messages' : 'Messages';
+  String get settings => isFrench ? 'Paramètres' : 'Settings';
 }

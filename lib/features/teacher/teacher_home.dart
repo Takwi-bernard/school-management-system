@@ -11,7 +11,7 @@ import '../landing/landing_providers.dart';
 import 'teacher_models.dart';
 import 'teacher_providers.dart';
 import 'teacher_shell.dart';
-import 'teacher_sign_out.dart';
+import '../../shared/sign_out_button.dart';
 import 'teacher_ui.dart';
 
 class TeacherHome extends ConsumerWidget {
@@ -246,7 +246,7 @@ class _PendingApproval extends ConsumerWidget {
                             ),
                           ],
                           const SizedBox(height: 28),
-                          TeacherSignOutButton(strings: strings),
+                          SignOutButton(strings: strings),
                         ],
                       ),
                     ),

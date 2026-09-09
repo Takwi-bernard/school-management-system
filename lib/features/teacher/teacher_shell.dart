@@ -9,7 +9,7 @@ import 'teacher_models.dart';
 import 'teacher_navigation.dart';
 import 'teacher_profile.dart';
 import 'teacher_providers.dart';
-import 'teacher_sign_out.dart';
+import '../../shared/sign_out_button.dart';
 import 'teacher_timetable.dart';
 
 /// Every color on the sidebar comes from Theme.of(context).colorScheme,
@@ -231,7 +231,7 @@ class _SidebarContent extends StatelessWidget {
                   children: [
                     _Avatar(profile: profile, radius: 18),
                     const SizedBox(height: 10),
-                    TeacherSignOutIconButton(strings: strings, color: scheme.error),
+                    SignOutIconButton(strings: strings, color: scheme.error),
                   ],
                 )
               : Row(
@@ -250,7 +250,7 @@ class _SidebarContent extends StatelessWidget {
                         ],
                       ),
                     ),
-                    TeacherSignOutIconButton(strings: strings, color: scheme.error),
+                    SignOutIconButton(strings: strings, color: scheme.error),
                   ],
                 ),
         ),
