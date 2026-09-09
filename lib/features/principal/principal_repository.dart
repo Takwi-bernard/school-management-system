@@ -407,7 +407,6 @@ class PrincipalRepository {
             ))
         .toList();
   }
-
   Future<void> setSubjectOffering({
     required String classId,
     required String subjectId,
@@ -418,14 +417,33 @@ class PrincipalRepository {
       await _client.from('subject_offerings').delete().eq('class_id', classId).eq('subject_id', subjectId);
       return;
     }
-    await _client.from('subject_offerings').upsert({
-      'class_id': classId,
-      'subject_id': subjectId,
-      'is_compulsory': isCompulsory,
-      'is_selectable': true,
-    }, onConflict: 'class_id, subject_id');
-  }
 
+    // subject_offerings' unique index is PARTIAL (WHERE class_id IS
+    // NOT NULL), which PostgREST's upsert()/ON CONFLICT shorthand
+    // can't target directly - so we check-then-insert-or-update
+    // explicitly instead of relying on upsert().
+    final existing = await _client
+        .from('subject_offerings')
+        .select('id')
+        .eq('class_id', classId)
+        .eq('subject_id', subjectId)
+        .maybeSingle();
+
+    if (existing == null) {
+      await _client.from('subject_offerings').insert({
+        'class_id': classId,
+        'subject_id': subjectId,
+        'is_compulsory': isCompulsory,
+        'is_selectable': true,
+      });
+    } else {
+      await _client.from('subject_offerings').update({
+        'is_compulsory': isCompulsory,
+        'is_selectable': true,
+      }).eq('id', existing['id']);
+    }
+  }
+  
   // --------------------------------------------------
   // FEES + INSTALLMENTS - per class, per academic year
   // --------------------------------------------------
