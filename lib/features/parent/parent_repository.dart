@@ -183,6 +183,7 @@ class ParentRepository {
         ''')
         .eq('student_id', studentId)
         .eq('term_id', termId)
+        .eq('is_published', true)
         .maybeSingle();
 
     if (reportRow == null) return null;

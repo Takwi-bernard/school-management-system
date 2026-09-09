@@ -68,6 +68,167 @@ class ManagedClass {
   }
 }
 
+class PendingTeacher {
+  final String teacherId;
+  final String userId;
+  final String fullName;
+  final String? phone;
+  final String? email;
+  final DateTime? createdAt;
+
+  const PendingTeacher({
+    required this.teacherId,
+    required this.userId,
+    required this.fullName,
+    this.phone,
+    this.email,
+    this.createdAt,
+  });
+
+  factory PendingTeacher.fromMap(Map<String, dynamic> map) {
+    final user = map['users'] as Map?;
+    return PendingTeacher(
+      teacherId: map['id'] as String,
+      userId: map['user_id'] as String,
+      fullName: map['full_name'] as String? ?? '',
+      phone: map['phone'] as String?,
+      email: user?['email'] as String?,
+      createdAt: DateTime.tryParse(map['created_at'] as String? ?? ''),
+    );
+  }
+}
+
+class ApprovedTeacher {
+  final String teacherId;
+  final String fullName;
+  final String? phone;
+  final int assignmentCount;
+
+  const ApprovedTeacher({
+    required this.teacherId,
+    required this.fullName,
+    this.phone,
+    required this.assignmentCount,
+  });
+}
+
+class ExamPeriodOption {
+  final String id;
+  final String periodName;
+  final bool isOpen;
+  final DateTime? marksDueDate;
+
+  const ExamPeriodOption({required this.id, required this.periodName, required this.isOpen, this.marksDueDate});
+
+  factory ExamPeriodOption.fromMap(Map<String, dynamic> map) => ExamPeriodOption(
+        id: map['id'] as String,
+        periodName: map['period_name'] as String? ?? '',
+        isOpen: map['is_open'] as bool? ?? false,
+        marksDueDate: DateTime.tryParse(map['marks_due_date'] as String? ?? ''),
+      );
+}
+
+class AcademicTermOption {
+  final String id;
+  final String termName;
+  final bool isCurrent;
+  const AcademicTermOption({required this.id, required this.termName, required this.isCurrent});
+
+  factory AcademicTermOption.fromMap(Map<String, dynamic> map) => AcademicTermOption(
+        id: map['id'] as String,
+        termName: map['term_name'] as String? ?? '',
+        isCurrent: map['is_current'] as bool? ?? false,
+      );
+}
+// Represents the status of a report card for a student, including whether it exists, whether it's published, and when it was published (if applicable).  
+class ReportCardStatus {
+  final String studentId;
+  final String studentName;
+  final String? reportCardId;
+  final bool exists;
+  final bool isPublished;
+  final DateTime? publishAt;
+
+  const ReportCardStatus({
+    required this.studentId,
+    required this.studentName,
+    this.reportCardId,
+    required this.exists,
+    required this.isPublished,
+    this.publishAt,
+  });
+}
+// Represents a single mark that has been submitted by a teacher for a student, along with the subject, class, and teacher details.
+class SubmittedMark {
+  final String id;
+  final String studentName;
+  final String subjectName;
+  final String className;
+  final String teacherName;
+  final double score;
+  final int coefficient;
+  final String status;
+  final String? remarks;
+  final String? principalFeedback;
+
+  const SubmittedMark({
+    required this.id,
+    required this.studentName,
+    required this.subjectName,
+    required this.className,
+    required this.teacherName,
+    required this.score,
+    required this.coefficient,
+    required this.status,
+    this.remarks,
+    this.principalFeedback,
+  });
+
+  factory SubmittedMark.fromMap(Map<String, dynamic> map) {
+    final student = map['students'] as Map?;
+    final subject = map['subjects'] as Map?;
+    final cls = map['classes'] as Map?;
+    final teacher = map['teachers'] as Map?;
+    return SubmittedMark(
+      id: map['id'] as String,
+      studentName: '${student?['first_name'] ?? ''} ${student?['last_name'] ?? ''}'.trim(),
+      subjectName: subject?['subject_name'] as String? ?? '',
+      className: cls?['class_name'] as String? ?? '',
+      teacherName: teacher?['full_name'] as String? ?? '',
+      score: (map['score'] as num).toDouble(),
+      coefficient: map['coefficient'] as int? ?? 1,
+      status: map['status'] as String? ?? 'submitted',
+      remarks: map['remarks'] as String?,
+      principalFeedback: map['principal_feedback'] as String?,
+    );
+  }
+}
+/// Represents a single subject that a teacher is assigned to teach, along with the class it's for and how many periods per week.
+class TeacherAssignmentInfo {
+  final String id;
+  final String className;
+  final String subjectName;
+  final int periodsPerWeek;
+
+  const TeacherAssignmentInfo({
+    required this.id,
+    required this.className,
+    required this.subjectName,
+    required this.periodsPerWeek,
+  });
+
+  factory TeacherAssignmentInfo.fromMap(Map<String, dynamic> map) {
+    final cls = map['classes'] as Map?;
+    final subj = map['subjects'] as Map?;
+    return TeacherAssignmentInfo(
+      id: map['id'] as String,
+      className: cls?['class_name'] as String? ?? '',
+      subjectName: subj?['subject_name'] as String? ?? '',
+      periodsPerWeek: map['periods_per_week'] as int? ?? 0,
+    );
+  }
+}
+
 class ManagedSubject {
   final String id;
   final String subjectCode;

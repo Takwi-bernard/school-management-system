@@ -14,7 +14,7 @@ import '../features/parent/parent_fees.dart';
 import '../features/parent/parent_report_card.dart';
 import '../features/parent/parent_profile.dart';
 import '../features/parent/parent_models.dart';
-
+import '../features/principal/principal_home.dart';
 /// FIX: default GoRouter navigation is an abrupt cut with no
 /// transition at all. This gives every route the same soft
 /// fade + gentle upward slide - noticeably smoother/more "alive"
@@ -131,7 +131,7 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/principal',
       pageBuilder: (c, s) =>
-          _page(const RoleGate(requiredRole: 'principal', label: 'Principal'), s),
+          _page(const PrincipalHome(), s),
     ),
     GoRoute(
       path: '/secretary',

@@ -13,6 +13,309 @@ class PrincipalRepository {
     return PrincipalProfile.fromMap(row);
   }
 
+// --------------------------------------------------
+  // ACADEMIC YEARS
+   // --------------------------------------------------
+  Future<String?> getCurrentAcademicYearId(String schoolId) async {
+    final row = await _client
+        .from('academic_years')
+        .select('id')
+        .eq('school_id', schoolId)
+        .eq('is_current', true)
+        .maybeSingle();
+    return row?['id'] as String?;
+  }
+
+  // --------------------------------------------------
+  // TEACHER APPROVAL
+  // --------------------------------------------------
+
+  Future<List<PendingTeacher>> getPendingTeachers(String schoolId) async {
+    final rows = await _client
+        .from('teachers')
+        .select('id, user_id, full_name, phone, created_at, users(email)')
+        .eq('school_id', schoolId)
+        .eq('is_approved', false)
+        .order('created_at');
+    return rows.map((r) => PendingTeacher.fromMap(r)).toList();
+  }
+
+  Future<void> approveTeacher(String teacherId, String principalId) async {
+    await _client.from('teachers').update({
+      'is_approved': true,
+      'approval_status': 'approved',
+      'approved_by': principalId,
+      'approved_at': DateTime.now().toIso8601String(),
+    }).eq('id', teacherId);
+  }
+
+  Future<void> rejectTeacher(String teacherId, String principalId) async {
+    await _client.from('teachers').update({
+      'is_approved': false,
+      'approval_status': 'rejected',
+      'approved_by': principalId,
+      'approved_at': DateTime.now().toIso8601String(),
+    }).eq('id', teacherId);
+  }
+
+  // --------------------------------------------------
+  // APPROVED TEACHERS + ASSIGNMENTS
+  // --------------------------------------------------
+
+  Future<List<ApprovedTeacher>> getApprovedTeachers(String schoolId) async {
+    final rows = await _client
+        .from('teachers')
+        .select('id, full_name, phone, teacher_assignments(id)')
+        .eq('school_id', schoolId)
+        .eq('is_approved', true)
+        .order('full_name');
+
+    return rows
+        .map((r) => ApprovedTeacher(
+              teacherId: r['id'] as String,
+              fullName: r['full_name'] as String? ?? '',
+              phone: r['phone'] as String?,
+              assignmentCount: (r['teacher_assignments'] as List).length,
+            ))
+        .toList();
+  }
+// --------------------------------------------------
+  // TEACHER ASSIGNMENTS
+  // --------------------------------------------------
+  Future<List<TeacherAssignmentInfo>> getAssignmentsForTeacher(String teacherId, String academicYearId) async {
+    final rows = await _client
+        .from('teacher_assignments')
+        .select('id, periods_per_week, classes(class_name), subjects(subject_name)')
+        .eq('teacher_id', teacherId)
+        .eq('academic_year_id', academicYearId);
+    return rows.map((r) => TeacherAssignmentInfo.fromMap(r)).toList();
+  }
+
+  Future<void> createAssignment({
+    required String schoolId,
+    required String academicYearId,
+    required String teacherId,
+    required String classId,
+    required String subjectId,
+    required int periodsPerWeek,
+    int? preferredDay,
+    String? preferredStartTime,
+    String? preferredEndTime,
+  }) async {
+    final inserted = await _client
+        .from('teacher_assignments')
+        .insert({
+          'school_id': schoolId,
+          'academic_year_id': academicYearId,
+          'teacher_id': teacherId,
+          'class_id': classId,
+          'subject_id': subjectId,
+          'periods_per_week': periodsPerWeek,
+        })
+        .select()
+        .single();
+
+    if (preferredDay != null) {
+      await _client.from('teacher_period_preferences').insert({
+        'school_id': schoolId,
+        'teacher_assignment_id': inserted['id'],
+        'preferred_day': preferredDay,
+        'preferred_start_time': preferredStartTime,
+        'preferred_end_time': preferredEndTime,
+      });
+    }
+  }
+
+  Future<void> deleteAssignment(String assignmentId) async {
+    await _client.from('teacher_assignments').delete().eq('id', assignmentId);
+  }
+
+    // --------------------------------------------------
+  // MARKS WINDOW (per exam period)
+  // --------------------------------------------------
+
+  Future<List<ExamPeriodOption>> getExamPeriods(String academicYearId) async {
+    final rows = await _client
+        .from('exam_periods')
+        .select('id, period_name, is_open, marks_due_date')
+        .eq('academic_year_id', academicYearId)
+        .order('sequence_order');
+    return rows.map((r) => ExamPeriodOption.fromMap(r)).toList();
+  }
+
+  Future<void> setExamPeriodOpen({
+    required String examPeriodId,
+    required bool isOpen,
+    DateTime? marksDueDate,
+  }) async {
+    await _client.from('exam_periods').update({
+      'is_open': isOpen,
+      if (marksDueDate != null) 'marks_due_date': marksDueDate.toIso8601String().split('T').first,
+    }).eq('id', examPeriodId);
+  }
+
+  // --------------------------------------------------
+  // MARKS REVIEW
+  // --------------------------------------------------
+
+  Future<List<SubmittedMark>> getSubmittedMarks({
+    required String examPeriodId,
+    String status = 'submitted',
+  }) async {
+    final rows = await _client
+        .from('marks')
+        .select('*, students(first_name, last_name), subjects(subject_name), classes(class_name), teachers(full_name)')
+        .eq('exam_period_id', examPeriodId)
+        .eq('status', status)
+        .order('created_at');
+    return rows.map((r) => SubmittedMark.fromMap(r)).toList();
+  }
+
+  Future<void> approveMarks(List<String> markIds, String principalId) async {
+    await _client.from('marks').update({
+      'status': 'approved',
+      'approved_by': principalId,
+      'approved_at': DateTime.now().toIso8601String(),
+      'principal_feedback': null, // clear any earlier feedback once approved
+    }).inFilter('id', markIds);
+  }
+
+  Future<void> sendBackMarks(List<String> markIds, String feedback) async {
+    await _client.from('marks').update({
+      'status': 'rejected',
+      'principal_feedback': feedback,
+    }).inFilter('id', markIds);
+  }
+
+  Future<void> discardMark(String markId) async {
+    await _client.from('marks').delete().eq('id', markId);
+  }
+// --------------------------------------------------
+  // ACADEMIC TERMS 
+
+  Future<List<AcademicTermOption>> getTermsForYear(String academicYearId) async {
+    final rows = await _client
+        .from('academic_terms')
+        .select('id, term_name, term_order, is_current')
+        .eq('academic_year_id', academicYearId)
+        .order('term_order');
+    return rows.map((r) => AcademicTermOption.fromMap(r)).toList();
+  }
+    // --------------------------------------------------
+  // REPORT CARD GENERATION + PUBLISHING
+  // --------------------------------------------------
+
+  Future<List<ReportCardStatus>> getReportCardStatusForClass({
+    required String classId,
+    required String termId,
+    required String academicYearId,
+  }) async {
+    final enrolledRows = await _client
+        .from('class_enrollments')
+        .select('student_id, students(first_name, last_name)')
+        .eq('class_id', classId)
+        .eq('academic_year_id', academicYearId)
+        .eq('enrollment_status', 'active');
+
+    final existingRows = await _client
+        .from('report_cards')
+        .select('id, student_id, is_published, publish_at')
+        .eq('term_id', termId)
+        .inFilter('student_id', enrolledRows.map((r) => r['student_id']).toList());
+
+    final existingMap = {for (final r in existingRows) r['student_id'] as String: r};
+
+    return enrolledRows.map((r) {
+      final studentId = r['student_id'] as String;
+      final student = r['students'] as Map?;
+      final existing = existingMap[studentId];
+      return ReportCardStatus(
+        studentId: studentId,
+        studentName: '${student?['first_name'] ?? ''} ${student?['last_name'] ?? ''}'.trim(),
+        reportCardId: existing?['id'] as String?,
+        exists: existing != null,
+        isPublished: existing?['is_published'] as bool? ?? false,
+        publishAt: DateTime.tryParse(existing?['publish_at'] as String? ?? ''),
+      );
+    }).toList();
+  }
+
+  /// Computes ONE student's report card from their currently-approved
+  /// marks for this term. Does NOT publish it - is_published stays
+  /// false until a separate, explicit publish action.
+  Future<void> generateReportCard({
+    required String schoolId,
+    required String studentId,
+    required String classId,
+    required String termId,
+    required String academicYearId,
+  }) async {
+    final marksRows = await _client
+        .from('marks')
+        .select('score, coefficient, subject_id')
+        .eq('student_id', studentId)
+        .eq('academic_year_id', academicYearId)
+        .eq('status', 'approved')
+        .inFilter('exam_period_id', await _examPeriodIdsForTerm(termId));
+
+    if (marksRows.isEmpty) {
+      throw Exception('No approved marks found for this student in this term.');
+    }
+
+    double totalWeighted = 0;
+    int totalCoefficient = 0;
+    for (final m in marksRows) {
+      final score = (m['score'] as num).toDouble();
+      final coef = m['coefficient'] as int;
+      totalWeighted += score * coef;
+      totalCoefficient += coef;
+    }
+    final average = totalCoefficient == 0 ? 0.0 : totalWeighted / totalCoefficient;
+
+    final reportCard = await _client
+        .from('report_cards')
+        .upsert({
+          'school_id': schoolId,
+          'student_id': studentId,
+          'class_id': classId,
+          'term_id': termId,
+          'overall_average': average,
+          'generated_at': DateTime.now().toIso8601String(),
+        }, onConflict: 'student_id, term_id')
+        .select()
+        .single();
+
+    final reportCardId = reportCard['id'] as String;
+
+    await _client.from('subject_results').delete().eq('report_card_id', reportCardId);
+    await _client.from('subject_results').insert([
+      for (final m in marksRows)
+        {
+          'report_card_id': reportCardId,
+          'subject_id': m['subject_id'],
+          'score': m['score'],
+          'coefficient': m['coefficient'],
+          'weighted_score': (m['score'] as num).toDouble() * (m['coefficient'] as int),
+        },
+    ]);
+  }
+
+  Future<List<String>> _examPeriodIdsForTerm(String termId) async {
+    final rows = await _client.from('exam_periods').select('id').eq('academic_term_id', termId);
+    return rows.map((r) => r['id'] as String).toList();
+  }
+
+  Future<void> publishReportCard(String reportCardId, String principalId, {DateTime? publishAt}) async {
+    await _client.from('report_cards').update({
+      'is_published': publishAt == null,
+      'publish_at': publishAt?.toIso8601String(),
+      'published_by': principalId,
+    }).eq('id', reportCardId);
+  }
+
+  Future<void> unpublishReportCard(String reportCardId) async {
+    await _client.from('report_cards').update({'is_published': false, 'publish_at': null}).eq('id', reportCardId);
+  }
   // --------------------------------------------------
   // DEPARTMENTS
   // --------------------------------------------------
