@@ -1,4 +1,7 @@
+import 'dart:typed_data';
+
 import 'package:http/http.dart' as http;
+import 'package:image/image.dart' as img;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -22,24 +25,62 @@ class OfficialBranding {
   /// officialBrandingProvider - keyed by asset_type. Any missing key
   /// simply produces a null image; a document is never blocked from
   /// generating just because one stamp hasn't been uploaded yet.
+  ///
+  /// Stamps go through _fetchStamp (background removed) - the
+  /// letterhead does NOT, since it's a full rectangular header
+  /// image, not a seal meant to sit transparently over content.
   static Future<OfficialBranding> fetch(Map<String, String> assets) async {
     return OfficialBranding(
-      letterhead: await _tryFetch(assets['letterhead']),
-      principalStamp: await _tryFetch(assets['principal_stamp']),
-      proprietorStamp: await _tryFetch(assets['proprietor_stamp']),
-      disciplineMasterStamp: await _tryFetch(assets['discipline_master_stamp']),
+      letterhead: await _fetchImage(assets['letterhead']),
+      principalStamp: await _fetchStamp(assets['principal_stamp']),
+      proprietorStamp: await _fetchStamp(assets['proprietor_stamp']),
+      disciplineMasterStamp: await _fetchStamp(assets['discipline_master_stamp']),
     );
   }
 
-  static Future<pw.MemoryImage?> _tryFetch(String? url) async {
+  static Future<Uint8List?> _fetchBytes(String? url) async {
     if (url == null || url.isEmpty) return null;
     try {
       final res = await http.get(Uri.parse(url));
-      if (res.statusCode == 200) return pw.MemoryImage(res.bodyBytes);
+      if (res.statusCode == 200) return res.bodyBytes;
     } catch (_) {
       // Missing/unreachable image never blocks document generation.
     }
     return null;
+  }
+
+  static Future<pw.MemoryImage?> _fetchImage(String? url) async {
+    final bytes = await _fetchBytes(url);
+    return bytes == null ? null : pw.MemoryImage(bytes);
+  }
+
+  /// A photographed/scanned stamp almost always sits on a white (or
+  /// near-white) square background - which then prints as an ugly
+  /// white box on the page instead of a clean seal. This strips any
+  /// near-white pixel to fully transparent before embedding, so only
+  /// the actual ink marks show. Falls back to the untouched image if
+  /// decoding fails for any reason - a slightly-wrong-looking stamp
+  /// is far better than a document that fails to generate.
+  static Future<pw.MemoryImage?> _fetchStamp(String? url) async {
+    final bytes = await _fetchBytes(url);
+    if (bytes == null) return null;
+    try {
+      return pw.MemoryImage(await _stripNearWhiteBackground(bytes));
+    } catch (_) {
+      return pw.MemoryImage(bytes);
+    }
+  }
+
+  static Future<Uint8List> _stripNearWhiteBackground(Uint8List bytes, {int threshold = 235}) async {
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) return bytes;
+    final rgba = decoded.numChannels == 4 ? decoded : decoded.convert(numChannels: 4);
+    for (final pixel in rgba) {
+      if (pixel.r >= threshold && pixel.g >= threshold && pixel.b >= threshold) {
+        pixel.setRgba(pixel.r, pixel.g, pixel.b, 0);
+      }
+    }
+    return Uint8List.fromList(img.encodePng(rgba));
   }
 }
 
@@ -47,6 +88,14 @@ class OfficialBranding {
 /// letterhead image if one is configured, otherwise falls back to
 /// the plain name/logo/motto layout already used before this system
 /// existed, so nothing breaks for a school that hasn't uploaded one yet.
+///
+/// FIX: previously this Container had no explicit width, so inside a
+/// centered Column it shrank to the image's own intrinsic size at
+/// height:90 and then sat centered - reading as a small, oddly-
+/// margined header instead of a proper full-width letterhead band.
+/// width: double.infinity makes it span the full page width; no
+/// border/decoration is applied, so there's nothing framing its top
+/// corners or bottom edge.
 pw.Widget buildDocumentHeader({
   required OfficialBranding branding,
   required String schoolName,
@@ -54,11 +103,9 @@ pw.Widget buildDocumentHeader({
   pw.MemoryImage? fallbackLogo,
 }) {
   if (branding.letterhead != null) {
-    // Fixed height ceiling instead of unconstrained fitWidth - stops
-    // a photographed letterhead's own baked-in white margins from
-    // being stretched into a large empty band on the page.
     return pw.Container(
-      height: 90,
+      width: double.infinity,
+      height: 100,
       alignment: pw.Alignment.center,
       child: pw.Image(branding.letterhead!, fit: pw.BoxFit.contain),
     );
@@ -76,8 +123,8 @@ pw.Widget buildDocumentHeader({
 pw.Widget buildStampBlock(pw.MemoryImage? stamp, {double size = 90}) {
   if (stamp == null) return pw.SizedBox();
   // No forced opacity - that only looks right on a transparent PNG.
-  // A plain photographed JPEG stamp needs to be shown at full
-  // strength or it visually disappears into the page background.
+  // Background is now actually stripped (see _fetchStamp above)
+  // rather than just hoped-for, so full strength is correct here.
   return pw.Container(
     width: size,
     height: size,
