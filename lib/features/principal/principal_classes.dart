@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/l10n/app_strings.dart';
 import '../../core/responsive.dart';
-import '../landing/landing_providers.dart';
 import 'principal_models.dart';
 import 'principal_providers.dart';
 
 // ============================================================
-// MANAGE CLASSES
+// TOP LEVEL: pick a Department first, then drill down
 // ============================================================
 
 class ManageClassesPage extends ConsumerStatefulWidget {
@@ -20,53 +18,52 @@ class ManageClassesPage extends ConsumerStatefulWidget {
 }
 
 class _ManageClassesPageState extends ConsumerState<ManageClassesPage> {
-  bool _showInactive = false;
-  late Future<List<ManagedClass>> _future;
+  DepartmentFull? _selectedDepartment;
 
-  @override
-  void initState() {
-    super.initState();
-    _refresh();
-  }
-
-  void _refresh() {
-    _future = ref.read(principalRepositoryProvider).getClasses(widget.schoolId, includeInactive: _showInactive);
-  }
-
-  Future<void> _openClassDialog({ManagedClass? existing}) async {
-    final departments = await ref.read(departmentsProvider(widget.schoolId).future);
-    if (!mounted) return;
+  Future<void> _openDepartmentDialog({DepartmentFull? existing}) async {
+    final nameController = TextEditingController(text: existing?.departmentName ?? '');
+    final typeController = TextEditingController(text: existing?.departmentType ?? 'general');
     final saved = await showDialog<bool>(
       context: context,
-      builder: (_) => _ClassFormDialog(schoolId: widget.schoolId, departments: departments, existing: existing),
-    );
-    if (saved == true) setState(_refresh);
-  }
-
-  Future<void> _toggleActive(ManagedClass c) async {
-    final action = c.isActive ? (AppStrings(ref.read(activeLocaleProvider)).isFrench ? 'désactiver' : 'deactivate') : 'activate';
-    final confirmed = await showDialog<bool>(
-      context: context,
       builder: (_) => AlertDialog(
-        title: Text('${c.isActive ? "Deactivate" : "Activate"} ${c.className}?'),
-        content: Text(c.isActive
-            ? 'Deactivated classes are hidden from new enrollment, but existing students are unaffected.'
-            : 'This class will become available for new enrollment again.'),
+        title: Text(existing == null ? 'New Department' : 'Edit Department'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Department name (e.g. General Education, Technical)')),
+            const SizedBox(height: 12),
+            TextField(controller: typeController, decoration: const InputDecoration(labelText: 'Type (e.g. general, technical, commercial)')),
+          ],
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(action[0].toUpperCase() + action.substring(1))),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
         ],
       ),
     );
-    if (confirmed != true) return;
-    await ref.read(principalRepositoryProvider).setClassActive(c.id, !c.isActive);
-    setState(_refresh);
+    if (saved != true || nameController.text.trim().isEmpty) return;
+    final repo = ref.read(principalRepositoryProvider);
+    if (existing == null) {
+      await repo.createDepartment(schoolId: widget.schoolId, name: nameController.text.trim(), type: typeController.text.trim());
+    } else {
+      await repo.updateDepartment(departmentId: existing.id, name: nameController.text.trim(), type: typeController.text.trim());
+    }
+    ref.invalidate(departmentsFullProvider(widget.schoolId));
   }
 
   @override
   Widget build(BuildContext context) {
-    final strings = AppStrings(ref.watch(activeLocaleProvider));
     final theme = Theme.of(context);
+
+    if (_selectedDepartment != null) {
+      return _DepartmentDetailPane(
+        schoolId: widget.schoolId,
+        department: _selectedDepartment!,
+        onBack: () => setState(() => _selectedDepartment = null),
+      );
+    }
+
+    final departmentsAsync = ref.watch(departmentsFullProvider(widget.schoolId));
 
     return Padding(
       padding: EdgeInsets.all(Responsive.pagePadding(context)),
@@ -75,82 +72,55 @@ class _ManageClassesPageState extends ConsumerState<ManageClassesPage> {
         children: [
           Row(
             children: [
-              Expanded(
-                child: Text(strings.isFrench ? 'Gérer les classes' : 'Manage Classes',
-                    style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-              ),
-              FilledButton.icon(
-                onPressed: () => _openClassDialog(),
-                icon: const Icon(Icons.add_rounded),
-                label: Text(strings.isFrench ? 'Nouvelle classe' : 'New Class'),
-              ),
+              Expanded(child: Text('Departments', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800))),
+              FilledButton.icon(onPressed: () => _openDepartmentDialog(), icon: const Icon(Icons.add_rounded), label: const Text('New Department')),
             ],
           ),
           const SizedBox(height: 6),
           Text(
-            strings.isFrench
-                ? 'Ces classes déterminent ce qu\'un parent peut choisir lors de l\'inscription.'
-                : 'These classes determine what a parent can select during enrollment.',
+            'Select a department to manage its classes and subjects.',
             style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Switch(value: _showInactive, onChanged: (v) => setState(() { _showInactive = v; _refresh(); })),
-              Text(strings.isFrench ? 'Afficher les classes désactivées' : 'Show deactivated classes'),
-            ],
-          ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           Expanded(
-            child: FutureBuilder<List<ManagedClass>>(
-              future: _future,
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-                final classes = snapshot.data!;
-                if (classes.isEmpty) {
-                  return Center(child: Text(strings.isFrench ? 'Aucune classe pour le moment.' : 'No classes yet.'));
+            child: departmentsAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Text('$e'),
+              data: (departments) {
+                if (departments.isEmpty) {
+                  return const Center(child: Text('No departments yet. Create one to get started.'));
                 }
                 return ListView.separated(
-                  itemCount: classes.length,
+                  itemCount: departments.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
                   itemBuilder: (context, i) {
-                    final c = classes[i];
-                    return Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surfaceContainerHighest,
+                    final d = departments[i];
+                    return Material(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(14),
+                      child: InkWell(
                         borderRadius: BorderRadius.circular(14),
-                        border: c.isActive ? null : Border.all(color: theme.colorScheme.error.withValues(alpha: 0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(children: [
-                                  Text(c.className, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-                                  if (!c.isActive) ...[
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(color: theme.colorScheme.error.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
-                                      child: Text('Inactive', style: TextStyle(color: theme.colorScheme.error, fontSize: 10, fontWeight: FontWeight.w700)),
-                                    ),
+                        onTap: () => setState(() => _selectedDepartment = d),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            children: [
+                              Icon(Icons.folder_outlined, color: theme.colorScheme.primary),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(d.departmentName, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                                    if (d.departmentType != null) Text(d.departmentType!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
                                   ],
-                                ]),
-                                Text('${c.departmentName ?? "-"} · Code: ${c.classCode ?? "GEN"} · Max ${c.maxStudents} students',
-                                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-                              ],
-                            ),
+                                ),
+                              ),
+                              IconButton(icon: const Icon(Icons.edit_outlined), onPressed: () => _openDepartmentDialog(existing: d)),
+                              const Icon(Icons.chevron_right_rounded),
+                            ],
                           ),
-                          IconButton(icon: const Icon(Icons.edit_outlined), onPressed: () => _openClassDialog(existing: c)),
-                          IconButton(
-                            icon: Icon(c.isActive ? Icons.visibility_off_outlined : Icons.visibility_outlined),
-                            tooltip: c.isActive ? 'Deactivate' : 'Activate',
-                            onPressed: () => _toggleActive(c),
-                          ),
-                        ],
+                        ),
                       ),
                     );
                   },
@@ -164,191 +134,186 @@ class _ManageClassesPageState extends ConsumerState<ManageClassesPage> {
   }
 }
 
-class _ClassFormDialog extends ConsumerStatefulWidget {
+// ============================================================
+// DEPARTMENT DETAIL: breadcrumb + subjects (with coefficient) +
+// classes within this department
+// ============================================================
+
+class _DepartmentDetailPane extends ConsumerStatefulWidget {
   final String schoolId;
-  final List<DepartmentOption> departments;
-  final ManagedClass? existing;
-  const _ClassFormDialog({required this.schoolId, required this.departments, this.existing});
+  final DepartmentFull department;
+  final VoidCallback onBack;
+  const _DepartmentDetailPane({required this.schoolId, required this.department, required this.onBack});
 
   @override
-  ConsumerState<_ClassFormDialog> createState() => _ClassFormDialogState();
+  ConsumerState<_DepartmentDetailPane> createState() => _DepartmentDetailPaneState();
 }
 
-class _ClassFormDialogState extends ConsumerState<_ClassFormDialog> {
-  final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _name;
-  late final TextEditingController _code;
-  late final TextEditingController _level;
-  late final TextEditingController _maxStudents;
-  String? _departmentId;
-  bool _saving = false;
+class _DepartmentDetailPaneState extends ConsumerState<_DepartmentDetailPane> with SingleTickerProviderStateMixin {
+  late TabController _tabs;
+  ManagedClass? _selectedClass;
 
   @override
   void initState() {
     super.initState();
-    final e = widget.existing;
-    _name = TextEditingController(text: e?.className ?? '');
-    _code = TextEditingController(text: e?.classCode ?? '');
-    _level = TextEditingController(text: e?.levelOrder.toString() ?? '');
-    _maxStudents = TextEditingController(text: e?.maxStudents.toString() ?? '50');
-    _departmentId = e?.departmentId ?? (widget.departments.isNotEmpty ? widget.departments.first.id : null);
+    _tabs = TabController(length: 2, vsync: this);
   }
 
-  @override
-  void dispose() {
-    _name.dispose();
-    _code.dispose();
-    _level.dispose();
-    _maxStudents.dispose();
-    super.dispose();
-  }
+  Future<void> _openSubjectDialog() async {
+    final allSubjectsAsync = ref.read(managedSubjectsProvider(widget.schoolId));
+    final allSubjects = allSubjectsAsync.valueOrNull ?? await ref.read(managedSubjectsProvider(widget.schoolId).future);
 
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate() || _departmentId == null) return;
-    setState(() => _saving = true);
-    try {
-      final repo = ref.read(principalRepositoryProvider);
-      if (widget.existing == null) {
-        await repo.createClass(
-          schoolId: widget.schoolId,
-          className: _name.text.trim(),
-          classCode: _code.text.trim().isEmpty ? null : _code.text.trim().toUpperCase(),
-          departmentId: _departmentId!,
-          levelOrder: int.tryParse(_level.text) ?? 0,
-          maxStudents: int.tryParse(_maxStudents.text) ?? 50,
-        );
-      } else {
-        await repo.updateClass(
-          classId: widget.existing!.id,
-          className: _name.text.trim(),
-          classCode: _code.text.trim().isEmpty ? null : _code.text.trim().toUpperCase(),
-          departmentId: _departmentId!,
-          levelOrder: int.tryParse(_level.text) ?? 0,
-          maxStudents: int.tryParse(_maxStudents.text) ?? 50,
-        );
-      }
-      if (mounted) Navigator.pop(context, true);
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.existing == null ? 'New Class' : 'Edit Class'),
-      content: SizedBox(
-        width: 420,
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                controller: _name,
-                decoration: const InputDecoration(labelText: 'Class Name (e.g. Form 1E)'),
-                validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _code,
-                decoration: const InputDecoration(labelText: 'Class Code (e.g. F1E) - used in student IDs', hintText: 'Optional - defaults to GEN'),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: _departmentId,
-                decoration: const InputDecoration(labelText: 'Department'),
-                items: widget.departments.map((d) => DropdownMenuItem(value: d.id, child: Text(d.departmentName))).toList(),
-                onChanged: (v) => setState(() => _departmentId = v),
-                validator: (v) => v == null ? 'Required' : null,
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _level,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Order (1, 2, 3...)'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _maxStudents,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Max Students'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(onPressed: _saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
-        FilledButton(
-          onPressed: _saving ? null : _save,
-          child: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Save'),
-        ),
-      ],
-    );
-  }
-}
-
-// ============================================================
-// MANAGE SUBJECTS (school-wide list + per-class offering toggles)
-// ============================================================
-
-class ManageSubjectsPage extends ConsumerStatefulWidget {
-  final String schoolId;
-  const ManageSubjectsPage({super.key, required this.schoolId});
-
-  @override
-  ConsumerState<ManageSubjectsPage> createState() => _ManageSubjectsPageState();
-}
-
-class _ManageSubjectsPageState extends ConsumerState<ManageSubjectsPage> {
-  ManagedClass? _selectedClass;
-
-  Future<void> _addSubject() async {
     final nameController = TextEditingController();
     final codeController = TextEditingController();
+    final coefController = TextEditingController(text: '2');
+    ManagedSubject? existingPick;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Add Subject to This Department'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<ManagedSubject?>(
+                  initialValue: existingPick,
+                  decoration: const InputDecoration(labelText: 'Use an existing school subject (optional)'),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('— Create a new subject —')),
+                    ...allSubjects!.map((s) => DropdownMenuItem(value: s, child: Text('${s.subjectName} (${s.subjectCode})'))),
+                  ],
+                  onChanged: (v) => setDialogState(() => existingPick = v),
+                ),
+                if (existingPick == null) ...[
+                  const SizedBox(height: 12),
+                  TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Subject Name')),
+                  const SizedBox(height: 12),
+                  TextField(controller: codeController, decoration: const InputDecoration(labelText: 'Subject Code (e.g. MATH)')),
+                ],
+                const SizedBox(height: 12),
+                TextField(
+                  controller: coefController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Coefficient in ${widget.department.departmentName}',
+                    helperText: 'How heavily this subject counts toward the average in this department.',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Save')),
+          ],
+        ),
+      ),
+    );
+
+    if (saved != true) return;
+    final coefficient = int.tryParse(coefController.text) ?? 1;
+    final repo = ref.read(principalRepositoryProvider);
+
+    if (existingPick != null) {
+      await repo.attachExistingSubjectToDepartment(subjectId: existingPick!.id, departmentId: widget.department.id, coefficient: coefficient);
+    } else {
+      if (nameController.text.trim().isEmpty) return;
+      await repo.createSubjectInDepartment(
+        schoolId: widget.schoolId,
+        departmentId: widget.department.id,
+        subjectCode: codeController.text.trim().toUpperCase(),
+        subjectName: nameController.text.trim(),
+        coefficient: coefficient,
+      );
+    }
+    ref.invalidate(subjectsForDepartmentProvider(widget.department.id));
+    ref.invalidate(managedSubjectsProvider(widget.schoolId));
+  }
+
+  Future<void> _editCoefficient(SubjectWithCoefficient s) async {
+    final controller = TextEditingController(text: s.coefficient.toString());
     final saved = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('New Subject'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Subject Name')),
-            const SizedBox(height: 12),
-            TextField(controller: codeController, decoration: const InputDecoration(labelText: 'Subject Code (e.g. MATH)')),
-          ],
+        title: Text('Coefficient for ${s.subjectName}'),
+        content: TextField(controller: controller, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Coefficient')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (saved != true) return;
+    await ref.read(principalRepositoryProvider).updateSubjectCoefficient(
+          subjectId: s.subjectId, departmentId: widget.department.id, coefficient: int.tryParse(controller.text) ?? s.coefficient,
+        );
+    ref.invalidate(subjectsForDepartmentProvider(widget.department.id));
+  }
+
+  Future<void> _openClassDialog({ManagedClass? existing}) async {
+    final nameController = TextEditingController(text: existing?.className ?? '');
+    final codeController = TextEditingController(text: existing?.classCode ?? '');
+    final levelController = TextEditingController(text: existing?.levelOrder.toString() ?? '');
+    final capacityController = TextEditingController(text: existing?.maxStudents.toString() ?? '50');
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(existing == null ? 'New Class in ${widget.department.departmentName}' : 'Edit Class'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Class Name (e.g. Form 1E)')),
+              const SizedBox(height: 12),
+              TextField(controller: codeController, decoration: const InputDecoration(labelText: 'Class Code (e.g. F1E)')),
+              const SizedBox(height: 12),
+              Row(children: [
+                Expanded(child: TextField(controller: levelController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Order'))),
+                const SizedBox(width: 12),
+                Expanded(child: TextField(controller: capacityController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Capacity'))),
+              ]),
+            ],
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Add')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
         ],
       ),
     );
     if (saved != true || nameController.text.trim().isEmpty) return;
-    await ref.read(principalRepositoryProvider).createSubject(
-          schoolId: widget.schoolId,
-          subjectCode: codeController.text.trim().toUpperCase(),
-          subjectName: nameController.text.trim(),
-        );
-    ref.invalidate(managedSubjectsProvider(widget.schoolId));
+
+    final repo = ref.read(principalRepositoryProvider);
+    if (existing == null) {
+      await repo.createClass(
+        schoolId: widget.schoolId,
+        className: nameController.text.trim(),
+        classCode: codeController.text.trim().isEmpty ? null : codeController.text.trim().toUpperCase(),
+        departmentId: widget.department.id,
+        levelOrder: int.tryParse(levelController.text) ?? 0,
+        maxStudents: int.tryParse(capacityController.text) ?? 50,
+      );
+    } else {
+      await repo.updateClass(
+        classId: existing.id,
+        className: nameController.text.trim(),
+        classCode: codeController.text.trim().isEmpty ? null : codeController.text.trim().toUpperCase(),
+        departmentId: widget.department.id,
+        levelOrder: int.tryParse(levelController.text) ?? 0,
+        maxStudents: int.tryParse(capacityController.text) ?? 50,
+      );
+    }
+    ref.invalidate(managedClassesProvider(widget.schoolId));
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final classesAsync = ref.watch(managedClassesProvider(widget.schoolId));
-    final subjectsAsync = ref.watch(managedSubjectsProvider(widget.schoolId));
 
     return Padding(
       padding: EdgeInsets.all(Responsive.pagePadding(context)),
@@ -357,110 +322,128 @@ class _ManageSubjectsPageState extends ConsumerState<ManageSubjectsPage> {
         children: [
           Row(
             children: [
-              Expanded(child: Text('Manage Subjects', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800))),
-              FilledButton.icon(onPressed: _addSubject, icon: const Icon(Icons.add_rounded), label: const Text('New Subject')),
+              IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: widget.onBack),
+              Text('Departments', style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.outline)),
+              const Icon(Icons.chevron_right_rounded, size: 16),
+              Text(widget.department.departmentName, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
             ],
           ),
-          const SizedBox(height: 6),
-          Text('All subjects offered anywhere at this school:', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-          const SizedBox(height: 10),
-          subjectsAsync.when(
-            loading: () => const LinearProgressIndicator(),
-            error: (e, _) => Text('$e'),
-            data: (subjects) => Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: subjects.map((s) => Chip(label: Text('${s.subjectName} (${s.subjectCode})'))).toList(),
-            ),
-          ),
-          const Divider(height: 32),
-          Text('Configure which subjects a class offers:', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          Text(
-            'Toggle a subject on to offer it. Mark it compulsory to lock it in during enrollment - a parent will never be able to unselect a compulsory subject.',
-            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+          const SizedBox(height: 8),
+          TabBar(
+            controller: _tabs,
+            isScrollable: true,
+            tabs: const [Tab(text: 'Subjects & Coefficients'), Tab(text: 'Classes')],
           ),
           const SizedBox(height: 12),
-          classesAsync.when(
-            loading: () => const LinearProgressIndicator(),
-            error: (e, _) => Text('$e'),
-            data: (classes) => DropdownButtonFormField<ManagedClass>(
-              initialValue: _selectedClass,
-              decoration: const InputDecoration(labelText: 'Select a class', border: OutlineInputBorder()),
-              items: classes.map((c) => DropdownMenuItem(value: c, child: Text(c.className))).toList(),
-              onChanged: (v) => setState(() => _selectedClass = v),
-            ),
-          ),
-          const SizedBox(height: 16),
-          if (_selectedClass != null)
-            Expanded(
-              child: Consumer(
-                builder: (context, ref, _) {
-                  final offeringsAsync = ref.watch(
-                    subjectOfferingsForClassProvider((schoolId: widget.schoolId, classId: _selectedClass!.id)),
-                  );
-                  return offeringsAsync.when(
-                    loading: () => const Center(child: CircularProgressIndicator()),
-                    error: (e, _) => Text('$e'),
-                    data: (offerings) => ListView(
-                      children: offerings
-                          .map((o) => _OfferingRow(
-                                offering: o,
-                                classId: _selectedClass!.id,
-                                onChanged: () => ref.invalidate(
-                                  subjectOfferingsForClassProvider((schoolId: widget.schoolId, classId: _selectedClass!.id)),
-                                ),
-                              ))
-                          .toList(),
+          Expanded(
+            child: TabBarView(
+              controller: _tabs,
+              children: [
+                // --- SUBJECTS TAB ---
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: FilledButton.icon(onPressed: _openSubjectDialog, icon: const Icon(Icons.add_rounded), label: const Text('Add Subject')),
                     ),
-                  );
-                },
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: Consumer(
+                        builder: (context, ref, _) {
+                          final subjectsAsync = ref.watch(subjectsForDepartmentProvider(widget.department.id));
+                          return subjectsAsync.when(
+                            loading: () => const Center(child: CircularProgressIndicator()),
+                            error: (e, _) => Text('$e'),
+                            data: (subjects) {
+                              if (subjects.isEmpty) return const Center(child: Text('No subjects in this department yet.'));
+                              return ListView.separated(
+                                itemCount: subjects.length,
+                                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                                itemBuilder: (context, i) {
+                                  final s = subjects[i];
+                                  return Container(
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
+                                    child: Row(
+                                      children: [
+                                        Expanded(child: Text('${s.subjectName} (${s.subjectCode})', style: const TextStyle(fontWeight: FontWeight.w600))),
+                                        Chip(label: Text('Coefficient ${s.coefficient}')),
+                                        IconButton(icon: const Icon(Icons.edit_outlined, size: 18), onPressed: () => _editCoefficient(s)),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
 
-class _OfferingRow extends ConsumerWidget {
-  final SubjectOfferingRow offering;
-  final String classId;
-  final VoidCallback onChanged;
-  const _OfferingRow({required this.offering, required this.classId, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
-      child: Row(
-        children: [
-          Expanded(child: Text(offering.subjectName, style: const TextStyle(fontWeight: FontWeight.w600))),
-          if (offering.isOffered) ...[
-            const Text('Compulsory', style: TextStyle(fontSize: 12)),
-            Switch(
-              value: offering.isCompulsory,
-              onChanged: (v) async {
-                await ref.read(principalRepositoryProvider).setSubjectOffering(
-                      classId: classId, subjectId: offering.subjectId, isOffered: true, isCompulsory: v,
-                    );
-                onChanged();
-              },
+                // --- CLASSES TAB ---
+                _selectedClass != null
+                    ? _ClassSubjectOfferingsPane(
+                        schoolId: widget.schoolId,
+                        classInfo: _selectedClass!,
+                        onBack: () => setState(() => _selectedClass = null),
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: FilledButton.icon(onPressed: () => _openClassDialog(), icon: const Icon(Icons.add_rounded), label: const Text('New Class')),
+                          ),
+                          const SizedBox(height: 12),
+                          Expanded(
+                            child: Consumer(
+                              builder: (context, ref, _) {
+                                final classesAsync = ref.watch(managedClassesProvider(widget.schoolId));
+                                return classesAsync.when(
+                                  loading: () => const Center(child: CircularProgressIndicator()),
+                                  error: (e, _) => Text('$e'),
+                                  data: (classes) {
+                                    final filtered = classes.where((c) => c.departmentId == widget.department.id).toList();
+                                    if (filtered.isEmpty) return const Center(child: Text('No classes in this department yet.'));
+                                    return ListView.separated(
+                                      itemCount: filtered.length,
+                                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                                      itemBuilder: (context, i) {
+                                        final c = filtered[i];
+                                        return Material(
+                                          color: theme.colorScheme.surfaceContainerHighest,
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: InkWell(
+                                            borderRadius: BorderRadius.circular(12),
+                                            onTap: () => setState(() => _selectedClass = c),
+                                            child: Padding(
+                                              padding: const EdgeInsets.all(14),
+                                              child: Row(
+                                                children: [
+                                                  Expanded(child: Text(c.className, style: const TextStyle(fontWeight: FontWeight.w700))),
+                                                  Text('Max ${c.maxStudents}', style: theme.textTheme.bodySmall),
+                                                  const SizedBox(width: 8),
+                                                  IconButton(icon: const Icon(Icons.edit_outlined, size: 18), onPressed: () => _openClassDialog(existing: c)),
+                                                  const Icon(Icons.chevron_right_rounded),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    );
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+              ],
             ),
-            const SizedBox(width: 12),
-          ],
-          Switch(
-            value: offering.isOffered,
-            activeTrackColor: theme.colorScheme.primary,
-            onChanged: (v) async {
-              await ref.read(principalRepositoryProvider).setSubjectOffering(
-                    classId: classId, subjectId: offering.subjectId, isOffered: v, isCompulsory: false,
-                  );
-              onChanged();
-            },
           ),
         ],
       ),
@@ -469,7 +452,157 @@ class _OfferingRow extends ConsumerWidget {
 }
 
 // ============================================================
-// SCHOOL FEES ENTRY (registration fee + installments per class)
+// CLASS -> which subjects it offers, compulsory toggle
+// ============================================================
+
+class _ClassSubjectOfferingsPane extends ConsumerWidget {
+  final String schoolId;
+  final ManagedClass classInfo;
+  final VoidCallback onBack;
+  const _ClassSubjectOfferingsPane({required this.schoolId, required this.classInfo, required this.onBack});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final offeringsAsync = ref.watch(subjectOfferingsForClassProvider((schoolId: schoolId, classId: classInfo.id)));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: onBack),
+            Text(classInfo.className, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+          ],
+        ),
+        Text(
+          'Turn a subject on to offer it in this class. Mark it compulsory to lock it in during parent enrollment.',
+          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: offeringsAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Text('$e'),
+            data: (offerings) => ListView(
+              children: offerings
+                  .map((o) => Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                        decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
+                        child: Row(
+                          children: [
+                            Expanded(child: Text(o.subjectName, style: const TextStyle(fontWeight: FontWeight.w600))),
+                            if (o.isOffered) ...[
+                              const Text('Compulsory', style: TextStyle(fontSize: 12)),
+                              Switch(
+                                value: o.isCompulsory,
+                                onChanged: (v) async {
+                                  await ref.read(principalRepositoryProvider).setSubjectOffering(
+                                        classId: classInfo.id, subjectId: o.subjectId, isOffered: true, isCompulsory: v,
+                                      );
+                                  ref.invalidate(subjectOfferingsForClassProvider((schoolId: schoolId, classId: classInfo.id)));
+                                },
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            Text(o.isOffered ? 'Offered' : 'Not offered', style: TextStyle(fontSize: 12, color: theme.colorScheme.outline)),
+                            Switch(
+                              value: o.isOffered,
+                              onChanged: (v) async {
+                                await ref.read(principalRepositoryProvider).setSubjectOffering(
+                                      classId: classInfo.id, subjectId: o.subjectId, isOffered: v, isCompulsory: false,
+                                    );
+                                ref.invalidate(subjectOfferingsForClassProvider((schoolId: schoolId, classId: classInfo.id)));
+                              },
+                            ),
+                          ],
+                        ),
+                      ))
+                  .toList(),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ============================================================
+// SUBJECT BROWSE / REVIEW - grouped by department, expandable
+// ============================================================
+
+class SubjectBrowsePage extends ConsumerWidget {
+  final String schoolId;
+  const SubjectBrowsePage({super.key, required this.schoolId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final yearIdAsync = ref.watch(principalCurrentAcademicYearIdProvider(schoolId));
+
+    return Padding(
+      padding: EdgeInsets.all(Responsive.pagePadding(context)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('All Subjects', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          Text('Grouped by department. Expand any subject to see which classes offer it and which teachers are assigned.',
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+          const SizedBox(height: 16),
+          Expanded(
+            child: yearIdAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Text('$e'),
+              data: (yearId) {
+                if (yearId == null) return const Text('No current academic year set.');
+                final browseAsync = ref.watch(subjectBrowseListProvider((schoolId: schoolId, academicYearId: yearId)));
+                return browseAsync.when(
+                  loading: () => const Center(child: CircularProgressIndicator()),
+                  error: (e, _) => Text('$e'),
+                  data: (items) {
+                    final grouped = <String, List<SubjectBrowseItem>>{};
+                    for (final item in items) {
+                      grouped.putIfAbsent(item.departmentName, () => []).add(item);
+                    }
+                    return ListView(
+                      children: grouped.entries.map((entry) {
+                        return ExpansionTile(
+                          title: Text(entry.key, style: const TextStyle(fontWeight: FontWeight.w800)),
+                          children: entry.value.map((s) => ExpansionTile(
+                            title: Text(s.subjectName),
+                            subtitle: Text('Coefficient ${s.coefficient}'),
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Offered in: ${s.classesOffering.isEmpty ? "No classes yet" : s.classesOffering.join(", ")}'),
+                                    const SizedBox(height: 6),
+                                    Text('Taught by: ${s.teachersAssigned.isEmpty ? "No teacher assigned yet" : s.teachersAssigned.join(", ")}'),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          )).toList(),
+                        );
+                      }).toList(),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================
+// FEES (unchanged from before - kept working)
 // ============================================================
 
 class ManageFeesEntryPage extends ConsumerStatefulWidget {
@@ -505,27 +638,14 @@ class _ManageFeesEntryPageState extends ConsumerState<ManageFeesEntryPage> {
   }
 
   void _addInstallmentRow() {
-    setState(() => _installments.add(ManagedInstallment(
-          name: 'Installment ${_installments.length + 1}',
-          amount: 0,
-          displayOrder: _installments.length + 1,
-        )));
+    setState(() => _installments.add(ManagedInstallment(name: 'Installment ${_installments.length + 1}', amount: 0, displayOrder: _installments.length + 1)));
   }
 
   Future<void> _save(String academicYearId) async {
     setState(() => _saving = true);
     try {
-      final config = ManagedFeeConfig(
-        feeId: _feeId,
-        registrationFee: double.tryParse(_regFeeController.text) ?? 0,
-        installments: _installments,
-      );
-      await ref.read(principalRepositoryProvider).saveFeeConfig(
-            schoolId: widget.schoolId,
-            classId: _selectedClass!.id,
-            academicYearId: academicYearId,
-            config: config,
-          );
+      final config = ManagedFeeConfig(feeId: _feeId, registrationFee: double.tryParse(_regFeeController.text) ?? 0, installments: _installments);
+      await ref.read(principalRepositoryProvider).saveFeeConfig(schoolId: widget.schoolId, classId: _selectedClass!.id, academicYearId: academicYearId, config: config);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Fee configuration saved.')));
         _loaded = false;
@@ -550,19 +670,12 @@ class _ManageFeesEntryPageState extends ConsumerState<ManageFeesEntryPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('School Fees', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 6),
-          Text(
-            'Set a registration fee and installment plan per class. Parents will see exactly what you configure here - the number of installments is entirely up to you.',
-            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
-          ),
           const SizedBox(height: 16),
           yearIdAsync.when(
             loading: () => const LinearProgressIndicator(),
             error: (e, _) => Text('$e'),
             data: (yearId) {
-              if (yearId == null) {
-                return const Text('No current academic year is set for this school yet.');
-              }
+              if (yearId == null) return const Text('No current academic year is set for this school yet.');
               return Expanded(
                 child: classesAsync.when(
                   loading: () => const Center(child: CircularProgressIndicator()),
@@ -580,19 +693,13 @@ class _ManageFeesEntryPageState extends ConsumerState<ManageFeesEntryPage> {
                       ),
                       const SizedBox(height: 20),
                       if (_selectedClass != null && _loaded) ...[
-                        TextFormField(
-                          controller: _regFeeController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Registration Fee (FCFA)', border: OutlineInputBorder()),
-                        ),
+                        TextFormField(controller: _regFeeController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Registration Fee (FCFA)', border: OutlineInputBorder())),
                         const SizedBox(height: 20),
-                        Row(
-                          children: [
-                            Text('Installments', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-                            const Spacer(),
-                            TextButton.icon(onPressed: _addInstallmentRow, icon: const Icon(Icons.add_rounded), label: const Text('Add Installment')),
-                          ],
-                        ),
+                        Row(children: [
+                          Text('Installments', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                          const Spacer(),
+                          TextButton.icon(onPressed: _addInstallmentRow, icon: const Icon(Icons.add_rounded), label: const Text('Add Installment')),
+                        ]),
                         ..._installments.asMap().entries.map((entry) {
                           final i = entry.key;
                           final inst = entry.value;
@@ -600,64 +707,31 @@ class _ManageFeesEntryPageState extends ConsumerState<ManageFeesEntryPage> {
                             margin: const EdgeInsets.only(bottom: 10),
                             padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  flex: 3,
-                                  child: TextFormField(
-                                    initialValue: inst.name,
-                                    decoration: const InputDecoration(labelText: 'Name'),
-                                    onChanged: (v) => inst.name = v,
-                                  ),
+                            child: Row(children: [
+                              Expanded(flex: 3, child: TextFormField(initialValue: inst.name, decoration: const InputDecoration(labelText: 'Name'), onChanged: (v) => inst.name = v)),
+                              const SizedBox(width: 10),
+                              Expanded(flex: 2, child: TextFormField(initialValue: inst.amount == 0 ? '' : inst.amount.toStringAsFixed(0), keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Amount'), onChanged: (v) => inst.amount = double.tryParse(v) ?? 0)),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                flex: 2,
+                                child: InkWell(
+                                  onTap: () async {
+                                    final picked = await showDatePicker(context: context, initialDate: inst.dueDate ?? DateTime.now(), firstDate: DateTime.now().subtract(const Duration(days: 365)), lastDate: DateTime.now().add(const Duration(days: 730)));
+                                    if (picked != null) setState(() => inst.dueDate = picked);
+                                  },
+                                  child: InputDecorator(decoration: const InputDecoration(labelText: 'Due date'), child: Text(inst.dueDate == null ? 'Pick date' : '${inst.dueDate!.day}/${inst.dueDate!.month}/${inst.dueDate!.year}')),
                                 ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  flex: 2,
-                                  child: TextFormField(
-                                    initialValue: inst.amount == 0 ? '' : inst.amount.toStringAsFixed(0),
-                                    keyboardType: TextInputType.number,
-                                    decoration: const InputDecoration(labelText: 'Amount'),
-                                    onChanged: (v) => inst.amount = double.tryParse(v) ?? 0,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  flex: 2,
-                                  child: InkWell(
-                                    onTap: () async {
-                                      final picked = await showDatePicker(
-                                        context: context,
-                                        initialDate: inst.dueDate ?? DateTime.now(),
-                                        firstDate: DateTime.now().subtract(const Duration(days: 365)),
-                                        lastDate: DateTime.now().add(const Duration(days: 730)),
-                                      );
-                                      if (picked != null) setState(() => inst.dueDate = picked);
-                                    },
-                                    child: InputDecorator(
-                                      decoration: const InputDecoration(labelText: 'Due date'),
-                                      child: Text(inst.dueDate == null ? 'Pick date' : '${inst.dueDate!.day}/${inst.dueDate!.month}/${inst.dueDate!.year}'),
-                                    ),
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete_outline_rounded),
-                                  onPressed: () => setState(() => _installments.removeAt(i)),
-                                ),
-                              ],
-                            ),
+                              ),
+                              IconButton(icon: const Icon(Icons.delete_outline_rounded), onPressed: () => setState(() => _installments.removeAt(i))),
+                            ]),
                           );
                         }),
                         const SizedBox(height: 12),
-                        Text(
-                          'Total school fee (sum of installments): ${_installments.fold(0.0, (s, i) => s + i.amount).toStringAsFixed(0)} FCFA',
-                          style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
-                        ),
+                        Text('Total: ${_installments.fold(0.0, (s, i) => s + i.amount).toStringAsFixed(0)} FCFA', style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
                         const SizedBox(height: 20),
                         FilledButton(
                           onPressed: _saving ? null : () => _save(yearId),
-                          child: _saving
-                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                              : const Text('Save Fee Configuration'),
+                          child: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('Save Fee Configuration'),
                         ),
                       ],
                     ],

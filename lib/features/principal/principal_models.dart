@@ -140,6 +140,83 @@ class AcademicTermOption {
         isCurrent: map['is_current'] as bool? ?? false,
       );
 }
+
+class DepartmentFull {
+  final String id;
+  final String departmentName;
+  final String? departmentType;
+  const DepartmentFull({required this.id, required this.departmentName, this.departmentType});
+
+  factory DepartmentFull.fromMap(Map<String, dynamic> map) => DepartmentFull(
+        id: map['id'] as String,
+        departmentName: map['department_name'] as String? ?? '',
+        departmentType: map['department_type'] as String?,
+      );
+}
+
+class SubjectWithCoefficient {
+  final String subjectId;
+  final String subjectCode;
+  final String subjectName;
+  final int coefficient;
+  const SubjectWithCoefficient({
+    required this.subjectId,
+    required this.subjectCode,
+    required this.subjectName,
+    required this.coefficient,
+  });
+}
+
+class SubjectBrowseItem {
+  final String subjectId;
+  final String subjectName;
+  final String departmentName;
+  final int coefficient;
+  final List<String> classesOffering;
+  final List<String> teachersAssigned;
+
+  const SubjectBrowseItem({
+    required this.subjectId,
+    required this.subjectName,
+    required this.departmentName,
+    required this.coefficient,
+    required this.classesOffering,
+    required this.teachersAssigned,
+  });
+}
+
+/// Every teacher who's ever signed up at this school - approved or
+/// not - used when filling a teaching slot, since assigning someone
+/// IS how a pending teacher gets approved in this flow.
+class AllTeacherProfile {
+  final String teacherId;
+  final String userId;
+  final String fullName;
+  final String? phone;
+  final String? email;
+  final bool isApproved;
+
+  const AllTeacherProfile({
+    required this.teacherId,
+    required this.userId,
+    required this.fullName,
+    this.phone,
+    this.email,
+    required this.isApproved,
+  });
+
+  factory AllTeacherProfile.fromMap(Map<String, dynamic> map) {
+    final user = map['users'] as Map?;
+    return AllTeacherProfile(
+      teacherId: map['id'] as String,
+      userId: map['user_id'] as String,
+      fullName: map['full_name'] as String? ?? '',
+      phone: map['phone'] as String?,
+      email: user?['email'] as String?,
+      isApproved: map['is_approved'] as bool? ?? false,
+    );
+  }
+}
 // Represents the status of a report card for a student, including whether it exists, whether it's published, and when it was published (if applicable).  
 class ReportCardStatus {
   final String studentId;

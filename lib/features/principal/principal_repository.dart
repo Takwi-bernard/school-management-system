@@ -443,6 +443,189 @@ class PrincipalRepository {
       }).eq('id', existing['id']);
     }
   }
+
+
+    // --------------------------------------------------
+  // DEPARTMENTS
+  // --------------------------------------------------
+
+  Future<List<DepartmentFull>> getDepartmentsFull(String schoolId) async {
+    final rows = await _client.from('departments').select().eq('school_id', schoolId).order('department_name');
+    return rows.map((r) => DepartmentFull.fromMap(r)).toList();
+  }
+
+  Future<void> createDepartment({required String schoolId, required String name, String? type}) async {
+    await _client.from('departments').insert({'school_id': schoolId, 'department_name': name, 'department_type': type});
+  }
+
+  Future<void> updateDepartment({required String departmentId, required String name, String? type}) async {
+    await _client.from('departments').update({'department_name': name, 'department_type': type}).eq('id', departmentId);
+  }
+
+  // --------------------------------------------------
+  // SUBJECTS + COEFFICIENT (per department)
+  // --------------------------------------------------
+
+  Future<List<SubjectWithCoefficient>> getSubjectsForDepartment(String departmentId) async {
+    final rows = await _client
+        .from('subject_departments')
+        .select('coefficient, subjects(id, subject_code, subject_name)')
+        .eq('department_id', departmentId);
+
+    return rows.map((r) {
+      final subj = r['subjects'] as Map;
+      return SubjectWithCoefficient(
+        subjectId: subj['id'] as String,
+        subjectCode: subj['subject_code'] as String? ?? '',
+        subjectName: subj['subject_name'] as String? ?? '',
+        coefficient: r['coefficient'] as int? ?? 1,
+      );
+    }).toList();
+  }
+
+  Future<void> createSubjectInDepartment({
+    required String schoolId,
+    required String departmentId,
+    required String subjectCode,
+    required String subjectName,
+    required int coefficient,
+  }) async {
+    final subject = await _client
+        .from('subjects')
+        .insert({'school_id': schoolId, 'subject_code': subjectCode, 'subject_name': subjectName})
+        .select()
+        .single();
+
+    await _client.from('subject_departments').insert({
+      'subject_id': subject['id'],
+      'department_id': departmentId,
+      'coefficient': coefficient,
+    });
+  }
+
+  /// Attaches an EXISTING school subject to another department with
+  /// its own coefficient - same subject, different weight per
+  /// department, exactly matching how subject_departments is designed.
+  Future<void> attachExistingSubjectToDepartment({
+    required String subjectId,
+    required String departmentId,
+    required int coefficient,
+  }) async {
+    final existing = await _client
+        .from('subject_departments')
+        .select('subject_id')
+        .eq('subject_id', subjectId)
+        .eq('department_id', departmentId)
+        .maybeSingle();
+
+    if (existing == null) {
+      await _client.from('subject_departments').insert({
+        'subject_id': subjectId,
+        'department_id': departmentId,
+        'coefficient': coefficient,
+      });
+    } else {
+      await _client
+          .from('subject_departments')
+          .update({'coefficient': coefficient})
+          .eq('subject_id', subjectId)
+          .eq('department_id', departmentId);
+    }
+  }
+
+  Future<void> updateSubjectCoefficient({required String subjectId, required String departmentId, required int coefficient}) async {
+    await _client.from('subject_departments').update({'coefficient': coefficient}).eq('subject_id', subjectId).eq('department_id', departmentId);
+  }
+
+  Future<List<ManagedSubject>> getAllSchoolSubjects(String schoolId) => getSubjects(schoolId);
+
+  // --------------------------------------------------
+  // SUBJECT BROWSE / REVIEW LIST
+  // --------------------------------------------------
+
+  Future<List<SubjectBrowseItem>> getSubjectBrowseList(String schoolId, String academicYearId) async {
+    final deptSubjects = await _client
+        .from('subject_departments')
+        .select('coefficient, subjects(id, subject_name), departments!inner(department_name, school_id)')
+        .eq('departments.school_id', schoolId);
+
+    final result = <SubjectBrowseItem>[];
+    for (final row in deptSubjects) {
+      final subj = row['subjects'] as Map;
+      final dept = row['departments'] as Map;
+      final subjectId = subj['id'] as String;
+
+      final offeringRows = await _client
+          .from('subject_offerings')
+          .select('classes(class_name)')
+          .eq('subject_id', subjectId)
+          .not('class_id', 'is', null);
+      final classNames = offeringRows.map((r) => (r['classes'] as Map?)?['class_name'] as String? ?? '').where((n) => n.isNotEmpty).toList();
+
+      final teacherRows = await _client
+          .from('teacher_assignments')
+          .select('teachers(full_name)')
+          .eq('subject_id', subjectId)
+          .eq('academic_year_id', academicYearId);
+      final teacherNames = teacherRows.map((r) => (r['teachers'] as Map?)?['full_name'] as String? ?? '').where((n) => n.isNotEmpty).toSet().toList();
+
+      result.add(SubjectBrowseItem(
+        subjectId: subjectId,
+        subjectName: subj['subject_name'] as String? ?? '',
+        departmentName: dept['department_name'] as String? ?? '',
+        coefficient: row['coefficient'] as int? ?? 1,
+        classesOffering: classNames,
+        teachersAssigned: teacherNames,
+      ));
+    }
+    return result;
+  }
+
+  // --------------------------------------------------
+  // ALL TEACHERS (for slot-filling - includes pending ones)
+  // --------------------------------------------------
+
+  Future<List<AllTeacherProfile>> getAllTeachers(String schoolId) async {
+    final rows = await _client
+        .from('teachers')
+        .select('id, user_id, full_name, phone, is_approved, users(email)')
+        .eq('school_id', schoolId)
+        .order('full_name');
+    return rows.map((r) => AllTeacherProfile.fromMap(r)).toList();
+  }
+
+  /// Filling a slot with a pending teacher approves them as part of
+  /// this same action - a separate silent auto-approve would hide
+  /// what just happened; this makes the approval explicit in the
+  /// same confirmation the UI already shows before calling it.
+  Future<void> approveAndAssign({
+    required String schoolId,
+    required String academicYearId,
+    required String teacherId,
+    required bool wasAlreadyApproved,
+    required String principalId,
+    required String classId,
+    required String subjectId,
+    required int periodsPerWeek,
+    int? preferredDay,
+    String? preferredStartTime,
+    String? preferredEndTime,
+  }) async {
+    if (!wasAlreadyApproved) {
+      await approveTeacher(teacherId, principalId);
+    }
+    await createAssignment(
+      schoolId: schoolId,
+      academicYearId: academicYearId,
+      teacherId: teacherId,
+      classId: classId,
+      subjectId: subjectId,
+      periodsPerWeek: periodsPerWeek,
+      preferredDay: preferredDay,
+      preferredStartTime: preferredStartTime,
+      preferredEndTime: preferredEndTime,
+    );
+  }
   
   // --------------------------------------------------
   // FEES + INSTALLMENTS - per class, per academic year

@@ -67,3 +67,20 @@ final reportCardStatusProvider = FutureProvider.family<List<ReportCardStatus>, (
 final principalTermsForYearProvider = FutureProvider.family<List<AcademicTermOption>, String>((ref, academicYearId) {
   return ref.watch(principalRepositoryProvider).getTermsForYear(academicYearId);
 });
+
+final departmentsFullProvider = FutureProvider.family<List<DepartmentFull>, String>((ref, schoolId) {
+  return ref.watch(principalRepositoryProvider).getDepartmentsFull(schoolId);
+});
+
+final subjectsForDepartmentProvider = FutureProvider.family<List<SubjectWithCoefficient>, String>((ref, departmentId) {
+  return ref.watch(principalRepositoryProvider).getSubjectsForDepartment(departmentId);
+});
+
+final subjectBrowseListProvider =
+    FutureProvider.family<List<SubjectBrowseItem>, ({String schoolId, String academicYearId})>((ref, params) {
+  return ref.watch(principalRepositoryProvider).getSubjectBrowseList(params.schoolId, params.academicYearId);
+});
+
+final allTeachersProvider = FutureProvider.family<List<AllTeacherProfile>, String>((ref, schoolId) {
+  return ref.watch(principalRepositoryProvider).getAllTeachers(schoolId);
+});

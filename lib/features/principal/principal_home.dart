@@ -78,20 +78,22 @@ class _PrincipalShellState extends ConsumerState<_PrincipalShell> {
 
   List<_NavGroup> _buildGroups() {
     final strings = widget.strings;
-    return [
+        return [
       _NavGroup(
         icon: Icons.class_outlined,
-        title: strings.isFrench ? 'Classes et matières' : 'Classes & Subjects',
+        title: strings.isFrench ? 'Départements, classes et matières' : 'Departments, Classes & Subjects',
         items: [
           _NavLeaf(
-            title: strings.isFrench ? 'Gérer les classes' : 'Manage Classes',
-            description: strings.isFrench ? 'Créer, modifier et désactiver des classes.' : 'Create, edit, and deactivate classes.',
+            title: strings.isFrench ? 'Gérer les départements et classes' : 'Manage Departments & Classes',
+            description: strings.isFrench
+                ? 'Créer des départements, des classes, et configurer les matières et coefficients.'
+                : 'Create departments, classes, and configure subjects and coefficients.',
             onTap: () => setState(() => _body = ManageClassesPage(schoolId: widget.schoolId)),
           ),
           _NavLeaf(
-            title: strings.isFrench ? 'Gérer les matières' : 'Manage Subjects',
-            description: strings.isFrench ? 'Ajouter des matières et les assigner aux classes.' : 'Add subjects and assign them to classes.',
-            onTap: () => setState(() => _body = ManageSubjectsPage(schoolId: widget.schoolId)),
+            title: strings.isFrench ? 'Parcourir les matières' : 'Browse Subjects',
+            description: strings.isFrench ? 'Voir les classes et enseignants par matière.' : 'See classes and teachers per subject.',
+            onTap: () => setState(() => _body = SubjectBrowsePage(schoolId: widget.schoolId)),
           ),
           _NavLeaf(
             title: strings.isFrench ? 'Frais scolaires' : 'School Fees',
@@ -105,14 +107,9 @@ class _PrincipalShellState extends ConsumerState<_PrincipalShell> {
         title: strings.isFrench ? 'Gestion des enseignants' : 'Teacher Management',
         items: [
           _NavLeaf(
-            title: strings.isFrench ? 'Demandes en attente' : 'Pending Approvals',
-            description: strings.isFrench ? 'Approuver ou refuser les nouvelles candidatures.' : 'Approve or reject new teacher applications.',
-            onTap: () => setState(() => _body = PendingTeachersPage(schoolId: widget.schoolId)),
-          ),
-          _NavLeaf(
-            title: strings.isFrench ? 'Enseignants' : 'Teachers',
-            description: strings.isFrench ? 'Gérer les affectations de matières et de classes.' : 'Manage subject and class assignments.',
-            onTap: () => setState(() => _body = ApprovedTeachersPage(schoolId: widget.schoolId)),
+            title: strings.isFrench ? 'Créer une affectation' : 'Create Teaching Slot',
+            description: strings.isFrench ? 'Définir un poste puis choisir l\'enseignant.' : 'Define a slot, then choose the teacher for it.',
+            onTap: () => setState(() => _body = CreateTeachingSlotPage(schoolId: widget.schoolId)),
           ),
         ],
       ),
