@@ -5,8 +5,8 @@ import '../../core/l10n/app_strings.dart';
 import '../../core/responsive.dart';
 import '../landing/landing_model.dart';
 import '../landing/landing_providers.dart';
+import '../parent/parent_models.dart';
 import 'parent_fees.dart' show generateReceiptPdf;
-import 'parent_models.dart';
 import 'parent_providers.dart';
 
 /// Migrated from PaymentHistoryPage/_PaymentHistoryTile - no own
