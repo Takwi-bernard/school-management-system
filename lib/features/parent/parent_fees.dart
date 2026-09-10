@@ -68,11 +68,6 @@ class ChildFeesPage extends ConsumerWidget {
                       logoUrl: landing.logoUrl,
                       subtitle: child.fullName,
                     ),
-
-                    // Explicit confirmation - this screen only exists for a
-                    // real enrolled student, which by definition means
-                    // registration is already paid. Say so plainly instead
-                    // of leaving the parent to infer it.
                     Container(
                       margin: const EdgeInsets.only(bottom: 16),
                       padding: const EdgeInsets.all(16),
@@ -96,7 +91,6 @@ class ChildFeesPage extends ConsumerWidget {
                         ],
                       ),
                     ),
-
                     ...fees.map((fee) => _FeeCard(fee: fee, child: child, landing: landing, strings: strings)),
                   ],
                 );
@@ -132,9 +126,6 @@ class _FeesInfoState extends StatelessWidget {
   }
 }
 
-/// The states an installment can be in, purely computed from data
-/// already available (isPaid + dueDate vs today) - nothing new to
-/// store, just clearer presentation of what's already there.
 enum _InstallmentUrgency { paid, overdue, dueSoon, upcoming, noDueDate }
 
 _InstallmentUrgency _urgencyOf(InstallmentSummary i) {
@@ -175,7 +166,6 @@ class _FeeCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 4),
-
           Text(
             fee.fullyPaid
                 ? (strings.isFrench
@@ -187,7 +177,6 @@ class _FeeCard extends StatelessWidget {
             style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
           ),
           const SizedBox(height: 14),
-
           ClipRRect(
             borderRadius: BorderRadius.circular(20),
             child: LinearProgressIndicator(value: progress, minHeight: 10),
@@ -199,7 +188,6 @@ class _FeeCard extends StatelessWidget {
             style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 18),
-
           if (fee.fullyPaid)
             Row(
               children: [
@@ -261,9 +249,7 @@ class _InstallmentRow extends StatelessWidget {
       margin: const EdgeInsets.only(top: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: urgency == _InstallmentUrgency.overdue
-            ? Colors.red.withValues(alpha: 0.05)
-            : theme.colorScheme.surface,
+        color: urgency == _InstallmentUrgency.overdue ? Colors.red.withValues(alpha: 0.05) : theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: urgency == _InstallmentUrgency.overdue ? Colors.red.withValues(alpha: 0.3) : theme.colorScheme.outlineVariant,
@@ -313,9 +299,7 @@ class _InstallmentRow extends StatelessWidget {
                 }),
                 icon: const Icon(Icons.payments_outlined, size: 16),
                 label: Text(strings.payNow),
-                style: urgency == _InstallmentUrgency.overdue
-                    ? FilledButton.styleFrom(backgroundColor: Colors.red.shade600)
-                    : null,
+                style: urgency == _InstallmentUrgency.overdue ? FilledButton.styleFrom(backgroundColor: Colors.red.shade600) : null,
               ),
             ],
           ),
@@ -329,8 +313,6 @@ class _InstallmentRow extends StatelessWidget {
 
 // ============================================================
 // MOBILE MONEY PAYMENT PAGE
-// Also used directly for registration fees (child == null in that
-// case, admissionRequestId set instead).
 // ============================================================
 
 class MobileMoneyPaymentPage extends ConsumerStatefulWidget {
@@ -415,8 +397,7 @@ class _MobileMoneyPaymentPageState extends ConsumerState<MobileMoneyPaymentPage>
                     if (widget.child != null)
                       Text(widget.child!.fullName, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
                     const SizedBox(height: 8),
-                    Text('${widget.amount.toStringAsFixed(0)} FCFA',
-                        style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+                    Text('${widget.amount.toStringAsFixed(0)} FCFA', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
                     const SizedBox(height: 24),
                     TextFormField(
                       controller: _phoneController,
@@ -443,10 +424,7 @@ class _MobileMoneyPaymentPageState extends ConsumerState<MobileMoneyPaymentPage>
                     const SizedBox(height: 20),
                     Container(
                       padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: Colors.amber.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
+                      decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(14)),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -534,7 +512,6 @@ class _PaymentStatusPageState extends ConsumerState<PaymentStatusPage> {
         ref.invalidate(enrolledChildrenProvider);
       }
     } catch (_) {
-      // Keep the screen usable; next manual retry can try again.
     } finally {
       if (mounted) setState(() => _checking = false);
     }
@@ -598,10 +575,8 @@ class _PaymentStatusPageState extends ConsumerState<PaymentStatusPage> {
                       icon: const Icon(Icons.receipt_long_rounded),
                       label: Text(strings.downloadReceipt),
                     ),
-                  if (!success && !failed)
-                    const Padding(padding: EdgeInsets.only(top: 12), child: CircularProgressIndicator()),
-                  if (failed)
-                    OutlinedButton(onPressed: () => Navigator.pop(context), child: Text(strings.tryAgain)),
+                  if (!success && !failed) const Padding(padding: EdgeInsets.only(top: 12), child: CircularProgressIndicator()),
+                  if (failed) OutlinedButton(onPressed: () => Navigator.pop(context), child: Text(strings.tryAgain)),
                 ],
               ),
             ),
@@ -613,11 +588,31 @@ class _PaymentStatusPageState extends ConsumerState<PaymentStatusPage> {
 }
 
 // ============================================================
-// SHARED RECEIPT PDF GENERATOR - used by BOTH the payment-status
-// screen (right after paying) and the payment history screen (any
-// past transaction), so a receipt looks identical no matter where
-// it's generated from.
+// SHARED RECEIPT PDF GENERATOR - used by both the payment-status
+// screen and the payment-history tab, so a receipt looks identical
+// no matter where it's generated from.
 // ============================================================
+
+String _formatReceiptDate(DateTime d) {
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+  final hour12 = d.hour % 12 == 0 ? 12 : d.hour % 12;
+  final ampm = d.hour < 12 ? 'AM' : 'PM';
+  final minute = d.minute.toString().padLeft(2, '0');
+  return '${months[d.month - 1]} ${d.day}, ${d.year} \u00b7 $hour12:$minute $ampm';
+}
+
+String _formatAmount(double amount) {
+  final whole = amount.toStringAsFixed(0);
+  final buffer = StringBuffer();
+  for (int i = 0; i < whole.length; i++) {
+    if (i > 0 && (whole.length - i) % 3 == 0) buffer.write(',');
+    buffer.write(whole[i]);
+  }
+  return buffer.toString();
+}
 
 Future<void> generateReceiptPdf({
   required WidgetRef ref,
@@ -639,7 +634,7 @@ Future<void> generateReceiptPdf({
   doc.addPage(
     pw.Page(
       pageFormat: PdfPageFormat.a5,
-            build: (context) => pw.Padding(
+      build: (context) => pw.Padding(
         padding: const pw.EdgeInsets.all(24),
         child: pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.center,
@@ -652,28 +647,44 @@ Future<void> generateReceiptPdf({
             ),
             pw.SizedBox(height: 4),
             pw.Container(height: 1.5, color: PdfColors.grey400, width: double.infinity),
+            pw.SizedBox(height: 16),
+            pw.Text('PAYMENT RECEIPT', style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold, letterSpacing: 1.4)),
             pw.SizedBox(height: 14),
-            pw.Text('PAYMENT RECEIPT', style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold, letterSpacing: 1.2)),
-            pw.SizedBox(height: 12),
             pw.Container(
+              width: double.infinity,
               padding: const pw.EdgeInsets.all(14),
-              decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey400, width: 0.7), borderRadius: pw.BorderRadius.circular(6)),
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.grey400, width: 0.7),
+                borderRadius: pw.BorderRadius.circular(6),
+              ),
               child: pw.Column(
                 children: [
                   _pdfRow('Student', transaction.childName ?? '-'),
+                  _pdfDivider(),
                   _pdfRow('Payment purpose', transaction.paymentPurpose),
-                  _pdfRow('Amount', '${transaction.amount.toStringAsFixed(0)} FCFA'),
+                  _pdfDivider(),
+                  _pdfRow('Amount', '${_formatAmount(transaction.amount)} FCFA', valueBold: true),
+                  _pdfDivider(),
                   _pdfRow('Transaction reference', transaction.transactionReference ?? '-'),
-                  _pdfRow('Date', transaction.createdAt.toString().split('.').first),
-                  _pdfRow('Status', 'PAID'),
+                  _pdfDivider(),
+                  _pdfRow('Date', _formatReceiptDate(transaction.createdAt)),
+                  _pdfDivider(),
+                  _pdfRow('Status', 'PAID', valueColor: PdfColors.green800, valueBold: true),
                 ],
               ),
             ),
-            pw.SizedBox(height: 20),
+            pw.SizedBox(height: 22),
             pw.Align(alignment: pw.Alignment.centerRight, child: buildStampBlock(branding.proprietorStamp)),
-            pw.SizedBox(height: 14),
+            pw.SizedBox(height: 16),
             pw.Text('Generated automatically by the school management system.',
                 style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+            pw.SizedBox(height: 4),
+            pw.Text(
+              'If this receipt does not correspond to a valid transaction in our records, '
+              'please contact the school Principal for rectification.',
+              textAlign: pw.TextAlign.center,
+              style: pw.TextStyle(fontSize: 7.5, fontStyle: pw.FontStyle.italic, color: PdfColors.grey600),
+            ),
           ],
         ),
       ),
@@ -683,165 +694,25 @@ Future<void> generateReceiptPdf({
   await Printing.sharePdf(bytes: await doc.save(), filename: 'receipt_${transaction.id}.pdf');
 }
 
-pw.Widget _pdfRow(String label, String value) {
+pw.Widget _pdfDivider() => pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 1),
+      child: pw.Container(height: 0.5, color: PdfColors.grey300, width: double.infinity),
+    );
+
+pw.Widget _pdfRow(String label, String value, {bool valueBold = false, PdfColor? valueColor}) {
   return pw.Padding(
-    padding: const pw.EdgeInsets.symmetric(vertical: 4),
+    padding: const pw.EdgeInsets.symmetric(vertical: 5),
     child: pw.Row(
       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-      children: [pw.Text(label, style: const pw.TextStyle(fontSize: 10)), pw.Text(value, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold))],
+      children: [
+        pw.Text(label, style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+        pw.Text(value,
+            style: pw.TextStyle(
+              fontSize: 10,
+              fontWeight: valueBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+              color: valueColor,
+            )),
+      ],
     ),
   );
-}
-
-// ============================================================
-// PAYMENT HISTORY PAGE - every transaction across every child,
-// newest first, with a download option on each successful one.
-// ============================================================
-
-class PaymentHistoryPage extends ConsumerWidget {
-  const PaymentHistoryPage({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final landing = ref.watch(landingProvider).value;
-    if (landing == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    final strings = AppStrings(ref.watch(activeLocaleProvider));
-    final historyAsync = ref.watch(paymentHistoryProvider);
-
-    return Theme(
-      data: buildSchoolTheme(landing.primaryColor, landing.secondaryColor),
-      child: Scaffold(
-        appBar: AppBar(title: Text(strings.paymentHistory)),
-        body: historyAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('$e')),
-          data: (transactions) {
-            if (transactions.isEmpty) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.history_rounded, size: 48, color: Theme.of(context).colorScheme.outline),
-                      const SizedBox(height: 12),
-                      Text(strings.noPaymentsYet, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
-                    ],
-                  ),
-                ),
-              );
-            }
-            return ListView(
-              padding: EdgeInsets.all(Responsive.pagePadding(context)),
-              children: [
-                brandedSubpageHeader(context, schoolName: landing.schoolName, logoUrl: landing.logoUrl),
-                Text(
-                  strings.isFrench
-                      ? 'Toutes vos transactions, pour tous vos enfants, les plus récentes en premier.'
-                      : 'All your transactions, across all your children, most recent first.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.outline),
-                ),
-                const SizedBox(height: 16),
-                ...transactions.map((t) => _PaymentHistoryTile(transaction: t, landing: landing, strings: strings)),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class _PaymentHistoryTile extends ConsumerStatefulWidget {
-  final PaymentTransaction transaction;
-  final LandingModel landing;
-  final AppStrings strings;
-  const _PaymentHistoryTile({required this.transaction, required this.landing, required this.strings});
-
-  @override
-  ConsumerState<_PaymentHistoryTile> createState() => _PaymentHistoryTileState();
-}
-
-class _PaymentHistoryTileState extends ConsumerState<_PaymentHistoryTile> {
-  bool _downloading = false;
-
-  Future<void> _download() async {
-    setState(() => _downloading = true);
-    try {
-      await generateReceiptPdf(ref: ref, transaction: widget.transaction, landing: widget.landing);
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-    } finally {
-      if (mounted) setState(() => _downloading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final t = widget.transaction;
-    final strings = widget.strings;
-
-    final (Color color, String label, IconData icon) = t.isSuccessful
-        ? (Colors.green, strings.isFrench ? 'Payé' : 'Paid', Icons.check_circle_rounded)
-        : t.isFailed
-            ? (Colors.red, strings.isFrench ? 'Échoué' : 'Failed', Icons.cancel_rounded)
-            : (Colors.orange, strings.isFrench ? 'En attente' : 'Pending', Icons.hourglass_top_rounded);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(16)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: color, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(t.paymentPurpose, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
-                    if (t.childName != null)
-                      Text(t.childName!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-                  ],
-                ),
-              ),
-              Text('${t.amount.toStringAsFixed(0)} FCFA', style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800)),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
-                child: Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700)),
-              ),
-              const SizedBox(width: 10),
-              Text(_formatDate(t.createdAt), style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-            ],
-          ),
-          if (t.isSuccessful) ...[
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _downloading ? null : _download,
-                icon: _downloading
-                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.download_rounded, size: 16),
-                label: Text(strings.downloadReceipt),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  String _formatDate(DateTime d) =>
-      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 }

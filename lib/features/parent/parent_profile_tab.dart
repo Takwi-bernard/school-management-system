@@ -1,66 +1,52 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+import 'package:school_management_system/features/landing/landing_providers.dart';
 
 import '../../core/l10n/app_strings.dart';
-import '../auth/auth_providers.dart';
-import '../landing/landing_providers.dart';
+import '../../shared/sign_out_button.dart';
 import 'parent_models.dart';
 import 'parent_providers.dart';
 
-class ParentProfilePage extends ConsumerWidget {
-  const ParentProfilePage({super.key});
+/// Migrated from ParentProfilePage - no own Scaffold/AppBar/Theme
+/// wrap anymore, ParentShell provides all three. Sign-out row
+/// changed from a bare instant `signOut()` call to the shared
+/// SignOutButton (confirm dialog + spinner, shared/sign_out_button.dart)
+/// - same reasoning as teacher's profile: an instant, unconfirmed
+/// sign-out was a real UX bug, not a style choice, so this fix
+/// applies here too, not just in the sidebar.
+class ParentProfileTab extends ConsumerWidget {
+  const ParentProfileTab({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final landing = ref.watch(landingProvider).value;
-    if (landing == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
     final strings = AppStrings(ref.watch(activeLocaleProvider));
     final profileAsync = ref.watch(parentProfileProvider);
 
-    return Theme(
-      data: buildSchoolTheme(landing.primaryColor, landing.secondaryColor),
-      child: Scaffold(
-        appBar: AppBar(title: Text(strings.myProfile)),
-        body: profileAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('$e')),
-          data: (profile) {
-            if (profile == null) return Center(child: Text(strings.profileNotFound));
-            return ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                brandedSubpageHeader(context, schoolName: landing.schoolName, logoUrl: landing.logoUrl),
-                _ProfileHeader(profile: profile),
-                const SizedBox(height: 20),
-                _EditableInfoCard(profile: profile, strings: strings),
-                const SizedBox(height: 16),
-                _ActionTile(
-                  icon: Icons.lock_outline_rounded,
-                  title: strings.changePassword,
-                  subtitle: strings.isFrench
-                      ? 'Vous devrez confirmer votre mot de passe actuel.'
-                      : 'You will need to confirm your current password.',
-                  onTap: () => showDialog(context: context, builder: (_) => const _ChangePasswordDialog()),
-                ),
-                const SizedBox(height: 12),
-                _ActionTile(
-                  icon: Icons.logout_rounded,
-                  title: strings.signOut,
-                  subtitle: strings.isFrench
-                      ? 'Vous devrez vous reconnecter pour continuer.'
-                      : 'You will need to sign in again to continue.',
-                  isDestructive: true,
-                  onTap: () async {
-                    await ref.read(authControllerProvider.notifier).signOut();
-                    if (context.mounted) context.go('/');
-                  },
-                ),
-              ],
-            );
-          },
-        ),
-      ),
+    return profileAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text('$e')),
+      data: (profile) {
+        if (profile == null) return Center(child: Text(strings.profileNotFound));
+        return ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            _ProfileHeader(profile: profile),
+            const SizedBox(height: 20),
+            _EditableInfoCard(profile: profile, strings: strings),
+            const SizedBox(height: 16),
+            _ActionTile(
+              icon: Icons.lock_outline_rounded,
+              title: strings.changePassword,
+              subtitle: strings.isFrench
+                  ? 'Vous devrez confirmer votre mot de passe actuel.'
+                  : 'You will need to confirm your current password.',
+              onTap: () => showDialog(context: context, builder: (_) => const _ChangePasswordDialog()),
+            ),
+            const SizedBox(height: 20),
+            SignOutButton(strings: strings),
+          ],
+        );
+      },
     );
   }
 }
@@ -207,19 +193,12 @@ class _ActionTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
-  final bool isDestructive;
-  const _ActionTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-    this.isDestructive = false,
-  });
+  const _ActionTile({required this.icon, required this.title, required this.subtitle, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = isDestructive ? theme.colorScheme.error : theme.colorScheme.onSurface;
+    final color = theme.colorScheme.onSurface;
     return Material(
       color: theme.colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(18),

@@ -9,6 +9,8 @@ import '../landing/landing_model.dart';
 import 'parent_dashboard_tab.dart';
 import 'parent_models.dart';
 import 'parent_navigation.dart';
+import 'parent_payment_history_tab.dart';
+import 'parent_profile_tab.dart';
 import 'parent_providers.dart';
 
 /// Same architecture as TeacherShell, deliberately - the parent
@@ -89,7 +91,7 @@ class ParentShell extends ConsumerWidget {
         icon: Icons.history_rounded,
         activeIcon: Icons.history_rounded,
         title: strings.paymentHistory,
-        legacy: () => context.push('/parent/payment-history'),
+        content: (context) => ParentPaymentHistoryTab(landing: landing, strings: strings),
       ),
       _ParentNavItem(
         key: 'messages',
@@ -103,7 +105,7 @@ class ParentShell extends ConsumerWidget {
         icon: Icons.person_outline_rounded,
         activeIcon: Icons.person_rounded,
         title: strings.myProfile,
-        legacy: () => context.push('/parent/profile'),
+        content: (context) => const ParentProfileTab(),
       ),
       _ParentNavItem(
         key: 'settings',
@@ -394,7 +396,7 @@ class _Logo extends StatelessWidget {
       child: Container(
         color: ink.withValues(alpha: 0.92),
         child: Image.network(logoUrl, width: size, height: size, fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) => Icon(Icons.school_rounded, size: size * 0.55)),
+            errorBuilder: (_, __, ___) =>const Icon(Icons.school_rounded, size: size * 0.55)),
       ),
     );
   }

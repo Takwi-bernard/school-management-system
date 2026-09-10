@@ -12,7 +12,7 @@ import '../features/parent/parent_home.dart';
 import '../features/parent/parent_enrollment.dart';
 import '../features/parent/parent_fees.dart';
 import '../features/parent/parent_report_card.dart';
-import '../features/parent/parent_profile.dart';
+import '../features/parent/parent_profile_tab.dart';
 import '../features/parent/parent_models.dart';
 import '../features/principal/principal_home.dart';
 /// FIX: default GoRouter navigation is an abrupt cut with no
