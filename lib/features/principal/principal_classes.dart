@@ -253,7 +253,7 @@ class _DepartmentDetailPaneState extends ConsumerState<_DepartmentDetailPane> wi
     ref.invalidate(subjectsForDepartmentProvider(widget.department.id));
   }
 
-  Future<void> _openClassDialog({ManagedClass? existing}) async {
+   Future<void> _openClassDialog({ManagedClass? existing}) async {
     final nameController = TextEditingController(text: existing?.className ?? '');
     final codeController = TextEditingController(text: existing?.classCode ?? '');
     final levelController = TextEditingController(text: existing?.levelOrder.toString() ?? '');
@@ -289,8 +289,13 @@ class _DepartmentDetailPaneState extends ConsumerState<_DepartmentDetailPane> wi
     if (saved != true || nameController.text.trim().isEmpty) return;
 
     final repo = ref.read(principalRepositoryProvider);
+
     if (existing == null) {
-      await repo.createClass(
+      // NEW class - offer to configure its subjects immediately,
+      // since an empty class with no subject offerings is a common,
+      // easy-to-forget mistake. "Later" is always safe too - offerings
+      // can be added or removed at any time from the Classes tab.
+      final newClass = await repo.createClass(
         schoolId: widget.schoolId,
         className: nameController.text.trim(),
         classCode: codeController.text.trim().isEmpty ? null : codeController.text.trim().toUpperCase(),
@@ -298,6 +303,28 @@ class _DepartmentDetailPaneState extends ConsumerState<_DepartmentDetailPane> wi
         levelOrder: int.tryParse(levelController.text) ?? 0,
         maxStudents: int.tryParse(capacityController.text) ?? 50,
       );
+      ref.invalidate(managedClassesProvider(widget.schoolId));
+
+      if (!mounted) return;
+      final configureNow = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: Text('${newClass.className} created'),
+          content: const Text(
+            'Would you like to configure which subjects this class offers now? You can always do this later, and subjects can be added or removed at any time.',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Later')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Configure Now')),
+          ],
+        ),
+      );
+      if (configureNow == true && mounted) {
+        setState(() {
+          _tabs.animateTo(1); // jump to the Classes tab
+          _selectedClass = newClass;
+        });
+      }
     } else {
       await repo.updateClass(
         classId: existing.id,
@@ -307,10 +334,9 @@ class _DepartmentDetailPaneState extends ConsumerState<_DepartmentDetailPane> wi
         levelOrder: int.tryParse(levelController.text) ?? 0,
         maxStudents: int.tryParse(capacityController.text) ?? 50,
       );
+      ref.invalidate(managedClassesProvider(widget.schoolId));
     }
-    ref.invalidate(managedClassesProvider(widget.schoolId));
   }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);

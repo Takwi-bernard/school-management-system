@@ -26,6 +26,8 @@ class PrincipalRepository {
     return row?['id'] as String?;
   }
 
+
+
   // --------------------------------------------------
   // TEACHER APPROVAL
   // --------------------------------------------------
@@ -129,6 +131,8 @@ class PrincipalRepository {
   Future<void> deleteAssignment(String assignmentId) async {
     await _client.from('teacher_assignments').delete().eq('id', assignmentId);
   }
+
+
 
     // --------------------------------------------------
   // MARKS WINDOW (per exam period)
@@ -336,7 +340,7 @@ class PrincipalRepository {
     return rows.map((r) => ManagedClass.fromMap(r)).toList();
   }
 
-  Future<void> createClass({
+    Future<ManagedClass> createClass({
     required String schoolId,
     required String className,
     String? classCode,
@@ -344,16 +348,20 @@ class PrincipalRepository {
     required int levelOrder,
     required int maxStudents,
   }) async {
-    await _client.from('classes').insert({
-      'school_id': schoolId,
-      'class_name': className,
-      'class_code': classCode,
-      'department_id': departmentId,
-      'level_order': levelOrder,
-      'max_students': maxStudents,
-    });
+    final inserted = await _client
+        .from('classes')
+        .insert({
+          'school_id': schoolId,
+          'class_name': className,
+          'class_code': classCode,
+          'department_id': departmentId,
+          'level_order': levelOrder,
+          'max_students': maxStudents,
+        })
+        .select('*, departments(department_name)')
+        .single();
+    return ManagedClass.fromMap(inserted);
   }
-
   Future<void> updateClass({
     required String classId,
     required String className,
@@ -626,6 +634,9 @@ class PrincipalRepository {
       preferredEndTime: preferredEndTime,
     );
   }
+
+
+
   
   // --------------------------------------------------
   // FEES + INSTALLMENTS - per class, per academic year
