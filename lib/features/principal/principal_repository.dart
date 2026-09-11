@@ -382,7 +382,32 @@ class PrincipalRepository {
   Future<void> setClassActive(String classId, bool isActive) async {
     await _client.from('classes').update({'is_active': isActive}).eq('id', classId);
   }
+// --------------------------------------------------
+  // FEE CONFIGURATION (per class)  
+// --------------------------------------------------
+  Future<Map<String, List<TeacherAssignmentInfo>>> _getAssignmentsGroupedBySchool(String schoolId, String academicYearId) async {
+    final rows = await _client
+        .from('teacher_assignments')
+        .select('id, teacher_id, periods_per_week, classes(class_name), subjects(subject_name)')
+        .eq('school_id', schoolId)
+        .eq('academic_year_id', academicYearId);
 
+    final map = <String, List<TeacherAssignmentInfo>>{};
+    for (final r in rows) {
+      final teacherId = r['teacher_id'] as String;
+      map.putIfAbsent(teacherId, () => []).add(TeacherAssignmentInfo.fromMap(r));
+    }
+    return map;
+  }
+
+  /// Every teacher who's signed up at this school - approved or
+  /// pending - with their current assignments, so the Principal can
+  /// see at a glance who is fully utilized and who has nothing yet.
+  Future<List<TeacherOverviewInfo>> getTeacherOverview(String schoolId, String academicYearId) async {
+    final teachers = await getAllTeachers(schoolId);
+    final assignmentsMap = await _getAssignmentsGroupedBySchool(schoolId, academicYearId);
+    return teachers.map((t) => TeacherOverviewInfo(profile: t, assignments: assignmentsMap[t.teacherId] ?? [])).toList();
+  }
   // --------------------------------------------------
   // SUBJECTS (school-wide list)
   // --------------------------------------------------
@@ -453,6 +478,125 @@ class PrincipalRepository {
   }
 
 
+
+  Future<List<Map<String, dynamic>>> getClassesWithSubmittedMarks(String examPeriodId) async {
+    final rows = await _client
+        .from('marks')
+        .select('class_id, classes(class_name)')
+        .eq('exam_period_id', examPeriodId)
+        .eq('status', 'submitted');
+
+    final seen = <String, String>{};
+    for (final r in rows) {
+      final classId = r['class_id'] as String;
+      final className = (r['classes'] as Map?)?['class_name'] as String? ?? '';
+      seen[classId] = className;
+    }
+    return seen.entries.map((e) => {'id': e.key, 'name': e.value}).toList()
+      ..sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+  }
+
+    // --------------------------------------------------
+  // COMMENT REVIEW / PUBLISHING
+  // --------------------------------------------------
+
+  Future<List<PendingComment>> getPendingComments(String schoolId) async {
+    final rows = await _client
+        .from('class_comments')
+        .select('*, students(first_name, last_name), classes(class_name), teachers(full_name), exam_periods(period_name)')
+        .eq('school_id', schoolId)
+        .eq('status', 'draft')
+        .order('created_at');
+    return rows.map((r) => PendingComment.fromMap(r)).toList();
+  }
+
+  Future<void> approveComment(String commentId, {String? editedText}) async {
+    await _client.from('class_comments').update({
+      'status': 'approved',
+      if (editedText != null) 'comment': editedText,
+    }).eq('id', commentId);
+  }
+
+  Future<void> discardComment(String commentId) async {
+    await _client.from('class_comments').delete().eq('id', commentId);
+  }
+// --------------------------------------------------
+  // BULK REPORT CARD GENERATION + PUBLISHING
+  // --------------------------------------------------
+    Future<Map<String, dynamic>> generateReportCardsForClass({
+    required String schoolId,
+    required String classId,
+    required String termId,
+    required String academicYearId,
+  }) async {
+    final students = await getReportCardStatusForClass(classId: classId, termId: termId, academicYearId: academicYearId);
+    var succeeded = 0;
+    var skipped = 0;
+    for (final s in students) {
+      try {
+        await generateReportCard(schoolId: schoolId, studentId: s.studentId, classId: classId, termId: termId, academicYearId: academicYearId);
+        succeeded++;
+      } catch (_) {
+        skipped++; // e.g. this student has no approved marks yet - not fatal, continue with the rest
+      }
+    }
+    return {'succeeded': succeeded, 'skipped': skipped, 'total': students.length};
+  }
+
+  Future<int> publishReportCardsForClass({
+    required String classId,
+    required String termId,
+    required String principalId,
+    DateTime? publishAt,
+  }) async {
+    final rows = await _client
+        .from('report_cards')
+        .update({
+          'is_published': publishAt == null,
+          'publish_at': publishAt?.toIso8601String(),
+          'published_by': principalId,
+        })
+        .eq('class_id', classId)
+        .eq('term_id', termId)
+        .select();
+    return (rows as List).length;
+  }
+// -------------------------------------------------
+  // SUBJECTS WITH SUBMITTED MARKS (per class)
+  // -------------------------------------------------
+  Future<List<Map<String, dynamic>>> getSubjectsWithSubmittedMarks(String examPeriodId, String classId) async {
+    final rows = await _client
+        .from('marks')
+        .select('subject_id, subjects(subject_name)')
+        .eq('exam_period_id', examPeriodId)
+        .eq('class_id', classId)
+        .eq('status', 'submitted');
+
+    final seen = <String, String>{};
+    for (final r in rows) {
+      final subjectId = r['subject_id'] as String;
+      final subjectName = (r['subjects'] as Map?)?['subject_name'] as String? ?? '';
+      seen[subjectId] = subjectName;
+    }
+    return seen.entries.map((e) => {'id': e.key, 'name': e.value}).toList()
+      ..sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+  }
+
+  Future<List<SubmittedMark>> getMarksForClassSubject({
+    required String examPeriodId,
+    required String classId,
+    required String subjectId,
+  }) async {
+    final rows = await _client
+        .from('marks')
+        .select('*, students(first_name, last_name), subjects(subject_name), classes(class_name), teachers(full_name)')
+        .eq('exam_period_id', examPeriodId)
+        .eq('class_id', classId)
+        .eq('subject_id', subjectId)
+        .eq('status', 'submitted')
+        .order('created_at');
+    return rows.map((r) => SubmittedMark.fromMap(r)).toList();
+  }
     // --------------------------------------------------
   // DEPARTMENTS
   // --------------------------------------------------

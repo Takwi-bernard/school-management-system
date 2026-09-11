@@ -14,6 +14,7 @@ import 'principal_providers.dart';
 import 'principal_teachers.dart';
 import 'principal_marks.dart';
 import 'principal_report_card.dart';
+import 'principal_comments.dart';
 class PrincipalHome extends ConsumerWidget {
   const PrincipalHome({super.key});
 
@@ -102,10 +103,15 @@ class _PrincipalShellState extends ConsumerState<_PrincipalShell> {
           ),
         ],
       ),
-            _NavGroup(
+                 _NavGroup(
         icon: Icons.people_outline_rounded,
         title: strings.isFrench ? 'Gestion des enseignants' : 'Teacher Management',
         items: [
+          _NavLeaf(
+            title: strings.isFrench ? 'Vue d\'ensemble des enseignants' : 'Teacher Overview',
+            description: strings.isFrench ? 'Voir tous les enseignants, assignés ou non.' : 'See every teacher, assigned or not.',
+            onTap: () => setState(() => _body = TeacherOverviewPage(schoolId: widget.schoolId)),
+          ),
           _NavLeaf(
             title: strings.isFrench ? 'Créer une affectation' : 'Create Teaching Slot',
             description: strings.isFrench ? 'Définir un poste puis choisir l\'enseignant.' : 'Define a slot, then choose the teacher for it.',
@@ -128,6 +134,11 @@ class _PrincipalShellState extends ConsumerState<_PrincipalShell> {
         icon: Icons.assessment_outlined,
         title: strings.isFrench ? 'Bulletins et commentaires' : 'Report Cards & Comments',
         items: [
+                    _NavLeaf(
+            title: strings.isFrench ? 'Réviser les commentaires' : 'Review Comments',
+            description: strings.isFrench ? 'Approuver les commentaires des enseignants avant publication.' : 'Approve teacher comments before they publish.',
+            onTap: () => setState(() => _body = PendingCommentsPage(schoolId: widget.schoolId)),
+          ),
           _NavLeaf(
             title: strings.isFrench ? 'Gérer les bulletins' : 'Manage Report Cards',
             description: strings.isFrench ? 'Générer et publier les bulletins scolaires.' : 'Generate and publish report cards.',

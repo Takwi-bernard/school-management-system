@@ -21,6 +21,13 @@ class PrincipalProfile {
       );
 }
 
+class TeacherOverviewInfo {
+  final AllTeacherProfile profile;
+  final List<TeacherAssignmentInfo> assignments;
+  const TeacherOverviewInfo({required this.profile, required this.assignments});
+
+  bool get isAssigned => assignments.isNotEmpty;
+}
 class DepartmentOption {
   final String id;
   final String departmentName;
@@ -32,6 +39,42 @@ class DepartmentOption {
       );
 }
 
+
+class PendingComment {
+  final String id;
+  final String studentName;
+  final String className;
+  final String teacherName;
+  final String examPeriodName;
+  final String comment;
+  final DateTime createdAt;
+
+  const PendingComment({
+    required this.id,
+    required this.studentName,
+    required this.className,
+    required this.teacherName,
+    required this.examPeriodName,
+    required this.comment,
+    required this.createdAt,
+  });
+
+  factory PendingComment.fromMap(Map<String, dynamic> map) {
+    final student = map['students'] as Map?;
+    final cls = map['classes'] as Map?;
+    final teacher = map['teachers'] as Map?;
+    final period = map['exam_periods'] as Map?;
+    return PendingComment(
+      id: map['id'] as String,
+      studentName: '${student?['first_name'] ?? ''} ${student?['last_name'] ?? ''}'.trim(),
+      className: cls?['class_name'] as String? ?? '',
+      teacherName: teacher?['full_name'] as String? ?? '',
+      examPeriodName: period?['period_name'] as String? ?? '',
+      comment: map['comment'] as String? ?? '',
+      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ?? DateTime.now(),
+    );
+  }
+}
 class ManagedClass {
   final String id;
   final String className;

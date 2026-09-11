@@ -84,3 +84,26 @@ final subjectBrowseListProvider =
 final allTeachersProvider = FutureProvider.family<List<AllTeacherProfile>, String>((ref, schoolId) {
   return ref.watch(principalRepositoryProvider).getAllTeachers(schoolId);
 });
+
+final teacherOverviewProvider = FutureProvider.family<List<TeacherOverviewInfo>, ({String schoolId, String academicYearId})>((ref, params) {
+  return ref.watch(principalRepositoryProvider).getTeacherOverview(params.schoolId, params.academicYearId);
+});
+
+final classesWithSubmittedMarksProvider = FutureProvider.family<List<Map<String, dynamic>>, String>((ref, examPeriodId) {
+  return ref.watch(principalRepositoryProvider).getClassesWithSubmittedMarks(examPeriodId);
+});
+
+final subjectsWithSubmittedMarksProvider =
+    FutureProvider.family<List<Map<String, dynamic>>, ({String examPeriodId, String classId})>((ref, params) {
+  return ref.watch(principalRepositoryProvider).getSubjectsWithSubmittedMarks(params.examPeriodId, params.classId);
+});
+
+final marksForClassSubjectProvider =
+    FutureProvider.family<List<SubmittedMark>, ({String examPeriodId, String classId, String subjectId})>((ref, params) {
+  return ref.watch(principalRepositoryProvider).getMarksForClassSubject(
+        examPeriodId: params.examPeriodId, classId: params.classId, subjectId: params.subjectId,
+      );
+});
+final pendingCommentsProvider = FutureProvider.family<List<PendingComment>, String>((ref, schoolId) {
+  return ref.watch(principalRepositoryProvider).getPendingComments(schoolId);
+});

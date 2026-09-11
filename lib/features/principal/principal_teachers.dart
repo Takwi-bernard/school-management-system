@@ -181,42 +181,47 @@ class SelectTeacherDialog extends ConsumerStatefulWidget {
 }
 
 class _SelectTeacherDialogState extends ConsumerState<SelectTeacherDialog> {
-  AllTeacherProfile? _picked;
   bool _saving = false;
-  String? _academicYearId;
-
-  @override
-  void initState() {
-    super.initState();
-    ref.read(principalRepositoryProvider).getCurrentAcademicYearId(widget.schoolId).then((id) {
-      if (mounted) setState(() => _academicYearId = id);
-    });
-  }
 
   Future<void> _confirm(AllTeacherProfile teacher) async {
-    final principal = await ref.read(principalProfileProvider.future);
-    if (principal == null || _academicYearId == null) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(teacher.isApproved ? 'Assign ${teacher.fullName}?' : 'Approve & Assign ${teacher.fullName}?'),
-        content: Text(teacher.isApproved
-            ? '${teacher.fullName} will be assigned to teach ${widget.subjectName} in ${widget.className}.'
-            : '${teacher.fullName} is not yet approved at this school. Selecting them for this slot will approve their account AND assign them to teach ${widget.subjectName} in ${widget.className}.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(teacher.isApproved ? 'Assign' : 'Approve & Assign')),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
     setState(() => _saving = true);
     try {
+      // Fetched fresh, awaited, right here - no dependency on
+      // whether something loaded earlier in initState. This is what
+      // was silently failing before: a stale/not-yet-loaded value
+      // caused a silent early return with zero feedback.
+      final academicYearId = await ref.read(principalRepositoryProvider).getCurrentAcademicYearId(widget.schoolId);
+      final principal = await ref.read(principalProfileProvider.future);
+
+      if (academicYearId == null) {
+        throw Exception('No current academic year is set for this school. Set one before assigning teachers.');
+      }
+      if (principal == null) {
+        throw Exception('Could not load your principal profile. Please try signing in again.');
+      }
+
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: Text(teacher.isApproved ? 'Assign ${teacher.fullName}?' : 'Approve & Assign ${teacher.fullName}?'),
+          content: Text(teacher.isApproved
+              ? '${teacher.fullName} will be assigned to teach ${widget.subjectName} in ${widget.className}.'
+              : '${teacher.fullName} is not yet approved at this school. Selecting them for this slot will approve their account AND assign them to teach ${widget.subjectName} in ${widget.className}.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(teacher.isApproved ? 'Assign' : 'Approve & Assign')),
+          ],
+        ),
+      );
+      if (confirmed != true) {
+        setState(() => _saving = false);
+        return;
+      }
+
       await ref.read(principalRepositoryProvider).approveAndAssign(
             schoolId: widget.schoolId,
-            academicYearId: _academicYearId!,
+            academicYearId: academicYearId,
             teacherId: teacher.teacherId,
             wasAlreadyApproved: teacher.isApproved,
             principalId: principal.principalId,
@@ -227,6 +232,7 @@ class _SelectTeacherDialogState extends ConsumerState<SelectTeacherDialog> {
             preferredStartTime: widget.preferredStartTime,
             preferredEndTime: widget.preferredEndTime,
           );
+
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${teacher.fullName} assigned to ${widget.subjectName} - ${widget.className}.')));
@@ -303,10 +309,12 @@ class _SelectTeacherDialogState extends ConsumerState<SelectTeacherDialog> {
                         ),
                       ),
                       if (!t.isApproved)
-                        IconButton(icon: const Icon(Icons.close_rounded), color: theme.colorScheme.error, tooltip: 'Reject', onPressed: () => _reject(t)),
+                        IconButton(icon: const Icon(Icons.close_rounded), color: theme.colorScheme.error, tooltip: 'Reject', onPressed: _saving ? null : () => _reject(t)),
                       FilledButton(
                         onPressed: _saving ? null : () => _confirm(t),
-                        child: Text(t.isApproved ? 'Assign' : 'Approve & Assign'),
+                        child: _saving
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : Text(t.isApproved ? 'Assign' : 'Approve & Assign'),
                       ),
                     ],
                   ),
@@ -316,7 +324,154 @@ class _SelectTeacherDialogState extends ConsumerState<SelectTeacherDialog> {
           },
         ),
       ),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+      actions: [TextButton(onPressed: _saving ? null : () => Navigator.pop(context), child: const Text('Close'))],
+    );
+  }
+}
+
+
+// ============================================================
+// TEACHER OVERVIEW - every teacher, assigned or not, full profile
+// ============================================================
+
+enum _TeacherFilter { all, assigned, unassigned }
+
+class TeacherOverviewPage extends ConsumerStatefulWidget {
+  final String schoolId;
+  const TeacherOverviewPage({super.key, required this.schoolId});
+
+  @override
+  ConsumerState<TeacherOverviewPage> createState() => _TeacherOverviewPageState();
+}
+
+class _TeacherOverviewPageState extends ConsumerState<TeacherOverviewPage> {
+  _TeacherFilter _filter = _TeacherFilter.all;
+  String _search = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final yearIdAsync = ref.watch(principalCurrentAcademicYearIdProvider(widget.schoolId));
+
+    return Padding(
+      padding: EdgeInsets.all(Responsive.pagePadding(context)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Teacher Overview', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          Text('Every teacher who has signed up at this school, whether or not they have been assigned yet.',
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  decoration: const InputDecoration(labelText: 'Search by name', prefixIcon: Icon(Icons.search_rounded), border: OutlineInputBorder()),
+                  onChanged: (v) => setState(() => _search = v.toLowerCase()),
+                ),
+              ),
+              const SizedBox(width: 12),
+              SegmentedButton<_TeacherFilter>(
+                segments: const [
+                  ButtonSegment(value: _TeacherFilter.all, label: Text('All')),
+                  ButtonSegment(value: _TeacherFilter.assigned, label: Text('Assigned')),
+                  ButtonSegment(value: _TeacherFilter.unassigned, label: Text('Unassigned')),
+                ],
+                selected: {_filter},
+                onSelectionChanged: (s) => setState(() => _filter = s.first),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: yearIdAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Text('$e'),
+              data: (yearId) {
+                if (yearId == null) return const Text('No current academic year set.');
+                final overviewAsync = ref.watch(teacherOverviewProvider((schoolId: widget.schoolId, academicYearId: yearId)));
+                return overviewAsync.when(
+                  loading: () => const Center(child: CircularProgressIndicator()),
+                  error: (e, _) => Text('$e'),
+                  data: (teachers) {
+                    final filtered = teachers.where((t) {
+                      final matchesSearch = _search.isEmpty || t.profile.fullName.toLowerCase().contains(_search);
+                      final matchesFilter = switch (_filter) {
+                        _TeacherFilter.all => true,
+                        _TeacherFilter.assigned => t.isAssigned,
+                        _TeacherFilter.unassigned => !t.isAssigned,
+                      };
+                      return matchesSearch && matchesFilter;
+                    }).toList();
+
+                    if (filtered.isEmpty) return const Center(child: Text('No teachers match this filter.'));
+
+                    return ListView.separated(
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, i) {
+                        final t = filtered[i];
+                        return ExpansionTile(
+                          shape: const Border(),
+                          tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+                          backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                          collapsedBackgroundColor: theme.colorScheme.surfaceContainerHighest,
+                          title: Row(
+                            children: [
+                              CircleAvatar(child: Text(t.profile.fullName.isNotEmpty ? t.profile.fullName[0] : '?')),
+                              const SizedBox(width: 12),
+                              Expanded(child: Text(t.profile.fullName, style: const TextStyle(fontWeight: FontWeight.w700))),
+                              if (!t.profile.isApproved)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
+                                  child: const Text('Pending', style: TextStyle(fontSize: 11, color: Colors.orange, fontWeight: FontWeight.w700)),
+                                )
+                              else if (!t.isAssigned)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(color: theme.colorScheme.outline.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+                                  child: Text('No assignments', style: TextStyle(fontSize: 11, color: theme.colorScheme.outline, fontWeight: FontWeight.w700)),
+                                )
+                              else
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+                                  child: Text('${t.assignments.length} assignment${t.assignments.length == 1 ? '' : 's'}', style: const TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.w700)),
+                                ),
+                            ],
+                          ),
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('${t.profile.email ?? "No email"} · ${t.profile.phone ?? "No phone"}',
+                                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+                                  const SizedBox(height: 12),
+                                  if (t.assignments.isEmpty)
+                                    Text('No teaching assignments yet.', style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic))
+                                  else
+                                    ...t.assignments.map((a) => Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 3),
+                                          child: Text('• ${a.subjectName} - ${a.className} (${a.periodsPerWeek} periods/week)'),
+                                        )),
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -109,75 +109,76 @@ class _ReportCardManagementPageState extends ConsumerState<ReportCardManagementP
               onChanged: (v) => setState(() => _selectedClass = v),
             ),
           ),
-                   const SizedBox(height: 12),
-          yearIdAsync.when(
-            loading: () => const SizedBox(),
-            error: (_, __) => const SizedBox(),
-            data: (yearId) {
-              if (yearId == null) return const SizedBox();
-              final termsAsync = ref.watch(principalTermsForYearProvider(yearId));
-              return termsAsync.when(
-                loading: () => const LinearProgressIndicator(),
-                error: (e, _) => Text('$e'),
-                data: (terms) {
-                  _selectedTermId ??= terms.firstWhere((t) => t.isCurrent, orElse: () => terms.isNotEmpty ? terms.first : const AcademicTermOption(id: '', termName: '', isCurrent: false)).id;
-                  if (_selectedTermId!.isEmpty) return const Text('No academic terms configured yet.');
-                  return DropdownButtonFormField<String>(
-                    initialValue: _selectedTermId,
-                    decoration: const InputDecoration(labelText: 'Term', border: OutlineInputBorder()),
-                    items: terms.map((t) => DropdownMenuItem(value: t.id, child: Text(t.termName))).toList(),
-                    onChanged: (v) => setState(() => _selectedTermId = v),
-                  );
-                },
-              );
-            },
-          ),
-          const SizedBox(height: 16),
-          if (_selectedClass != null && _selectedTermId != null)
-            Expanded(
+                   if (_selectedClass != null && _selectedTermId != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
               child: yearIdAsync.when(
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Text('$e'),
+                loading: () => const SizedBox(),
+                error: (_, __) => const SizedBox(),
                 data: (yearId) {
-                  if (yearId == null) return const Text('No current academic year set.');
-                  final statusAsync = ref.watch(reportCardStatusProvider((classId: _selectedClass!.id, termId: _selectedTermId!, academicYearId: yearId)));
-                  return statusAsync.when(
-                    loading: () => const Center(child: CircularProgressIndicator()),
-                    error: (e, _) => Text('$e'),
-                    data: (students) => ListView.separated(
-                      itemCount: students.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (context, i) {
-                        final s = students[i];
-                        return Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
-                          child: Row(
-                            children: [
-                              Expanded(child: Text(s.studentName, style: const TextStyle(fontWeight: FontWeight.w700))),
-                              if (!s.exists)
-                                OutlinedButton(onPressed: () => _generate(s, yearId), child: const Text('Generate'))
-                              else if (!s.isPublished) ...[
-                                Text(s.publishAt != null ? 'Scheduled: ${s.publishAt!.day}/${s.publishAt!.month}' : 'Not published',
-                                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-                                const SizedBox(width: 8),
-                                FilledButton(onPressed: () => _publish(s), child: const Text('Publish')),
-                              ] else ...[
-                                const Icon(Icons.check_circle_rounded, color: Colors.green, size: 18),
-                                const SizedBox(width: 6),
-                                const Text('Published', style: TextStyle(color: Colors.green, fontWeight: FontWeight.w600)),
-                                const SizedBox(width: 8),
-                                TextButton(onPressed: () => _unpublish(s), child: const Text('Unpublish')),
-                              ],
-                            ],
-                          ),
-                        );
-                      },
-                    ),
+                  if (yearId == null) return const SizedBox();
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            final result = await ref.read(principalRepositoryProvider).generateReportCardsForClass(
+                                  schoolId: widget.schoolId, classId: _selectedClass!.id, termId: _selectedTermId!, academicYearId: yearId,
+                                );
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Generated ${result['succeeded']} of ${result['total']} (${result['skipped']} had no approved marks yet).')),
+                              );
+                            }
+                            _refresh(yearId);
+                          },
+                          icon: const Icon(Icons.auto_awesome_rounded),
+                          label: const Text('Generate All for This Class'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () async {
+                            final choice = await showDialog<String>(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                                title: Text('Publish all report cards for ${_selectedClass!.className}?'),
+                                content: const Text('Every generated report card in this class will become visible to parents at once.'),
+                                actions: [
+                                  TextButton(onPressed: () => Navigator.pop(context, 'cancel'), child: const Text('Cancel')),
+                                  OutlinedButton(onPressed: () => Navigator.pop(context, 'schedule'), child: const Text('Schedule for later')),
+                                  FilledButton(onPressed: () => Navigator.pop(context, 'now'), child: const Text('Publish Now')),
+                                ],
+                              ),
+                            );
+                            if (choice == null || choice == 'cancel') return;
+
+                            DateTime? scheduledDate;
+                            if (choice == 'schedule') {
+                              scheduledDate = await showDatePicker(context: context, initialDate: DateTime.now().add(const Duration(days: 1)), firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 90)));
+                              if (scheduledDate == null) return;
+                            }
+
+                            final principal = await ref.read(principalProfileProvider.future);
+                            if (principal == null) return;
+
+                            final count = await ref.read(principalRepositoryProvider).publishReportCardsForClass(
+                                  classId: _selectedClass!.id, termId: _selectedTermId!, principalId: principal.principalId, publishAt: scheduledDate,
+                                );
+                            if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$count report card(s) published for ${_selectedClass!.className}.')));
+                            _refresh(yearId);
+                          },
+                          icon: const Icon(Icons.publish_rounded),
+                          label: const Text('Publish Whole Class'),
+                        ),
+                      ),
+                    ],
                   );
                 },
               ),
             ),
+         
         ],
       ),
     );
