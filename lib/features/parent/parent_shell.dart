@@ -12,6 +12,7 @@ import 'parent_navigation.dart';
 import 'parent_payment_history_tab.dart';
 import 'parent_profile_tab.dart';
 import 'parent_providers.dart';
+import 'parent_review_child_tab.dart';
 
 /// Same architecture as TeacherShell, deliberately - the parent
 /// module had the SAME "Navigator.push escapes the shell" bug (see
@@ -84,7 +85,7 @@ class ParentShell extends ConsumerWidget {
         icon: Icons.rate_review_outlined,
         activeIcon: Icons.rate_review_rounded,
         title: strings.reviewMyChild,
-        legacy: () => _pickChildThen(context, ref, children, (child) => context.push('/parent/review', extra: child)),
+        childContent: (context, child) => ParentReviewChildTab(child: child, landing: landing, strings: strings),
       ),
       _ParentNavItem(
         key: 'payment_history',
@@ -152,10 +153,21 @@ class ParentShell extends ConsumerWidget {
     );
   }
 
-  void _select(WidgetRef ref, BuildContext context, _ParentNavItem item) {
+  void _select(WidgetRef ref, BuildContext context, _ParentNavItem item, List<EnrolledChild> children) {
     if (item.content != null) {
       ref.read(_parentActiveNavKeyProvider.notifier).state = item.key;
       showParentContent(ref, ParentContentPage(title: item.title, builder: item.content!));
+    } else if (item.childContent != null) {
+      // Picker runs fresh on every tap (matches the original app's
+      // behavior) - so re-tapping this nav item is how a parent with
+      // more than one child switches which child they're viewing.
+      _pickChildThen(context, ref, children, (child) {
+        ref.read(_parentActiveNavKeyProvider.notifier).state = item.key;
+        showParentContent(
+          ref,
+          ParentContentPage(title: '${item.title} \u00b7 ${child.fullName}', builder: (ctx) => item.childContent!(ctx, child)),
+        );
+      });
     } else {
       item.legacy!();
     }
@@ -174,7 +186,7 @@ class ParentShell extends ConsumerWidget {
 
     // First build: nothing pushed yet - show Home.
     if (stack.isEmpty) {
-      Future.microtask(() => _select(ref, context, items.first));
+      Future.microtask(() => _select(ref, context, items.first, children));
     }
 
     final currentTitle = stack.isEmpty ? items.first.title : stack.last.title;
@@ -199,7 +211,7 @@ class ParentShell extends ConsumerWidget {
               items: items,
               activeKey: activeKey,
               onSelect: (item) {
-                _select(ref, context, item);
+                _select(ref, context, item, children);
                 Navigator.of(context).pop();
               },
             ),
@@ -226,7 +238,7 @@ class ParentShell extends ConsumerWidget {
                 strings: strings,
                 items: items,
                 activeKey: activeKey,
-                onSelect: (item) => _select(ref, context, item),
+                onSelect: (item) => _select(ref, context, item, children),
               ),
             ),
           ),
@@ -248,6 +260,7 @@ class _ParentNavItem {
   final String title;
   final Widget Function(BuildContext)? content;
   final VoidCallback? legacy;
+  final Widget Function(BuildContext, EnrolledChild)? childContent;
   _ParentNavItem({
     required this.key,
     required this.icon,
@@ -255,7 +268,11 @@ class _ParentNavItem {
     required this.title,
     this.content,
     this.legacy,
-  }) : assert((content == null) != (legacy == null), 'exactly one of content/legacy must be set');
+    this.childContent,
+  }) : assert(
+          [content, legacy, childContent].where((x) => x != null).length == 1,
+          'exactly one of content/legacy/childContent must be set',
+        );
 }
 
 class _ComingSoon extends StatelessWidget {
@@ -396,7 +413,7 @@ class _Logo extends StatelessWidget {
       child: Container(
         color: ink.withValues(alpha: 0.92),
         child: Image.network(logoUrl, width: size, height: size, fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) =>const Icon(Icons.school_rounded, size: size * 0.55)),
+            errorBuilder: (_, __, ___) => Icon(Icons.school_rounded, size: size * 0.55)),
       ),
     );
   }
