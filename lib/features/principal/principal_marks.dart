@@ -151,7 +151,7 @@ class _MarksReviewPageState extends ConsumerState<MarksReviewPage> {
     });
   }
 
-  Future<void> _approveMarks(List<String> markIds, {required bool isWholeClass}) async {
+   Future<void> _approveMarks(List<String> markIds, {required bool isWholeClass}) async {
     if (markIds.isEmpty) return;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -166,24 +166,33 @@ class _MarksReviewPageState extends ConsumerState<MarksReviewPage> {
     );
     if (confirmed != true) return;
 
-    final principal = await ref.read(principalProfileProvider.future);
-    if (principal == null) return;
+    try {
+      final principal = await ref.read(principalProfileProvider.future);
+      if (principal == null) {
+        throw Exception('Could not load your principal profile. Please sign out and back in, then try again.');
+      }
 
-    await ref.read(principalRepositoryProvider).approveMarks(markIds, principal.principalId);
-    _selectedMarkIds.clear();
+      await ref.read(principalRepositoryProvider).approveMarks(markIds, principal.principalId);
+      _selectedMarkIds.clear();
 
-    if (mounted) {
-      // Explicit confirmation - the earlier version gave no feedback
-      // at all, which read as "nothing happened" even when it worked.
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${markIds.length} mark${markIds.length == 1 ? '' : 's'} approved.')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${markIds.length} mark${markIds.length == 1 ? '' : 's'} approved.')),
+        );
+      }
+    } catch (e) {
+      // Every failure now surfaces something visible instead of
+      // silently doing nothing - this was the actual bug.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Approval failed: $e')));
+      }
+      return;
     }
+
     ref.invalidate(marksForClassSubjectProvider((examPeriodId: _periodId!, classId: _classId!, subjectId: _subjectId!)));
     ref.invalidate(subjectsWithSubmittedMarksProvider((examPeriodId: _periodId!, classId: _classId!)));
     ref.invalidate(classesWithSubmittedMarksProvider(_periodId!));
   }
-
   Future<void> _sendBack(SubmittedMark mark) async {
     final feedbackController = TextEditingController();
     final confirmed = await showDialog<bool>(

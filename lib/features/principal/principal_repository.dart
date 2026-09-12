@@ -175,13 +175,22 @@ class PrincipalRepository {
     return rows.map((r) => SubmittedMark.fromMap(r)).toList();
   }
 
-  Future<void> approveMarks(List<String> markIds, String principalId) async {
-    await _client.from('marks').update({
+    Future<void> approveMarks(List<String> markIds, String principalId) async {
+    final updated = await _client.from('marks').update({
       'status': 'approved',
       'approved_by': principalId,
       'approved_at': DateTime.now().toIso8601String(),
-      'principal_feedback': null, // clear any earlier feedback once approved
-    }).inFilter('id', markIds);
+      'principal_feedback': null,
+    }).inFilter('id', markIds).select();
+
+    // If RLS silently blocks the update, Supabase returns success
+    // with an empty result instead of an error - checking the actual
+    // row count is what turns that silence into a real, visible error.
+    if ((updated as List).length != markIds.length) {
+      throw Exception(
+        'Only ${updated.length} of ${markIds.length} marks were updated. This usually means a permissions rule is blocking the rest — check the marks RLS policies.',
+      );
+    }
   }
 
   Future<void> sendBackMarks(List<String> markIds, String feedback) async {
