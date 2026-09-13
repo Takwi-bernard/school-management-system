@@ -48,7 +48,10 @@ class _ReportCardManagementPageState extends ConsumerState<ReportCardManagementP
     if (choice == null || choice == 'cancel') return;
 
     final principal = await ref.read(principalProfileProvider.future);
-    if (principal == null) return;
+    if (principal == null) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not load your principal profile.')));
+      return;
+    }
 
     DateTime? scheduledDate;
     if (choice == 'schedule') {
@@ -99,6 +102,8 @@ class _ReportCardManagementPageState extends ConsumerState<ReportCardManagementP
             style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
           ),
           const SizedBox(height: 16),
+
+          // --- CLASS DROPDOWN ---
           classesAsync.when(
             loading: () => const LinearProgressIndicator(),
             error: (e, _) => Text('$e'),
@@ -106,10 +111,39 @@ class _ReportCardManagementPageState extends ConsumerState<ReportCardManagementP
               initialValue: _selectedClass,
               decoration: const InputDecoration(labelText: 'Class', border: OutlineInputBorder()),
               items: classes.map((c) => DropdownMenuItem(value: c, child: Text(c.className))).toList(),
-              onChanged: (v) => setState(() => _selectedClass = v),
+              onChanged: (v) => setState(() { _selectedClass = v; _selectedTermId = null; }),
             ),
           ),
-                   if (_selectedClass != null && _selectedTermId != null)
+
+          // --- TERM DROPDOWN (was completely missing before - this is
+          // why _selectedTermId stayed null forever, and the whole
+          // rest of the screen below never appeared) ---
+          const SizedBox(height: 12),
+          yearIdAsync.when(
+            loading: () => const SizedBox(),
+            error: (_, __) => const SizedBox(),
+            data: (yearId) {
+              if (yearId == null) return const SizedBox();
+              final termsAsync = ref.watch(principalTermsForYearProvider(yearId));
+              return termsAsync.when(
+                loading: () => const LinearProgressIndicator(),
+                error: (e, _) => Text('$e'),
+                data: (terms) {
+                  if (terms.isEmpty) return const Text('No academic terms configured yet.');
+                  _selectedTermId ??= terms.firstWhere((t) => t.isCurrent, orElse: () => terms.first).id;
+                  return DropdownButtonFormField<String>(
+                    initialValue: _selectedTermId,
+                    decoration: const InputDecoration(labelText: 'Term', border: OutlineInputBorder()),
+                    items: terms.map((t) => DropdownMenuItem(value: t.id, child: Text(t.termName))).toList(),
+                    onChanged: (v) => setState(() => _selectedTermId = v),
+                  );
+                },
+              );
+            },
+          ),
+
+          // --- BULK GENERATE / PUBLISH BUTTONS ---
+          if (_selectedClass != null && _selectedTermId != null)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: yearIdAsync.when(
@@ -161,7 +195,10 @@ class _ReportCardManagementPageState extends ConsumerState<ReportCardManagementP
                             }
 
                             final principal = await ref.read(principalProfileProvider.future);
-                            if (principal == null) return;
+                            if (principal == null) {
+                              if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not load your principal profile.')));
+                              return;
+                            }
 
                             final count = await ref.read(principalRepositoryProvider).publishReportCardsForClass(
                                   classId: _selectedClass!.id, termId: _selectedTermId!, principalId: principal.principalId, publishAt: scheduledDate,
@@ -178,7 +215,66 @@ class _ReportCardManagementPageState extends ConsumerState<ReportCardManagementP
                 },
               ),
             ),
-         
+
+          // --- PER-STUDENT LIST (was entirely missing before) ---
+          if (_selectedClass != null && _selectedTermId != null)
+            Expanded(
+              child: yearIdAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Center(child: Text('$e')),
+                data: (yearId) {
+                  if (yearId == null) return const SizedBox();
+                  final statusAsync = ref.watch(reportCardStatusProvider((classId: _selectedClass!.id, termId: _selectedTermId!, academicYearId: yearId)));
+                  return statusAsync.when(
+                    loading: () => const Center(child: CircularProgressIndicator()),
+                    error: (e, _) => Center(child: Text('Error loading students: $e')),
+                    data: (students) {
+                      if (students.isEmpty) {
+                        return Center(
+                          child: Text(
+                            'No actively enrolled students found in this class for the current academic year.',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.outline),
+                          ),
+                        );
+                      }
+                      return ListView.separated(
+                        itemCount: students.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, i) {
+                          final s = students[i];
+                          return Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
+                            child: Row(
+                              children: [
+                                Expanded(child: Text(s.studentName, style: const TextStyle(fontWeight: FontWeight.w700))),
+                                if (!s.exists)
+                                  OutlinedButton(onPressed: () => _generate(s, yearId), child: const Text('Generate'))
+                                else if (!s.isPublished) ...[
+                                  Text(
+                                    s.publishAt != null ? 'Scheduled: ${s.publishAt!.day}/${s.publishAt!.month}' : 'Not published',
+                                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  FilledButton(onPressed: () => _publish(s), child: const Text('Publish')),
+                                ] else ...[
+                                  const Icon(Icons.check_circle_rounded, color: Colors.green, size: 18),
+                                  const SizedBox(width: 6),
+                                  const Text('Published', style: TextStyle(color: Colors.green, fontWeight: FontWeight.w600)),
+                                  const SizedBox(width: 8),
+                                  TextButton(onPressed: () => _unpublish(s), child: const Text('Unpublish')),
+                                ],
+                              ],
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
         ],
       ),
     );
