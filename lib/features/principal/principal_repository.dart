@@ -292,6 +292,7 @@ class PrincipalRepository {
           'student_id': studentId,
           'class_id': classId,
           'term_id': termId,
+          'academic_year_id': academicYearId,
           'overall_average': average,
           'generated_at': DateTime.now().toIso8601String(),
         }, onConflict: 'student_id, term_id')
