@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:school_management_system/features/parent/parent_payment_history_tab.dart';
+
 
 import '../features/landing/landing_page.dart';
 import '../features/auth/sign_in_page.dart';
@@ -69,10 +69,10 @@ final appRouter = GoRouter(
           path: 'enroll',
           pageBuilder: (c, s) => _page(EnrollChildPage(schoolId: s.extra as String), s),
         ),
-        GoRoute(
-          path: 'fees',
-          pageBuilder: (c, s) => _page(ChildFeesPage(child: s.extra as EnrolledChild), s),
-        ),
+        // GoRoute(
+        //   path: 'fees',
+        //   pageBuilder: (c, s) => _page(ChildFeesPage(child: s.extra as EnrolledChild), s),
+        // ),
         GoRoute(
           path: 'report-card',
           pageBuilder: (c, s) => _page(ReportCardPage(child: s.extra as EnrolledChild), s),
