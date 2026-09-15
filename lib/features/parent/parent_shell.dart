@@ -7,11 +7,13 @@ import '../../core/responsive.dart';
 import '../../shared/sign_out_button.dart';
 import '../landing/landing_model.dart';
 import 'parent_dashboard_tab.dart';
+import 'parent_fees_tab.dart';
 import 'parent_models.dart';
 import 'parent_navigation.dart';
 import 'parent_payment_history_tab.dart';
 import 'parent_profile_tab.dart';
 import 'parent_providers.dart';
+import 'parent_report_card_tab.dart';
 import 'parent_review_child_tab.dart';
 
 /// Same architecture as TeacherShell, deliberately - the parent
@@ -64,7 +66,7 @@ class ParentShell extends ConsumerWidget {
         icon: Icons.payments_outlined,
         activeIcon: Icons.payments_rounded,
         title: strings.schoolFees,
-        legacy: () => _pickChildThen(context, ref, children, (child) => context.push('/parent/fees', extra: child)),
+        childContent: (context, child) => ParentFeesTab(child: child, landing: landing, strings: strings),
       ),
       _ParentNavItem(
         key: 'admissions',
@@ -73,13 +75,13 @@ class ParentShell extends ConsumerWidget {
         title: strings.admissions,
         legacy: () => context.push('/parent/enroll', extra: schoolId),
       ),
-      _ParentNavItem(
-        key: 'report_cards',
-        icon: Icons.assessment_outlined,
-        activeIcon: Icons.assessment_rounded,
-        title: strings.reportCards,
-        legacy: () => _pickChildThen(context, ref, children, (child) => context.push('/parent/report-card', extra: child)),
-      ),
+      // _ParentNavItem(
+      //   key: 'report_cards',
+      //   icon: Icons.assessment_outlined,
+      //   activeIcon: Icons.assessment_rounded,
+      //   title: strings.reportCards,
+      //   childContent: (context, child) => ParentReportCard(child: child, landing: landing, strings: strings),
+      // ),
       _ParentNavItem(
         key: 'review',
         icon: Icons.rate_review_outlined,
@@ -155,14 +157,14 @@ class ParentShell extends ConsumerWidget {
 
   void _select(WidgetRef ref, BuildContext context, _ParentNavItem item, List<EnrolledChild> children) {
     if (item.content != null) {
-      ref.read(_parentActiveNavKeyProvider.notifier).state = item.key;
+      ref.read(parentActiveNavKeyProvider.notifier).state = item.key;
       showParentContent(ref, ParentContentPage(title: item.title, builder: item.content!));
     } else if (item.childContent != null) {
       // Picker runs fresh on every tap (matches the original app's
       // behavior) - so re-tapping this nav item is how a parent with
       // more than one child switches which child they're viewing.
       _pickChildThen(context, ref, children, (child) {
-        ref.read(_parentActiveNavKeyProvider.notifier).state = item.key;
+        ref.read(parentActiveNavKeyProvider.notifier).state = item.key;
         showParentContent(
           ref,
           ParentContentPage(title: '${item.title} \u00b7 ${child.fullName}', builder: (ctx) => item.childContent!(ctx, child)),
@@ -179,7 +181,7 @@ class ParentShell extends ConsumerWidget {
     final enrolledAsync = ref.watch(enrolledChildrenProvider);
     final children = enrolledAsync.valueOrNull ?? [];
     final items = _items(context, ref, children);
-    final activeKey = ref.watch(_parentActiveNavKeyProvider);
+    final activeKey = ref.watch(parentActiveNavKeyProvider);
     final stack = ref.watch(parentContentStackProvider);
     final canvas = theme.colorScheme.surfaceContainerLowest;
     final sidebarInk = theme.colorScheme.inverseSurface;
@@ -250,8 +252,6 @@ class ParentShell extends ConsumerWidget {
     );
   }
 }
-
-final _parentActiveNavKeyProvider = StateProvider<String>((ref) => 'home');
 
 class _ParentNavItem {
   final String key;
@@ -413,7 +413,7 @@ class _Logo extends StatelessWidget {
       child: Container(
         color: ink.withValues(alpha: 0.92),
         child: Image.network(logoUrl, width: size, height: size, fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) => Icon(Icons.school_rounded, size: size * 0.55)),
+            errorBuilder: (_, __, ___) => const Icon(Icons.school_rounded, size: 22)),
       ),
     );
   }

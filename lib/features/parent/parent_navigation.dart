@@ -20,6 +20,13 @@ class ParentContentPage {
 
 final parentContentStackProvider = StateProvider<List<ParentContentPage>>((ref) => []);
 
+/// Tracks which sidebar/drawer item should show as highlighted -
+/// public (moved here from parent_shell.dart) so any widget that can
+/// trigger in-shell content - not just the shell's own nav taps - can
+/// keep the highlight consistent with what's actually showing. See
+/// parent_dashboard_tab.dart's child cards for the other call site.
+final parentActiveNavKeyProvider = StateProvider<String>((ref) => 'home');
+
 /// Nav items behave as top-level destinations here (unlike Teacher's
 /// mix of tabs + drill-down) - selecting one REPLACES the stack
 /// rather than pushing onto it, since every parent nav item is a

@@ -6,7 +6,9 @@ import '../../core/l10n/app_strings.dart';
 import '../../core/motion.dart';
 import '../../core/responsive.dart';
 import '../landing/landing_model.dart';
+import 'parent_fees_tab.dart';
 import 'parent_models.dart';
+import 'parent_navigation.dart';
 import 'parent_providers.dart';
 
 /// Home, inside ParentShell. Migrated from the old _DashboardBody
@@ -127,7 +129,25 @@ class ParentDashboardTab extends ConsumerWidget {
                   mainAxisSpacing: 14,
                   childAspectRatio: isMobile ? 3.0 : 2.6,
                 ),
-                itemBuilder: (context, i) => RevealOnScroll(child: _ChildCard(child: children[i], strings: strings)),
+                itemBuilder: (context, i) => RevealOnScroll(
+                  child: _ChildCard(
+                    child: children[i],
+                    strings: strings,
+                    // Same in-shell path as the sidebar's School Fees
+                    // item - tapping a child card on Home must stay
+                    // inside the shell too, not escape via push.
+                    onTap: () {
+                      ref.read(parentActiveNavKeyProvider.notifier).state = 'fees';
+                      showParentContent(
+                        ref,
+                        ParentContentPage(
+                          title: '${strings.schoolFees} \u00b7 ${children[i].fullName}',
+                          builder: (ctx) => ParentFeesTab(child: children[i], landing: landing, strings: strings),
+                        ),
+                      );
+                    },
+                  ),
+                ),
               );
             },
           ),
@@ -265,7 +285,8 @@ class _PendingAdmissionCard extends ConsumerWidget {
 class _ChildCard extends StatelessWidget {
   final EnrolledChild child;
   final AppStrings strings;
-  const _ChildCard({required this.child, required this.strings});
+  final VoidCallback onTap;
+  const _ChildCard({required this.child, required this.strings, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -275,7 +296,7 @@ class _ChildCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => context.push('/parent/fees', extra: child),
+        onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
