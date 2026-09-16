@@ -40,6 +40,77 @@ class DepartmentOption {
 }
 
 
+class PendingAdmissionReview {
+  final String id;
+  final String firstName;
+  final String lastName;
+  final String? photoUrl;
+  final String requestedClassName;
+  final String? guardianName;
+  final String? emergencyContactName;
+  final String? emergencyContactPhone;
+  final String? address;
+  final DateTime? dateOfBirth;
+  final List<String> selectedSubjectNames;
+
+  const PendingAdmissionReview({
+    required this.id,
+    required this.firstName,
+    required this.lastName,
+    this.photoUrl,
+    required this.requestedClassName,
+    this.guardianName,
+    this.emergencyContactName,
+    this.emergencyContactPhone,
+    this.address,
+    this.dateOfBirth,
+    required this.selectedSubjectNames,
+  });
+
+  String get fullName => '$firstName $lastName';
+}
+
+class SchoolStudent {
+  final String id;
+  final String admissionNumber;
+  final String firstName;
+  final String lastName;
+  final String? photoUrl;
+  final String className;
+  final String departmentName;
+  final String currentStatus;
+
+  const SchoolStudent({
+    required this.id,
+    required this.admissionNumber,
+    required this.firstName,
+    required this.lastName,
+    this.photoUrl,
+    required this.className,
+    required this.departmentName,
+    required this.currentStatus,
+  });
+
+  String get fullName => '$firstName $lastName';
+
+  factory SchoolStudent.fromMap(Map<String, dynamic> map) {
+    final enrollments = map['class_enrollments'] as List?;
+    final enrollment = enrollments?.isNotEmpty == true ? enrollments!.first as Map : null;
+    final cls = enrollment?['classes'] as Map?;
+    final dept = cls?['departments'] as Map?;
+    return SchoolStudent(
+      id: map['id'] as String,
+      admissionNumber: map['admission_number'] as String? ?? '',
+      firstName: map['first_name'] as String? ?? '',
+      lastName: map['last_name'] as String? ?? '',
+      photoUrl: map['student_photo_url'] as String?,
+      className: cls?['class_name'] as String? ?? 'Unassigned',
+      departmentName: dept?['department_name'] as String? ?? '',
+      currentStatus: map['current_status'] as String? ?? 'active',
+    );
+  }
+}
+
 class PendingComment {
   final String id;
   final String studentName;

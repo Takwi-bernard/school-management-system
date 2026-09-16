@@ -743,6 +743,75 @@ class PrincipalRepository {
     return result;
   }
 
+
+  // --------------------------------------------------
+  // ADMISSIONS AWAITING REVIEW (status = 'under_review', i.e.
+  // registration fee already paid - see the parent module's payment
+  // webhook, which moves a request here rather than auto-approving)
+  // --------------------------------------------------
+
+  Future<List<PendingAdmissionReview>> getAdmissionsForReview(String schoolId) async {
+    final rows = await _client
+        .from('admission_requests')
+        .select('*, classes(class_name), admission_request_subjects(subjects(subject_name))')
+        .eq('school_id', schoolId)
+        .eq('status', 'under_review')
+        .order('created_at');
+
+    return rows.map((r) {
+      final cls = r['classes'] as Map?;
+      final subjectRows = r['admission_request_subjects'] as List? ?? [];
+      final subjectNames = subjectRows.map((s) => (s['subjects'] as Map?)?['subject_name'] as String? ?? '').where((n) => n.isNotEmpty).toList();
+      return PendingAdmissionReview(
+        id: r['id'] as String,
+        firstName: r['first_name'] as String? ?? '',
+        lastName: r['last_name'] as String? ?? '',
+        photoUrl: r['photo_url'] as String?,
+        requestedClassName: cls?['class_name'] as String? ?? '',
+        guardianName: r['guardian_name'] as String?,
+        emergencyContactName: r['emergency_contact_name'] as String?,
+        emergencyContactPhone: r['emergency_contact_phone'] as String?,
+        address: r['address'] as String?,
+        dateOfBirth: DateTime.tryParse(r['date_of_birth'] as String? ?? ''),
+        selectedSubjectNames: subjectNames,
+      );
+    }).toList();
+  }
+
+  /// Calls the SAME SQL function built during the parent module work -
+  /// no new backend logic, just a Principal-facing trigger for it.
+  Future<void> approveAdmission(String admissionRequestId) async {
+    await _client.rpc('approve_admission_request', params: {'p_admission_request_id': admissionRequestId});
+  }
+
+  Future<void> rejectAdmission(String admissionRequestId, String reason) async {
+    await _client.from('admission_requests').update({
+      'status': 'rejected',
+      'rejection_reason': reason,
+    }).eq('id', admissionRequestId);
+  }
+
+  // --------------------------------------------------
+  // ALL STUDENTS AT THE SCHOOL (school-wide, not department-filtered
+  // by default - Principal sees everyone; department filter is a
+  // client-side toggle on top of this same list)
+  // --------------------------------------------------
+
+  Future<List<SchoolStudent>> getAllStudents(String schoolId) async {
+    final rows = await _client
+        .from('students')
+        .select('''
+          id, admission_number, first_name, last_name, student_photo_url, current_status,
+          class_enrollments!inner (
+            enrollment_status,
+            classes ( class_name, departments ( department_name ) )
+          )
+        ''')
+        .eq('school_id', schoolId)
+        .eq('class_enrollments.enrollment_status', 'active')
+        .order('first_name');
+    return rows.map((r) => SchoolStudent.fromMap(r)).toList();
+  }
   // --------------------------------------------------
   // ALL TEACHERS (for slot-filling - includes pending ones)
   // --------------------------------------------------

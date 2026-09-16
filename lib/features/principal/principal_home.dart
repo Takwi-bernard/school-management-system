@@ -15,6 +15,9 @@ import 'principal_teachers.dart';
 import 'principal_marks.dart';
 import 'principal_report_card.dart';
 import 'principal_comments.dart';
+import 'principal_admissions.dart';
+
+
 class PrincipalHome extends ConsumerWidget {
   const PrincipalHome({super.key});
 
@@ -119,14 +122,19 @@ class _PrincipalShellState extends ConsumerState<_PrincipalShell> {
           ),
         ],
       ),
-      _NavGroup(
+            _NavGroup(
         icon: Icons.family_restroom_outlined,
         title: strings.isFrench ? 'Admissions et élèves' : 'Admissions & Students',
         items: [
           _NavLeaf(
-            title: strings.isFrench ? 'Bientôt disponible' : 'Coming soon',
-            description: '',
-            onTap: () {},
+            title: strings.isFrench ? 'Admissions en attente' : 'Pending Admissions',
+            description: strings.isFrench ? 'Approuver ou rejeter les inscriptions payées.' : 'Approve or reject paid enrollment requests.',
+            onTap: () => setState(() => _body = AdmissionsReviewPage(schoolId: widget.schoolId)),
+          ),
+          _NavLeaf(
+            title: strings.isFrench ? 'Tous les élèves' : 'All Students',
+            description: strings.isFrench ? 'Voir tous les élèves de l\'école.' : 'View every student at the school.',
+            onTap: () => setState(() => _body = AllStudentsPage(schoolId: widget.schoolId)),
           ),
         ],
       ),

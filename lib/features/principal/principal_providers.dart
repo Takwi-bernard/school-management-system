@@ -121,3 +121,11 @@ final generatedReportCardsProvider =
     FutureProvider.family<List<ReportCardStatus>, ({String classId, String termId})>((ref, params) {
   return ref.watch(principalRepositoryProvider).getGeneratedReportCards(params.classId, params.termId);
 });
+
+final admissionsForReviewProvider = FutureProvider.family<List<PendingAdmissionReview>, String>((ref, schoolId) {
+  return ref.watch(principalRepositoryProvider).getAdmissionsForReview(schoolId);
+});
+
+final allStudentsProvider = FutureProvider.family<List<SchoolStudent>, String>((ref, schoolId) {
+  return ref.watch(principalRepositoryProvider).getAllStudents(schoolId);
+});
