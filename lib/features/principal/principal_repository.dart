@@ -812,6 +812,165 @@ class PrincipalRepository {
         .order('first_name');
     return rows.map((r) => SchoolStudent.fromMap(r)).toList();
   }
+
+    // --------------------------------------------------
+  // ADMISSIONS - now drilled down Department -> Class, same fix
+  // pattern as Report Cards, to avoid two "Form 1A"s in different
+  // departments being ambiguous
+  // --------------------------------------------------
+
+  Future<List<DepartmentFull>> getDepartmentsWithPendingAdmissions(String schoolId) async {
+    final rows = await _client
+        .from('admission_requests')
+        .select('classes(department_id, departments(id, department_name, department_type))')
+        .eq('school_id', schoolId)
+        .eq('status', 'under_review');
+
+    final seen = <String, DepartmentFull>{};
+    for (final r in rows) {
+      final cls = r['classes'] as Map?;
+      final dept = cls?['departments'] as Map?;
+      if (dept != null) {
+        final id = dept['id'] as String;
+        seen[id] = DepartmentFull(id: id, departmentName: dept['department_name'] as String? ?? '', departmentType: dept['department_type'] as String?);
+      }
+    }
+    return seen.values.toList()..sort((a, b) => a.departmentName.compareTo(b.departmentName));
+  }
+
+Future<List<ManagedClass>> getClassesWithPendingAdmissions(String schoolId, String departmentId) async {
+    final rows = await _client
+        .from('admission_requests')
+        .select('classes!inner(id, class_name, class_code, department_id, level_order, max_students, is_active, departments(department_name))')
+        .eq('school_id', schoolId)
+        .eq('status', 'under_review')
+        .eq('classes.department_id', departmentId);
+
+    final seen = <String, ManagedClass>{};
+    for (final r in rows) {
+      final cls = (r['classes'] as Map).cast<String, dynamic>();
+      seen[cls['id'] as String] = ManagedClass.fromMap(cls);
+    }
+    return seen.values.toList()..sort((a, b) => a.className.compareTo(b.className));
+  }
+
+  Future<List<PendingAdmissionReview>> getAdmissionsForClass(String schoolId, String classId) async {
+    final rows = await _client
+        .from('admission_requests')
+        .select('*, classes(class_name), admission_request_subjects(subjects(subject_name))')
+        .eq('school_id', schoolId)
+        .eq('status', 'under_review')
+        .eq('requested_class_id', classId)
+        .order('created_at');
+
+    return rows.map((r) {
+      final cls = r['classes'] as Map?;
+      final subjectRows = r['admission_request_subjects'] as List? ?? [];
+      final subjectNames = subjectRows.map((s) => (s['subjects'] as Map?)?['subject_name'] as String? ?? '').where((n) => n.isNotEmpty).toList();
+      return PendingAdmissionReview(
+        id: r['id'] as String,
+        firstName: r['first_name'] as String? ?? '',
+        lastName: r['last_name'] as String? ?? '',
+        photoUrl: r['photo_url'] as String?,
+        requestedClassName: cls?['class_name'] as String? ?? '',
+        guardianName: r['guardian_name'] as String?,
+        emergencyContactName: r['emergency_contact_name'] as String?,
+        emergencyContactPhone: r['emergency_contact_phone'] as String?,
+        address: r['address'] as String?,
+        dateOfBirth: DateTime.tryParse(r['date_of_birth'] as String? ?? ''),
+        selectedSubjectNames: subjectNames,
+      );
+    }).toList();
+  }
+
+  // --------------------------------------------------
+  // STUDENT DETAIL - tap a student to see full info + guardians
+  // --------------------------------------------------
+
+  Future<StudentDetail> getStudentDetail(String studentId) async {
+    final studentRow = await _client
+        .from('students')
+        .select('''
+          id, admission_number, first_name, last_name, student_photo_url, current_status,
+          class_enrollments ( enrollment_status, classes ( class_name, departments ( department_name ) ) )
+        ''')
+        .eq('id', studentId)
+        .single();
+
+    final guardianRows = await _client
+        .from('student_guardians')
+        .select('is_primary, is_emergency_contact, guardians(full_name, relationship_type, phone, email)')
+        .eq('student_id', studentId);
+
+    return StudentDetail(
+      student: SchoolStudent.fromMap(studentRow),
+      guardians: guardianRows.map((r) => GuardianInfo.fromMap(r)).toList(),
+    );
+  }
+
+  // --------------------------------------------------
+  // PRINCIPAL-INITIATED ENROLLMENT ("on behalf of a lazy parent")
+  // Goes through the EXACT SAME pipeline as a parent-created request -
+  // created_by_staff_user_id marks who initiated it, but payment,
+  // review, and approval all work identically. It will simply appear
+  // on the SELECTED parent's own dashboard as "Registration fee
+  // pending" - no separate payment handling needed here.
+  // --------------------------------------------------
+
+  Future<List<ParentSearchResult>> searchParents(String schoolId, String query) async {
+    if (query.trim().isEmpty) return [];
+    final rows = await _client
+        .from('parents')
+        .select('id, full_name, phone, users(email)')
+        .eq('school_id', schoolId)
+        .ilike('full_name', '%${query.trim()}%')
+        .limit(10);
+    return rows.map((r) => ParentSearchResult.fromMap(r)).toList();
+  }
+
+  Future<void> createAdmissionOnBehalfOfParent({
+    required String schoolId,
+    required String parentId,
+    required String requestedClassId,
+    required String academicYearId,
+    required String principalUserId,
+    required String firstName,
+    required String lastName,
+    String? gender,
+    DateTime? dateOfBirth,
+    String? guardianName,
+    String? emergencyContactName,
+    String? emergencyContactPhone,
+    String? address,
+    required List<String> selectedSubjectIds,
+  }) async {
+    final request = await _client
+        .from('admission_requests')
+        .insert({
+          'school_id': schoolId,
+          'parent_id': parentId,
+          'created_by_staff_user_id': principalUserId,
+          'requested_class_id': requestedClassId,
+          'academic_year_id': academicYearId,
+          'first_name': firstName,
+          'last_name': lastName,
+          'gender': gender,
+          'date_of_birth': dateOfBirth?.toIso8601String(),
+          'guardian_name': guardianName,
+          'emergency_contact_name': emergencyContactName,
+          'emergency_contact_phone': emergencyContactPhone,
+          'address': address,
+          'status': 'awaiting_payment',
+        })
+        .select()
+        .single();
+
+    if (selectedSubjectIds.isNotEmpty) {
+      await _client.from('admission_request_subjects').insert([
+        for (final subjectId in selectedSubjectIds) {'admission_request_id': request['id'], 'subject_id': subjectId},
+      ]);
+    }
+  }
   // --------------------------------------------------
   // ALL TEACHERS (for slot-filling - includes pending ones)
   // --------------------------------------------------

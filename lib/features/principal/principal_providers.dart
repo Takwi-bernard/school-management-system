@@ -129,3 +129,20 @@ final admissionsForReviewProvider = FutureProvider.family<List<PendingAdmissionR
 final allStudentsProvider = FutureProvider.family<List<SchoolStudent>, String>((ref, schoolId) {
   return ref.watch(principalRepositoryProvider).getAllStudents(schoolId);
 });
+
+final departmentsWithPendingAdmissionsProvider = FutureProvider.family<List<DepartmentFull>, String>((ref, schoolId) {
+  return ref.watch(principalRepositoryProvider).getDepartmentsWithPendingAdmissions(schoolId);
+});
+
+final classesWithPendingAdmissionsProvider =
+    FutureProvider.family<List<ManagedClass>, ({String schoolId, String departmentId})>((ref, params) {
+  return ref.watch(principalRepositoryProvider).getClassesWithPendingAdmissions(params.schoolId, params.departmentId);
+});
+
+final admissionsForClassProvider = FutureProvider.family<List<PendingAdmissionReview>, ({String schoolId, String classId})>((ref, params) {
+  return ref.watch(principalRepositoryProvider).getAdmissionsForClass(params.schoolId, params.classId);
+});
+
+final studentDetailProvider = FutureProvider.family<StudentDetail, String>((ref, studentId) {
+  return ref.watch(principalRepositoryProvider).getStudentDetail(studentId);
+});

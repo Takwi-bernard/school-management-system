@@ -111,6 +111,60 @@ class SchoolStudent {
   }
 }
 
+class GuardianInfo {
+  final String fullName;
+  final String relationshipType;
+  final String? phone;
+  final String? email;
+  final bool isPrimary;
+  final bool isEmergencyContact;
+
+  const GuardianInfo({
+    required this.fullName,
+    required this.relationshipType,
+    this.phone,
+    this.email,
+    required this.isPrimary,
+    required this.isEmergencyContact,
+  });
+
+  factory GuardianInfo.fromMap(Map<String, dynamic> map) {
+    final guardian = map['guardians'] as Map;
+    return GuardianInfo(
+      fullName: guardian['full_name'] as String? ?? '',
+      relationshipType: guardian['relationship_type'] as String? ?? '',
+      phone: guardian['phone'] as String?,
+      email: guardian['email'] as String?,
+      isPrimary: map['is_primary'] as bool? ?? false,
+      isEmergencyContact: map['is_emergency_contact'] as bool? ?? false,
+    );
+  }
+}
+
+class StudentDetail {
+  final SchoolStudent student;
+  final List<GuardianInfo> guardians;
+  const StudentDetail({required this.student, required this.guardians});
+}
+
+class ParentSearchResult {
+  final String parentId;
+  final String fullName;
+  final String? phone;
+  final String? email;
+  const ParentSearchResult({required this.parentId, required this.fullName, this.phone, this.email});
+
+  factory ParentSearchResult.fromMap(Map<String, dynamic> map) {
+    final user = map['users'] as Map?;
+    return ParentSearchResult(
+      parentId: map['id'] as String,
+      fullName: map['full_name'] as String? ?? '',
+      phone: map['phone'] as String?,
+      email: user?['email'] as String?,
+    );
+  }
+}
+
 class PendingComment {
   final String id;
   final String studentName;
