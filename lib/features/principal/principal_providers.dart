@@ -107,3 +107,17 @@ final marksForClassSubjectProvider =
 final pendingCommentsProvider = FutureProvider.family<List<PendingComment>, String>((ref, schoolId) {
   return ref.watch(principalRepositoryProvider).getPendingComments(schoolId);
 });
+
+final departmentsWithMarksProvider = FutureProvider.family<List<DepartmentFull>, ({String schoolId, String termId})>((ref, params) {
+  return ref.watch(principalRepositoryProvider).getDepartmentsWithMarksForTerm(params.schoolId, params.termId);
+});
+
+final classesWithMarksForDeptProvider =
+    FutureProvider.family<List<ManagedClass>, ({String schoolId, String termId, String departmentId})>((ref, params) {
+  return ref.watch(principalRepositoryProvider).getClassesWithMarksForTerm(params.schoolId, params.termId, params.departmentId);
+});
+
+final generatedReportCardsProvider =
+    FutureProvider.family<List<ReportCardStatus>, ({String classId, String termId})>((ref, params) {
+  return ref.watch(principalRepositoryProvider).getGeneratedReportCards(params.classId, params.termId);
+});

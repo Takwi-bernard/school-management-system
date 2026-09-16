@@ -790,7 +790,156 @@ class PrincipalRepository {
   }
 
 
+/// Only departments/classes that actually have marks for this term
+/// - mirrors the marks-review drill-down, so the Principal only
+/// ever sees paths that lead somewhere real.
+Future<List<DepartmentFull>> getDepartmentsWithMarksForTerm(
+  String schoolId,
+  String termId,
+) async {
+  final rows = await _client
+      .from('marks')
+      .select(
+        'classes(department_id, departments(id, department_name, department_type))',
+      )
+      .eq('school_id', schoolId)
+      .inFilter(
+        'exam_period_id',
+        await _examPeriodIdsForTerm(termId),
+      )
+      .eq('status', 'approved');
 
+  final seen = <String, DepartmentFull>{};
+
+  for (final r in rows) {
+    final cls = r['classes'] is Map
+        ? Map<String, dynamic>.from(r['classes'] as Map)
+        : null;
+
+    final dept = cls?['departments'] is Map
+        ? Map<String, dynamic>.from(cls!['departments'] as Map)
+        : null;
+
+    if (dept != null) {
+      final id = dept['id'] as String;
+
+      seen[id] = DepartmentFull(
+        id: id,
+        departmentName: dept['department_name'] as String? ?? '',
+        departmentType: dept['department_type'] as String?,
+      );
+    }
+  }
+
+  return seen.values.toList()
+    ..sort(
+      (a, b) => a.departmentName.compareTo(b.departmentName),
+    );
+}
+
+
+Future<List<ManagedClass>> getClassesWithMarksForTerm(
+  String schoolId,
+  String termId,
+  String departmentId,
+) async {
+  final rows = await _client
+      .from('marks')
+      .select(
+        'classes('
+        'id, '
+        'class_name, '
+        'class_code, '
+        'department_id, '
+        'level_order, '
+        'max_students, '
+        'is_active, '
+        'departments(department_name)'
+        ')',
+      )
+      .eq('school_id', schoolId)
+      .inFilter(
+        'exam_period_id',
+        await _examPeriodIdsForTerm(termId),
+      )
+      .eq('status', 'approved');
+
+  final seen = <String, ManagedClass>{};
+
+  for (final r in rows) {
+    final cls = r['classes'] is Map
+        ? Map<String, dynamic>.from(r['classes'] as Map)
+        : null;
+
+    if (cls != null && cls['department_id'] == departmentId) {
+      final id = cls['id'] as String;
+
+      seen[id] = ManagedClass.fromMap(cls);
+    }
+  }
+
+  return seen.values.toList()
+    ..sort(
+      (a, b) => a.className.compareTo(b.className),
+    );
+}
+
+
+/// Every report card already generated for a class+term, regardless
+/// of publish state - a distinct list from "students eligible for
+/// generation," so the Principal can see what already exists and
+/// discard it if needed, separate from the generate/publish flow.
+Future<List<ReportCardStatus>> getGeneratedReportCards(
+  String classId,
+  String termId,
+) async {
+  final rows = await _client
+      .from('report_cards')
+      .select(
+        'id, '
+        'student_id, '
+        'is_published, '
+        'publish_at, '
+        'students(first_name, last_name)',
+      )
+      .eq('class_id', classId)
+      .eq('term_id', termId);
+
+  return rows.map((r) {
+    final student = r['students'] is Map
+        ? Map<String, dynamic>.from(r['students'] as Map)
+        : null;
+
+    return ReportCardStatus(
+      studentId: r['student_id'] as String,
+      studentName:
+          '${student?['first_name'] ?? ''} '
+          '${student?['last_name'] ?? ''}'.trim(),
+      reportCardId: r['id'] as String,
+      exists: true,
+      isPublished: r['is_published'] as bool? ?? false,
+      publishAt: DateTime.tryParse(
+        r['publish_at'] as String? ?? '',
+      ),
+    );
+  }).toList()
+    ..sort(
+      (a, b) => a.studentName.compareTo(b.studentName),
+    );
+}
+
+
+Future<void> deleteReportCard(String reportCardId) async {
+  await _client
+      .from('subject_results')
+      .delete()
+      .eq('report_card_id', reportCardId);
+
+  await _client
+      .from('report_cards')
+      .delete()
+      .eq('id', reportCardId);
+}
   
   // --------------------------------------------------
   // FEES + INSTALLMENTS - per class, per academic year
