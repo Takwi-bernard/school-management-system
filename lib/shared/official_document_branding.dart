@@ -131,3 +131,31 @@ pw.Widget buildStampBlock(pw.MemoryImage? stamp, {double size = 90}) {
     child: pw.Image(stamp, fit: pw.BoxFit.contain),
   );
 }
+
+/// A compact version of the letterhead sized for an ID card's small
+/// front face - the wide dashboard letterhead would never fit here,
+/// so this deliberately renders just logo + school name, small.
+pw.Widget buildCompactIdCardHeader({
+  required pw.MemoryImage? logo,
+  required String schoolName,
+  required PdfColor textColor,
+}) {
+  return pw.Row(
+    mainAxisAlignment: pw.MainAxisAlignment.center,
+    crossAxisAlignment: pw.CrossAxisAlignment.center,
+    children: [
+      if (logo != null) ...[
+        pw.Container(width: 22, height: 22, child: pw.Image(logo, fit: pw.BoxFit.contain)),
+        pw.SizedBox(width: 6),
+      ],
+      pw.Flexible(
+        child: pw.Text(
+          schoolName.toUpperCase(),
+          textAlign: pw.TextAlign.center,
+          maxLines: 2,
+          style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: textColor),
+        ),
+      ),
+    ],
+  );
+}

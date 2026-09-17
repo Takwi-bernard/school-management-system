@@ -16,7 +16,7 @@ import 'principal_marks.dart';
 import 'principal_report_card.dart';
 import 'principal_comments.dart';
 import 'principal_admissions.dart';
-
+import 'principal_id_cards.dart';
 
 class PrincipalHome extends ConsumerWidget {
   const PrincipalHome({super.key});
@@ -167,6 +167,17 @@ class _PrincipalShellState extends ConsumerState<_PrincipalShell> {
             title: strings.isFrench ? 'Réviser les notes' : 'Review Marks',
             description: strings.isFrench ? 'Approuver, renvoyer ou rejeter les notes soumises.' : 'Approve, send back, or discard submitted marks.',
             onTap: () => setState(() => _body = MarksReviewPage(schoolId: widget.schoolId)),
+          ),
+        ],
+      ),
+            _NavGroup(
+        icon: Icons.badge_outlined,
+        title: strings.isFrench ? 'Cartes d\'identité' : 'ID Cards',
+        items: [
+          _NavLeaf(
+            title: strings.isFrench ? 'Générer des cartes' : 'Generate ID Cards',
+            description: strings.isFrench ? 'Créer les cartes d\'élève, avant et arrière.' : 'Create student cards, front and back.',
+            onTap: () => setState(() => _body = IdCardManagementPage(schoolId: widget.schoolId, landing: widget.landing)),
           ),
         ],
       ),

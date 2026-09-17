@@ -70,6 +70,41 @@ class PendingAdmissionReview {
   String get fullName => '$firstName $lastName';
 }
 
+
+class IdCardStudentData {
+  final String studentId;
+  final String admissionNumber;
+  final String firstName;
+  final String lastName;
+  final String? photoUrl;
+  final DateTime? dateOfBirth;
+  final DateTime? admissionDate;
+  final String className;
+  final String? guardianName;
+  final String? guardianPhone;
+
+  const IdCardStudentData({
+    required this.studentId,
+    required this.admissionNumber,
+    required this.firstName,
+    required this.lastName,
+    this.photoUrl,
+    this.dateOfBirth,
+    this.admissionDate,
+    required this.className,
+    this.guardianName,
+    this.guardianPhone,
+  });
+
+  String get fullName => '$firstName $lastName';
+}
+
+class IdCardGenerationRecord {
+  final String studentId;
+  final String studentName;
+  final DateTime generatedAt;
+  const IdCardGenerationRecord({required this.studentId, required this.studentName, required this.generatedAt});
+}
 class SchoolStudent {
   final String id;
   final String admissionNumber;

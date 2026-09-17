@@ -146,3 +146,15 @@ final admissionsForClassProvider = FutureProvider.family<List<PendingAdmissionRe
 final studentDetailProvider = FutureProvider.family<StudentDetail, String>((ref, studentId) {
   return ref.watch(principalRepositoryProvider).getStudentDetail(studentId);
 });
+
+final studentsForClassProvider = FutureProvider.family<List<SchoolStudent>, String>((ref, classId) {
+  return ref.watch(principalRepositoryProvider).getStudentsForClass(classId);
+});
+
+final generatedIdCardsForClassProvider = FutureProvider.family<List<IdCardGenerationRecord>, String>((ref, classId) {
+  return ref.watch(principalRepositoryProvider).getGeneratedIdCardsForClass(classId);
+});
+
+final officialBrandingProvider = FutureProvider.family<Map<String, String>, String>((ref, schoolId) {
+  return ref.watch(principalRepositoryProvider).getOfficialBranding(schoolId);
+});

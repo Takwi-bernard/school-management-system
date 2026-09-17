@@ -883,6 +883,102 @@ Future<List<ManagedClass>> getClassesWithPendingAdmissions(String schoolId, Stri
     }).toList();
   }
 
+
+  // --------------------------------------------------
+  // OFFICIAL DOCUMENT BRANDING - same school_assets table/pattern
+  // already used in the parent module for receipts and report cards.
+  // --------------------------------------------------
+
+  Future<Map<String, String>> getOfficialBranding(String schoolId) async {
+    final rows = await _client
+        .from('school_assets')
+        .select()
+        .eq('school_id', schoolId)
+        .eq('is_active', true)
+        .inFilter('asset_type', ['letterhead', 'principal_stamp', 'proprietor_stamp', 'discipline_master_stamp']);
+
+    final result = <String, String>{};
+    for (final row in rows) {
+      final type = row['asset_type'] as String?;
+      final url = row['file_url'] as String?;
+      if (type != null && url != null) result[type] = url;
+    }
+    return result;
+  }
+
+  // --------------------------------------------------
+  // ID CARDS - reuses the same Department -> Class drill-down as
+  // Report Cards and Admissions
+  // --------------------------------------------------
+
+  Future<List<SchoolStudent>> getStudentsForClass(String classId) async {
+    final rows = await _client
+        .from('class_enrollments')
+        .select('students(id, admission_number, first_name, last_name, student_photo_url, current_status, class_enrollments(enrollment_status, classes(class_name, departments(department_name))))')
+        .eq('class_id', classId)
+        .eq('enrollment_status', 'active');
+    return rows.map((r) => SchoolStudent.fromMap(r['students'] as Map<String, dynamic>)).toList();
+  }
+
+  Future<IdCardStudentData> getIdCardData(String studentId) async {
+    final studentRow = await _client
+        .from('students')
+        .select('''
+          id, admission_number, first_name, last_name, student_photo_url, date_of_birth, admission_date,
+          class_enrollments ( enrollment_status, classes ( class_name ) )
+        ''')
+        .eq('id', studentId)
+        .single();
+
+    final guardianRow = await _client
+        .from('student_guardians')
+        .select('guardians(full_name, phone)')
+        .eq('student_id', studentId)
+        .eq('is_primary', true)
+        .maybeSingle();
+
+    final enrollments = studentRow['class_enrollments'] as List?;
+    final className = (enrollments?.isNotEmpty == true ? (enrollments!.first as Map)['classes'] as Map? : null)?['class_name'] as String? ?? 'Unassigned';
+    final guardian = guardianRow?['guardians'] as Map?;
+
+    return IdCardStudentData(
+      studentId: studentRow['id'] as String,
+      admissionNumber: studentRow['admission_number'] as String? ?? '',
+      firstName: studentRow['first_name'] as String? ?? '',
+      lastName: studentRow['last_name'] as String? ?? '',
+      photoUrl: studentRow['student_photo_url'] as String?,
+      dateOfBirth: DateTime.tryParse(studentRow['date_of_birth'] as String? ?? ''),
+      admissionDate: DateTime.tryParse(studentRow['admission_date'] as String? ?? ''),
+      className: className,
+      guardianName: guardian?['full_name'] as String?,
+      guardianPhone: guardian?['phone'] as String?,
+    );
+  }
+
+  Future<void> recordIdCardGeneration(String schoolId, String studentId, String principalId) async {
+    await _client.from('id_card_generations').insert({
+      'school_id': schoolId,
+      'student_id': studentId,
+      'generated_by': principalId,
+    });
+  }
+
+  Future<List<IdCardGenerationRecord>> getGeneratedIdCardsForClass(String classId) async {
+    final rows = await _client
+        .from('id_card_generations')
+        .select('generated_at, students!inner(first_name, last_name, class_enrollments!inner(class_id))')
+        .eq('students.class_enrollments.class_id', classId)
+        .order('generated_at', ascending: false);
+
+    return rows.map((r) {
+      final student = r['students'] as Map;
+      return IdCardGenerationRecord(
+        studentId: student['id'] as String? ?? '',
+        studentName: '${student['first_name'] ?? ''} ${student['last_name'] ?? ''}'.trim(),
+        generatedAt: DateTime.tryParse(r['generated_at'] as String? ?? '') ?? DateTime.now(),
+      );
+    }).toList();
+  }
   // --------------------------------------------------
   // STUDENT DETAIL - tap a student to see full info + guardians
   // --------------------------------------------------
