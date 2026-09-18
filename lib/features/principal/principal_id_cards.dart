@@ -42,47 +42,46 @@ class _IdCardManagementPageState extends ConsumerState<IdCardManagementPage> {
     required List<IdCardStudentData> students,
     required String label,
   }) async {
+    final bytes = await _buildIdCardPdf(students);
+    final pdfUrl = await ref.read(principalRepositoryProvider).uploadGeneratedPdf(
+          schoolId: widget.schoolId,
+          bytes: bytes,
+          filenamePrefix: 'id_cards_${_class!.className.replaceAll(' ', '_')}',
+        );
+
+    final principal = await ref.read(principalProfileProvider.future);
+    if (principal != null) {
+      await ref.read(principalRepositoryProvider).recordIdCardGeneration(
+            schoolId: widget.schoolId,
+            classId: _class!.id,
+            label: label,
+            studentCount: students.length,
+            pdfUrl: pdfUrl,
+            principalId: principal.principalId,
+          );
+      ref.invalidate(generatedIdCardBatchesProvider(_class!.id));
+    }
+
+    if (mounted) {
+      await Printing.sharePdf(bytes: bytes, filename: '${label.replaceAll(' ', '_')}.pdf');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Saved. You can reopen or redownload this from "Already Generated" at any time.')),
+      );
+    }
+  }
+
+    Future<void> _generateSingle(SchoolStudent s) async {
     setState(() => _generating = true);
     try {
-      final bytes = await _buildIdCardPdf(students);
-      final pdfUrl = await ref.read(principalRepositoryProvider).uploadGeneratedPdf(
-            schoolId: widget.schoolId,
-            bytes: bytes,
-            filenamePrefix: 'id_cards_${_class!.className.replaceAll(' ', '_')}',
-          );
-
-      final principal = await ref.read(principalProfileProvider.future);
-      if (principal != null) {
-        await ref.read(principalRepositoryProvider).recordIdCardGeneration(
-              schoolId: widget.schoolId,
-              classId: _class!.id,
-              label: label,
-              studentCount: students.length,
-              pdfUrl: pdfUrl,
-              principalId: principal.principalId,
-            );
-        ref.invalidate(generatedIdCardBatchesProvider(_class!.id));
-      }
-
-      if (mounted) {
-        await Printing.sharePdf(bytes: bytes, filename: '${label.replaceAll(' ', '_')}.pdf');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Saved. You can reopen or redownload this from "Already Generated" at any time.')),
-        );
-      }
+      final data = await ref.read(principalRepositoryProvider).getIdCardData(s.id);
+      await _generateAndStore(students: [data], label: '${data.fullName} ID Card');
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
     } finally {
       if (mounted) setState(() => _generating = false);
     }
   }
-
-  Future<void> _generateSingle(SchoolStudent s) async {
-    final data = await ref.read(principalRepositoryProvider).getIdCardData(s.id);
-    await _generateAndStore(students: [data], label: '${data.fullName} ID Card');
-  }
-
-  Future<void> _generateWholeClass() async {
+    Future<void> _generateWholeClass() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -96,11 +95,23 @@ class _IdCardManagementPageState extends ConsumerState<IdCardManagementPage> {
     );
     if (confirmed != true) return;
 
-    final students = await ref.read(studentsForClassProvider(_class!.id).future);
-    final allData = await Future.wait(students.map((s) => ref.read(principalRepositoryProvider).getIdCardData(s.id)));
-    await _generateAndStore(students: allData, label: '${_class!.className} - Whole Class');
+    // setState BEFORE the first await, so the spinner appears the
+    // instant the button is pressed - not only once a query happens
+    // to return. Previously the fetch below ran outside _generating
+    // entirely, so a slow/hung query showed nothing at all.
+    setState(() => _generating = true);
+    try {
+      final allData = await ref.read(principalRepositoryProvider).getIdCardDataForClass(_class!.id);
+      if (allData.isEmpty) {
+        throw Exception('No enrolled students found in this class.');
+      }
+      await _generateAndStore(students: allData, label: '${_class!.className} - Whole Class');
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _generating = false);
+    }
   }
-
   Future<void> _delete(IdCardBatch batch) async {
     final confirmed = await showDialog<bool>(
       context: context,

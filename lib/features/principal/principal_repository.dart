@@ -1008,7 +1008,50 @@ Future<List<ManagedClass>> getClassesWithPendingAdmissions(String schoolId, Stri
     );
   }
 
- 
+   /// Fetches ID card data for an ENTIRE class in two queries total,
+  /// instead of calling getIdCardData once per student - that
+  /// per-student pattern was multiplying RLS evaluation cost by
+  /// class size and was the main contributor to the timeout.
+  Future<List<IdCardStudentData>> getIdCardDataForClass(String classId) async {
+    final studentRows = await _client
+        .from('students')
+        .select('''
+          id, admission_number, first_name, last_name, student_photo_url, date_of_birth, admission_date,
+          class_enrollments!inner ( enrollment_status, classes ( class_name ) )
+        ''')
+        .eq('class_enrollments.class_id', classId)
+        .eq('class_enrollments.enrollment_status', 'active');
+
+    final studentIds = studentRows.map((r) => r['id'] as String).toList();
+    if (studentIds.isEmpty) return [];
+
+    final guardianRows = await _client
+        .from('student_guardians')
+        .select('student_id, guardians(full_name, phone)')
+        .inFilter('student_id', studentIds)
+        .eq('is_primary', true);
+
+    final guardianByStudent = {for (final g in guardianRows) g['student_id'] as String: g['guardians'] as Map?};
+
+    return studentRows.map((r) {
+      final enrollments = r['class_enrollments'] as List?;
+      final className = (enrollments?.isNotEmpty == true ? (enrollments!.first as Map)['classes'] as Map? : null)?['class_name'] as String? ?? 'Unassigned';
+      final guardian = guardianByStudent[r['id']];
+
+      return IdCardStudentData(
+        studentId: r['id'] as String,
+        admissionNumber: r['admission_number'] as String? ?? '',
+        firstName: r['first_name'] as String? ?? '',
+        lastName: r['last_name'] as String? ?? '',
+        photoUrl: r['student_photo_url'] as String?,
+        dateOfBirth: DateTime.tryParse(r['date_of_birth'] as String? ?? ''),
+        admissionDate: DateTime.tryParse(r['admission_date'] as String? ?? ''),
+        className: className,
+        guardianName: guardian?['full_name'] as String?,
+        guardianPhone: guardian?['phone'] as String?,
+      );
+    }).toList();
+  }
 
   Future<List<IdCardGenerationRecord>> getGeneratedIdCardsForClass(String classId) async {
     final rows = await _client
