@@ -39,6 +39,29 @@ class DepartmentOption {
       );
 }
 
+class IdCardBatch {
+  final String id;
+  final String label;
+  final int studentCount;
+  final String pdfUrl;
+  final DateTime generatedAt;
+
+  const IdCardBatch({
+    required this.id,
+    required this.label,
+    required this.studentCount,
+    required this.pdfUrl,
+    required this.generatedAt,
+  });
+
+  factory IdCardBatch.fromMap(Map<String, dynamic> map) => IdCardBatch(
+        id: map['id'] as String,
+        label: map['label'] as String? ?? '',
+        studentCount: map['student_count'] as int? ?? 1,
+        pdfUrl: map['pdf_url'] as String? ?? '',
+        generatedAt: DateTime.tryParse(map['generated_at'] as String? ?? '') ?? DateTime.now(),
+      );
+}
 
 class PendingAdmissionReview {
   final String id;

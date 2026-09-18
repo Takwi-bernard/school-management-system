@@ -1,6 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'principal_models.dart';
-
+import 'dart:typed_data';
 class PrincipalRepository {
   PrincipalRepository(this._client);
   final SupabaseClient _client;
@@ -884,6 +884,59 @@ Future<List<ManagedClass>> getClassesWithPendingAdmissions(String schoolId, Stri
   }
 
 
+
+  Future<void> recordIdCardGeneration({
+    required String schoolId,
+    required String classId,
+    required String label,
+    required int studentCount,
+    required String pdfUrl,
+    required String principalId,
+  }) async {
+    await _client.from('id_card_generations').insert({
+      'school_id': schoolId,
+      'class_id': classId,
+      'label': label,
+      'student_count': studentCount,
+      'pdf_url': pdfUrl,
+      'generated_by': principalId,
+    });
+  }
+
+  Future<List<IdCardBatch>> getGeneratedIdCardBatches(String classId) async {
+    final rows = await _client
+        .from('id_card_generations')
+        .select('id, label, student_count, pdf_url, generated_at')
+        .eq('class_id', classId)
+        .order('generated_at', ascending: false);
+    return rows.map((r) => IdCardBatch.fromMap(r)).toList();
+  }
+
+  Future<void> deleteIdCardBatch(String batchId, String pdfUrl) async {
+    // Extract the storage path from the public/signed URL's tail -
+    // matches the {school_id}/{filename} layout used when uploading.
+    final uri = Uri.parse(pdfUrl);
+    final segments = uri.pathSegments;
+    final bucketIndex = segments.indexOf('generated-documents');
+    if (bucketIndex != -1 && bucketIndex + 1 < segments.length) {
+      final path = segments.sublist(bucketIndex + 1).join('/');
+      await _client.storage.from('generated-documents').remove([path]);
+    }
+    await _client.from('id_card_generations').delete().eq('id', batchId);
+  }
+
+  Future<String> uploadGeneratedPdf({
+    required String schoolId,
+    required Uint8List bytes,
+    required String filenamePrefix,
+  }) async {
+    final path = '$schoolId/${filenamePrefix}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+    await _client.storage.from('generated-documents').uploadBinary(path, bytes);
+    // Private bucket - createSignedUrl, generous 1-year expiry (same
+    // tradeoff already used for staff photos before that bucket was
+    // made public; documented there for future re-signing if needed).
+    return await _client.storage.from('generated-documents').createSignedUrl(path, 60 * 60 * 24 * 365);
+  }
   // --------------------------------------------------
   // OFFICIAL DOCUMENT BRANDING - same school_assets table/pattern
   // already used in the parent module for receipts and report cards.
@@ -955,13 +1008,7 @@ Future<List<ManagedClass>> getClassesWithPendingAdmissions(String schoolId, Stri
     );
   }
 
-  Future<void> recordIdCardGeneration(String schoolId, String studentId, String principalId) async {
-    await _client.from('id_card_generations').insert({
-      'school_id': schoolId,
-      'student_id': studentId,
-      'generated_by': principalId,
-    });
-  }
+ 
 
   Future<List<IdCardGenerationRecord>> getGeneratedIdCardsForClass(String classId) async {
     final rows = await _client

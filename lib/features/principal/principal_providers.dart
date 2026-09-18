@@ -158,3 +158,7 @@ final generatedIdCardsForClassProvider = FutureProvider.family<List<IdCardGenera
 final officialBrandingProvider = FutureProvider.family<Map<String, String>, String>((ref, schoolId) {
   return ref.watch(principalRepositoryProvider).getOfficialBranding(schoolId);
 });
+
+final generatedIdCardBatchesProvider = FutureProvider.family<List<IdCardBatch>, String>((ref, classId) {
+  return ref.watch(principalRepositoryProvider).getGeneratedIdCardBatches(classId);
+});
