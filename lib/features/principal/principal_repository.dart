@@ -132,7 +132,10 @@ class PrincipalRepository {
     await _client.from('teacher_assignments').delete().eq('id', assignmentId);
   }
 
-
+   Future<String> getTermIdForExamPeriod(String examPeriodId) async {
+     final row = await _client.from('exam_periods').select('academic_term_id').eq('id', examPeriodId).single();
+     return row['academic_term_id'] as String;
+   }
 
     // --------------------------------------------------
   // MARKS WINDOW (per exam period)
@@ -256,62 +259,242 @@ class PrincipalRepository {
   /// Computes ONE student's report card from their currently-approved
   /// marks for this term. Does NOT publish it - is_published stays
   /// false until a separate, explicit publish action.
-  Future<void> generateReportCard({
+    // --------------------------------------------------
+  // REPORT CARD GENERATION - sequence OR term scope, principal chooses
+  // --------------------------------------------------
+
+  Future<List<DepartmentFull>> getDepartmentsWithMarksForPeriod(String schoolId, String examPeriodId) async {
+    final rows = await _client
+        .from('marks')
+        .select('classes(department_id, departments(id, department_name, department_type))')
+        .eq('school_id', schoolId)
+        .eq('exam_period_id', examPeriodId)
+        .eq('status', 'approved');
+    final seen = <String, DepartmentFull>{};
+    for (final r in rows) {
+      final dept = (r['classes'] as Map?)?['departments'] as Map?;
+      if (dept != null) {
+        final id = dept['id'] as String;
+        seen[id] = DepartmentFull(id: id, departmentName: dept['department_name'] as String? ?? '', departmentType: dept['department_type'] as String?);
+      }
+    }
+    return seen.values.toList()..sort((a, b) => a.departmentName.compareTo(b.departmentName));
+  }
+
+  Future<List<ManagedClass>> getClassesWithMarksForPeriod(String schoolId, String examPeriodId, String departmentId) async {
+    final rows = await _client
+        .from('marks')
+        .select('classes(id, class_name, class_code, department_id, level_order, max_students, is_active, departments(department_name))')
+        .eq('school_id', schoolId)
+        .eq('exam_period_id', examPeriodId)
+        .eq('status', 'approved');
+    final seen = <String, ManagedClass>{};
+    for (final r in rows) {
+      final cls = r['classes'] as Map?;
+      if (cls != null && cls['department_id'] == departmentId) {
+        final classMap = Map<String, dynamic>.from(cls);
+        seen[classMap['id'] as String] = ManagedClass.fromMap(classMap);
+      }
+    }
+    return seen.values.toList()..sort((a, b) => a.className.compareTo(b.className));
+  }
+
+  /// Generates (or regenerates) the report_cards ROW and subject_results
+  /// summary for one student. For sequence scope: one row per subject
+  /// from that sequence's marks. For term scope: one row per subject,
+  /// with score = the AVERAGE across that subject's sequences in the
+  /// term (the detailed per-sequence breakdown is read fresh from
+  /// `marks` at PDF-build time, not duplicated into subject_results).
+  Future<String> generateReportCard({
     required String schoolId,
     required String studentId,
     required String classId,
-    required String termId,
     required String academicYearId,
+    required String termId,
+    required String reportScope, // 'sequence' | 'term'
+    String? examPeriodId, // required when reportScope == 'sequence'
   }) async {
+    List<String> periodIds;
+    if (reportScope == 'sequence') {
+      if (examPeriodId == null) throw Exception('An exam period is required for a sequence report.');
+      periodIds = [examPeriodId];
+    } else {
+      periodIds = await _examPeriodIdsForTerm(termId);
+    }
+
     final marksRows = await _client
         .from('marks')
         .select('score, coefficient, subject_id')
         .eq('student_id', studentId)
-        .eq('academic_year_id', academicYearId)
-        .eq('status', 'approved')
-        .inFilter('exam_period_id', await _examPeriodIdsForTerm(termId));
+        .inFilter('exam_period_id', periodIds)
+        .eq('status', 'approved');
 
     if (marksRows.isEmpty) {
-      throw Exception('No approved marks found for this student in this term.');
+      throw Exception('No approved marks found for this student in this ${reportScope == 'sequence' ? 'sequence' : 'term'}.');
+    }
+
+    final bySubject = <String, List<Map<String, dynamic>>>{};
+    for (final m in marksRows) {
+      bySubject.putIfAbsent(m['subject_id'] as String, () => []).add(m);
     }
 
     double totalWeighted = 0;
     int totalCoefficient = 0;
-    for (final m in marksRows) {
-      final score = (m['score'] as num).toDouble();
-      final coef = m['coefficient'] as int;
-      totalWeighted += score * coef;
-      totalCoefficient += coef;
-    }
+    final subjectPayload = <Map<String, dynamic>>[];
+    bySubject.forEach((subjectId, rows) {
+      final coefficient = rows.first['coefficient'] as int;
+      final avgScore = rows.map((r) => (r['score'] as num).toDouble()).reduce((a, b) => a + b) / rows.length;
+      totalWeighted += avgScore * coefficient;
+      totalCoefficient += coefficient;
+      subjectPayload.add({'subject_id': subjectId, 'score': avgScore, 'coefficient': coefficient, 'weighted_score': avgScore * coefficient});
+    });
     final average = totalCoefficient == 0 ? 0.0 : totalWeighted / totalCoefficient;
 
-    final reportCard = await _client
-        .from('report_cards')
-        .upsert({
-          'school_id': schoolId,
-          'student_id': studentId,
-          'class_id': classId,
-          'term_id': termId,
-          'academic_year_id': academicYearId,
-          'overall_average': average,
-          'generated_at': DateTime.now().toIso8601String(),
-        }, onConflict: 'student_id, term_id')
-        .select()
-        .single();
+    // Check-then-insert-or-update explicitly - the partial unique
+    // indexes above can't be targeted by upsert()'s ON CONFLICT
+    // shorthand, same limitation we hit with subject_offerings earlier.
+    Map<String, dynamic>? existing;
+    if (reportScope == 'sequence') {
+      existing = await _client.from('report_cards').select('id').eq('student_id', studentId).eq('exam_period_id', examPeriodId!).eq('report_scope', 'sequence').maybeSingle();
+    } else {
+      existing = await _client.from('report_cards').select('id').eq('student_id', studentId).eq('term_id', termId).eq('report_scope', 'term').maybeSingle();
+    }
 
-    final reportCardId = reportCard['id'] as String;
+    final payload = {
+      'school_id': schoolId,
+      'student_id': studentId,
+      'class_id': classId,
+      'term_id': termId,
+      'academic_year_id': academicYearId,
+      'exam_period_id': reportScope == 'sequence' ? examPeriodId : null,
+      'report_scope': reportScope,
+      'overall_average': average,
+      'generated_at': DateTime.now().toIso8601String(),
+    };
+
+    String reportCardId;
+    if (existing == null) {
+      final inserted = await _client.from('report_cards').insert(payload).select('id').single();
+      reportCardId = inserted['id'] as String;
+    } else {
+      reportCardId = existing['id'] as String;
+      await _client.from('report_cards').update(payload).eq('id', reportCardId);
+    }
 
     await _client.from('subject_results').delete().eq('report_card_id', reportCardId);
     await _client.from('subject_results').insert([
-      for (final m in marksRows)
-        {
-          'report_card_id': reportCardId,
-          'subject_id': m['subject_id'],
-          'score': m['score'],
-          'coefficient': m['coefficient'],
-          'weighted_score': (m['score'] as num).toDouble() * (m['coefficient'] as int),
-        },
+      for (final s in subjectPayload) {'report_card_id': reportCardId, ...s},
     ]);
+
+    return reportCardId;
+  }
+
+  /// Everything needed to render the actual PDF - including the
+  /// per-sequence column breakdown for a term report, read fresh from
+  /// `marks` rather than from the flattened subject_results average.
+  Future<ReportCardPdfData> getReportCardPdfData(String reportCardId) async {
+    final rc = await _client
+        .from('report_cards')
+        .select('*, students(first_name, last_name, student_photo_url), classes(class_name), academic_terms(term_name), exam_periods(period_name)')
+        .eq('id', reportCardId)
+        .single();
+
+    final student = rc['students'] as Map;
+    final cls = rc['classes'] as Map?;
+    final scope = rc['report_scope'] as String;
+    final studentId = rc['student_id'] as String;
+
+    List<({String id, String name})> periodColumns;
+    List<String> periodIdsForMarks;
+
+    if (scope == 'sequence') {
+      final period = rc['exam_periods'] as Map;
+      periodColumns = [(id: rc['exam_period_id'] as String, name: period['period_name'] as String? ?? '')];
+      periodIdsForMarks = [rc['exam_period_id'] as String];
+    } else {
+      final periodRows = await _client
+          .from('exam_periods')
+          .select('id, period_name')
+          .eq('academic_term_id', rc['term_id'])
+          .order('sequence_order');
+      periodColumns = periodRows.map<({String id, String name})>((p) => (id: p['id'] as String, name: p['period_name'] as String? ?? '')).toList();
+      periodIdsForMarks = periodColumns.map((p) => p.id).toList();
+    }
+
+    final marksRows = await _client
+        .from('marks')
+        .select('score, coefficient, exam_period_id, subjects(subject_name)')
+        .eq('student_id', studentId)
+        .inFilter('exam_period_id', periodIdsForMarks)
+        .eq('status', 'approved');
+
+    final bySubjectName = <String, List<Map<String, dynamic>>>{};
+    for (final m in marksRows) {
+      final name = (m['subjects'] as Map?)?['subject_name'] as String? ?? '';
+      bySubjectName.putIfAbsent(name, () => []).add(m);
+    }
+
+    final subjectRows = bySubjectName.entries.map((entry) {
+      final scoresByPeriod = <String, double>{};
+      int coefficient = 1;
+      for (final row in entry.value) {
+        scoresByPeriod[row['exam_period_id'] as String] = (row['score'] as num).toDouble();
+        coefficient = row['coefficient'] as int;
+      }
+      final avg = scoresByPeriod.values.isEmpty ? 0.0 : scoresByPeriod.values.reduce((a, b) => a + b) / scoresByPeriod.length;
+      return ReportCardPdfSubjectRow(subjectName: entry.key, coefficient: coefficient, scoresByPeriod: scoresByPeriod, average: avg);
+    }).toList()
+      ..sort((a, b) => a.subjectName.compareTo(b.subjectName));
+
+    final term = rc['academic_terms'] as Map?;
+    final label = scope == 'sequence' ? periodColumns.first.name : (term?['term_name'] as String? ?? 'Term Report');
+
+    return ReportCardPdfData(
+      studentName: '${student['first_name'] ?? ''} ${student['last_name'] ?? ''}'.trim(),
+      studentPhotoUrl: student['student_photo_url'] as String?,
+      className: cls?['class_name'] as String? ?? '',
+      reportLabel: label,
+      periodColumns: periodColumns,
+      subjects: subjectRows,
+      overallAverage: (rc['overall_average'] as num?)?.toDouble() ?? 0.0,
+      classRank: rc['class_rank'] as int?,
+      totalStudents: rc['total_students'] as int?,
+      principalComment: rc['principal_comment'] as String?,
+    );
+  }
+
+  Future<void> savePdfUrlOnReportCard(String reportCardId, String pdfUrl) async {
+    await _client.from('report_cards').update({'pdf_url': pdfUrl}).eq('id', reportCardId);
+  }
+
+// --------------------------------------------------
+  // BULK REPORT CARD GENERATION + PUBLISHING
+  // --------------------------------------------------
+    Future<Map<String, dynamic>> generateReportCardsForClass({
+    required String schoolId,
+    required String classId,
+    required String termId,
+    required String academicYearId,
+  }) async {
+    final students = await getReportCardStatusForClass(classId: classId, termId: termId, academicYearId: academicYearId);
+    var succeeded = 0;
+    var skipped = 0;
+    for (final s in students) {
+      try {
+        await generateReportCard(
+          schoolId: schoolId,
+          studentId: s.studentId,
+          classId: classId,
+          termId: termId,
+          academicYearId: academicYearId,
+          reportScope: 'term',
+        );
+        succeeded++;
+      } catch (_) {
+        skipped++; // e.g. this student has no approved marks yet - not fatal, continue with the rest
+      }
+    }
+    return {'succeeded': succeeded, 'skipped': skipped, 'total': students.length};
   }
 
   Future<List<String>> _examPeriodIdsForTerm(String termId) async {
@@ -529,28 +712,6 @@ class PrincipalRepository {
 
   Future<void> discardComment(String commentId) async {
     await _client.from('class_comments').delete().eq('id', commentId);
-  }
-// --------------------------------------------------
-  // BULK REPORT CARD GENERATION + PUBLISHING
-  // --------------------------------------------------
-    Future<Map<String, dynamic>> generateReportCardsForClass({
-    required String schoolId,
-    required String classId,
-    required String termId,
-    required String academicYearId,
-  }) async {
-    final students = await getReportCardStatusForClass(classId: classId, termId: termId, academicYearId: academicYearId);
-    var succeeded = 0;
-    var skipped = 0;
-    for (final s in students) {
-      try {
-        await generateReportCard(schoolId: schoolId, studentId: s.studentId, classId: classId, termId: termId, academicYearId: academicYearId);
-        succeeded++;
-      } catch (_) {
-        skipped++; // e.g. this student has no approved marks yet - not fatal, continue with the rest
-      }
-    }
-    return {'succeeded': succeeded, 'skipped': skipped, 'total': students.length};
   }
 
   Future<int> publishReportCardsForClass({

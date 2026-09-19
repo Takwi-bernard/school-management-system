@@ -150,7 +150,7 @@ class _PrincipalShellState extends ConsumerState<_PrincipalShell> {
           _NavLeaf(
             title: strings.isFrench ? 'Gérer les bulletins' : 'Manage Report Cards',
             description: strings.isFrench ? 'Générer et publier les bulletins scolaires.' : 'Generate and publish report cards.',
-            onTap: () => setState(() => _body = ReportCardManagementPage(schoolId: widget.schoolId)),
+            onTap: () => setState(() => _body = ReportCardManagementPage(schoolId: widget.schoolId, landing: widget.landing)),
           ),
         ],
       ),

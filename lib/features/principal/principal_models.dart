@@ -39,6 +39,47 @@ class DepartmentOption {
       );
 }
 
+
+class ExamPeriodPickOption {
+  final String id;
+  final String periodName;
+  final String termId;
+  const ExamPeriodPickOption({required this.id, required this.periodName, required this.termId});
+}
+
+class ReportCardPdfSubjectRow {
+  final String subjectName;
+  final int coefficient;
+  final Map<String, double> scoresByPeriod; // examPeriodId -> score
+  final double average;
+  const ReportCardPdfSubjectRow({required this.subjectName, required this.coefficient, required this.scoresByPeriod, required this.average});
+}
+
+class ReportCardPdfData {
+  final String studentName;
+  final String? studentPhotoUrl;
+  final String className;
+  final String reportLabel;
+  final List<({String id, String name})> periodColumns; // 1 for sequence, N for term
+  final List<ReportCardPdfSubjectRow> subjects;
+  final double overallAverage;
+  final int? classRank;
+  final int? totalStudents;
+  final String? principalComment;
+
+  const ReportCardPdfData({
+    required this.studentName,
+    this.studentPhotoUrl,
+    required this.className,
+    required this.reportLabel,
+    required this.periodColumns,
+    required this.subjects,
+    required this.overallAverage,
+    this.classRank,
+    this.totalStudents,
+    this.principalComment,
+  });
+}
 class IdCardBatch {
   final String id;
   final String label;

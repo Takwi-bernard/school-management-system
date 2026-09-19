@@ -162,3 +162,16 @@ final officialBrandingProvider = FutureProvider.family<Map<String, String>, Stri
 final generatedIdCardBatchesProvider = FutureProvider.family<List<IdCardBatch>, String>((ref, classId) {
   return ref.watch(principalRepositoryProvider).getGeneratedIdCardBatches(classId);
 });
+
+final departmentsWithMarksForPeriodProvider = FutureProvider.family<List<DepartmentFull>, ({String schoolId, String examPeriodId})>((ref, p) {
+  return ref.watch(principalRepositoryProvider).getDepartmentsWithMarksForPeriod(p.schoolId, p.examPeriodId);
+});
+
+final classesWithMarksForPeriodProvider =
+    FutureProvider.family<List<ManagedClass>, ({String schoolId, String examPeriodId, String departmentId})>((ref, p) {
+  return ref.watch(principalRepositoryProvider).getClassesWithMarksForPeriod(p.schoolId, p.examPeriodId, p.departmentId);
+});
+
+final reportCardPdfDataProvider = FutureProvider.family<ReportCardPdfData, String>((ref, reportCardId) {
+  return ref.watch(principalRepositoryProvider).getReportCardPdfData(reportCardId);
+});
