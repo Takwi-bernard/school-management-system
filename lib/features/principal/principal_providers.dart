@@ -175,3 +175,10 @@ final classesWithMarksForPeriodProvider =
 final reportCardPdfDataProvider = FutureProvider.family<ReportCardPdfData, String>((ref, reportCardId) {
   return ref.watch(principalRepositoryProvider).getReportCardPdfData(reportCardId);
 });
+
+final generatedReportCardsForScopeProvider = FutureProvider.family<List<ReportCardStatus>,
+    ({String classId, String reportScope, String? termId, String? examPeriodId})>((ref, p) {
+  return ref.watch(principalRepositoryProvider).getGeneratedReportCardsForClassScope(
+        classId: p.classId, reportScope: p.reportScope, termId: p.termId, examPeriodId: p.examPeriodId,
+      );
+});

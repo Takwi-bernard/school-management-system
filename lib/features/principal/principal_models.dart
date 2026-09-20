@@ -492,6 +492,7 @@ class ReportCardStatus {
   final bool exists;
   final bool isPublished;
   final DateTime? publishAt;
+  final String? pdfUrl;
 
   const ReportCardStatus({
     required this.studentId,
@@ -500,6 +501,7 @@ class ReportCardStatus {
     required this.exists,
     required this.isPublished,
     this.publishAt,
+    this.pdfUrl,
   });
 }
 // Represents a single mark that has been submitted by a teacher for a student, along with the subject, class, and teacher details.

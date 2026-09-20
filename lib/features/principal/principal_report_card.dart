@@ -224,23 +224,27 @@ class _ClassReportCardsPane extends ConsumerStatefulWidget {
 
 class _ClassReportCardsPaneState extends ConsumerState<_ClassReportCardsPane> {
   bool _busy = false;
+  int _progressDone = 0;
+  int _progressTotal = 0;
+  String? _resolvedTermId; // fetched ONCE, not per student
 
-  PdfColor _parseColor(String hex) {
-    var v = hex.replaceAll('#', '');
-    if (v.length == 6) v = 'FF$v';
-    return PdfColor.fromInt(int.tryParse(v, radix: 16) ?? 0xFF1A73E8);
+  Future<String> _termId() async {
+    _resolvedTermId ??= widget.termId ?? await ref.read(principalRepositoryProvider).getTermIdForExamPeriod(widget.periodId!);
+    return _resolvedTermId!;
   }
 
-  Future<void> _generateOne(ReportCardStatus student) async {
-    setState(() => _busy = true);
+  Future<void> _generateOne(String studentId) async {
+    setState(() { _busy = true; _progressDone = 0; _progressTotal = 1; });
     try {
+      final termId = await _termId();
       final reportCardId = await ref.read(principalRepositoryProvider).generateReportCard(
-            schoolId: widget.schoolId, studentId: student.studentId, classId: widget.classInfo.id,
-            academicYearId: widget.yearId, termId: widget.termId ?? await _resolveTermForPeriod(),
-            reportScope: widget.scope, examPeriodId: widget.periodId,
+            schoolId: widget.schoolId, studentId: studentId, classId: widget.classInfo.id,
+            academicYearId: widget.yearId, termId: termId, reportScope: widget.scope, examPeriodId: widget.periodId,
           );
       await _buildAndStorePdf(reportCardId);
+      setState(() => _progressDone = 1);
       _refresh();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Report card generated.')));
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
     } finally {
@@ -248,19 +252,12 @@ class _ClassReportCardsPaneState extends ConsumerState<_ClassReportCardsPane> {
     }
   }
 
-  Future<String> _resolveTermForPeriod() async {
-    // sequence scope still needs a term_id on the row (grouping/reporting) -
-    // fetched once from the exam_periods table.
-    final row = await ref.read(principalRepositoryProvider).getExamPeriods(widget.yearId);
-    return row.firstWhere((p) => p.id == widget.periodId).id; // placeholder - replaced below if needed
-  }
-
   Future<void> _generateAll() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: Text('Generate report cards for all of ${widget.classInfo.className}?'),
-        content: const Text('Each student with approved marks gets their own PDF, saved and downloadable at any time.'),
+        content: const Text('Each student with approved marks gets their own PDF, saved as it completes - you can watch progress and open any finished card immediately, even before the whole batch is done.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Generate All')),
@@ -272,8 +269,10 @@ class _ClassReportCardsPaneState extends ConsumerState<_ClassReportCardsPane> {
     setState(() => _busy = true);
     try {
       final students = await ref.read(studentsForClassProvider(widget.classInfo.id).future);
+      final termId = await _termId(); // resolved ONCE, not per student - was silently re-fetching before
+      setState(() { _progressDone = 0; _progressTotal = students.length; });
+
       var succeeded = 0, skipped = 0;
-      final termId = widget.termId ?? await _resolveTermForPeriod();
       for (final s in students) {
         try {
           final reportCardId = await ref.read(principalRepositoryProvider).generateReportCard(
@@ -285,9 +284,16 @@ class _ClassReportCardsPaneState extends ConsumerState<_ClassReportCardsPane> {
         } catch (_) {
           skipped++;
         }
+        // Progress updates AND the Generated tab refreshes after EVERY
+        // student - not just at the end - so anything already saved
+        // is visible immediately, even if generation is stopped or
+        // fails partway through.
+        if (mounted) setState(() => _progressDone++);
+        _refresh();
       }
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Generated $succeeded of ${students.length} ($skipped had no approved marks).')));
-      _refresh();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -362,50 +368,98 @@ class _ClassReportCardsPaneState extends ConsumerState<_ClassReportCardsPane> {
       );
 
   void _refresh() {
-    if (widget.termId != null) ref.invalidate(reportCardStatusProvider((classId: widget.classInfo.id, termId: widget.termId!, academicYearId: widget.yearId)));
+    ref.invalidate(generatedReportCardsForScopeProvider((
+      classId: widget.classInfo.id, reportScope: widget.scope, termId: widget.termId, examPeriodId: widget.periodId,
+    )));
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _Breadcrumb(label: '${widget.classInfo.className} - ${widget.label}', onTap: widget.onBack),
-        const SizedBox(height: 8),
-        FilledButton.icon(
-          onPressed: _busy ? null : _generateAll,
-          icon: _busy ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.auto_awesome_rounded),
-          label: Text(_busy ? 'Generating...' : 'Generate All for This Class'),
-        ),
-        const SizedBox(height: 12),
-        Expanded(
-          child: Consumer(
-            builder: (context, ref, _) {
-              final studentsAsync = ref.watch(studentsForClassProvider(widget.classInfo.id));
-              return studentsAsync.when(
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Text('$e'),
-                data: (students) => ListView.separated(
-                  itemCount: students.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (context, i) {
-                    final s = students[i];
-                    return Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
-                      child: Row(children: [
-                        Expanded(child: Text(s.fullName, style: const TextStyle(fontWeight: FontWeight.w700))),
-                        OutlinedButton(onPressed: _busy ? null : () => _generateOne(ReportCardStatus(studentId: s.id, studentName: s.fullName, exists: false, isPublished: false)), child: const Text('Generate')),
-                      ]),
+    return DefaultTabController(
+      length: 2,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _Breadcrumb(label: '${widget.classInfo.className} - ${widget.label}', onTap: widget.onBack),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: _busy ? null : _generateAll,
+            icon: _busy ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.auto_awesome_rounded),
+            label: Text(_busy ? 'Generating $_progressDone of $_progressTotal...' : 'Generate All for This Class'),
+          ),
+          if (_busy && _progressTotal > 0) ...[
+            const SizedBox(height: 8),
+            ClipRRect(borderRadius: BorderRadius.circular(10), child: LinearProgressIndicator(value: _progressDone / _progressTotal, minHeight: 6)),
+          ],
+          const SizedBox(height: 12),
+          const TabBar(tabs: [Tab(text: 'Students'), Tab(text: 'Already Generated')]),
+          Expanded(
+            child: TabBarView(
+              children: [
+                Consumer(
+                  builder: (context, ref, _) {
+                    final studentsAsync = ref.watch(studentsForClassProvider(widget.classInfo.id));
+                    return studentsAsync.when(
+                      loading: () => const Center(child: CircularProgressIndicator()),
+                      error: (e, _) => Text('$e'),
+                      data: (students) => ListView.separated(
+                        itemCount: students.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, i) {
+                          final s = students[i];
+                          return Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
+                            child: Row(children: [
+                              Expanded(child: Text(s.fullName, style: const TextStyle(fontWeight: FontWeight.w700))),
+                              OutlinedButton(onPressed: _busy ? null : () => _generateOne(s.id), child: const Text('Generate')),
+                            ]),
+                          );
+                        },
+                      ),
                     );
                   },
                 ),
-              );
-            },
+                // "Already Generated" - reads directly from report_cards,
+                // so anything saved is visible EVEN IF a batch was
+                // stopped or crashed partway through.
+                Consumer(
+                  builder: (context, ref, _) {
+                    final generatedAsync = ref.watch(generatedReportCardsForScopeProvider((
+                      classId: widget.classInfo.id, reportScope: widget.scope, termId: widget.termId, examPeriodId: widget.periodId,
+                    )));
+                    return generatedAsync.when(
+                      loading: () => const Center(child: CircularProgressIndicator()),
+                      error: (e, _) => Text('$e'),
+                      data: (generated) {
+                        if (generated.isEmpty) return const Center(child: Text('No report cards generated for this yet.'));
+                        return ListView.separated(
+                          itemCount: generated.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          itemBuilder: (context, i) {
+                            final rc = generated[i];
+                            return Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
+                              child: Row(children: [
+                                Expanded(child: Text(rc.studentName, style: const TextStyle(fontWeight: FontWeight.w700))),
+                                if (rc.isPublished) const Chip(label: Text('Published'), backgroundColor: Color(0x1A4CAF50), labelStyle: TextStyle(color: Colors.green)),
+                                if (rc.pdfUrl != null)
+                                  IconButton(icon: const Icon(Icons.open_in_new_rounded), tooltip: 'Open PDF', onPressed: () => launchUrl(Uri.parse(rc.pdfUrl!), mode: LaunchMode.externalApplication)),
+                              ]),
+                            );
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

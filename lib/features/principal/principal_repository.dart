@@ -132,10 +132,7 @@ class PrincipalRepository {
     await _client.from('teacher_assignments').delete().eq('id', assignmentId);
   }
 
-   Future<String> getTermIdForExamPeriod(String examPeriodId) async {
-     final row = await _client.from('exam_periods').select('academic_term_id').eq('id', examPeriodId).single();
-     return row['academic_term_id'] as String;
-   }
+  
 
     // --------------------------------------------------
   // MARKS WINDOW (per exam period)
@@ -467,6 +464,43 @@ class PrincipalRepository {
     await _client.from('report_cards').update({'pdf_url': pdfUrl}).eq('id', reportCardId);
   }
 
+  Future<String> getTermIdForExamPeriod(String examPeriodId) async {
+    final row = await _client.from('exam_periods').select('academic_term_id').eq('id', examPeriodId).single();
+    return row['academic_term_id'] as String;
+  }
+
+  /// Report cards already generated for this class+scope, straight
+  /// from the report_cards table itself - so even if a whole-class
+  /// batch is interrupted partway, whatever DID succeed is always
+  /// visible and downloadable here, exactly like the ID card batches.
+  Future<List<ReportCardStatus>> getGeneratedReportCardsForClassScope({
+    required String classId,
+    required String reportScope,
+    String? termId,
+    String? examPeriodId,
+  }) async {
+    var query = _client
+        .from('report_cards')
+        .select('id, student_id, is_published, publish_at, pdf_url, students(first_name, last_name)')
+        .eq('class_id', classId)
+        .eq('report_scope', reportScope);
+
+    query = reportScope == 'sequence' ? query.eq('exam_period_id', examPeriodId!) : query.eq('term_id', termId!);
+
+    final rows = await query;
+    return rows.map((r) {
+      final student = r['students'] as Map?;
+      return ReportCardStatus(
+        studentId: r['student_id'] as String,
+        studentName: '${student?['first_name'] ?? ''} ${student?['last_name'] ?? ''}'.trim(),
+        reportCardId: r['id'] as String,
+        exists: true,
+        isPublished: r['is_published'] as bool? ?? false,
+        publishAt: DateTime.tryParse(r['publish_at'] as String? ?? ''),
+      );
+    }).toList()
+      ..sort((a, b) => a.studentName.compareTo(b.studentName));
+  }
 // --------------------------------------------------
   // BULK REPORT CARD GENERATION + PUBLISHING
   // --------------------------------------------------
