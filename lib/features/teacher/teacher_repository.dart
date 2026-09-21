@@ -140,6 +140,25 @@ class TeacherRepository {
     return _withSignedPhotoUrls(students);
   }
 
+  /// Letterhead + stamp image URLs for the school, keyed by asset_type.
+  /// Same shape the parent/principal modules use with OfficialBranding.fetch.
+  Future<Map<String, String>> getOfficialBranding(String schoolId) async {
+    final rows = await client
+        .from('school_assets')
+        .select('asset_type, file_url')
+        .eq('school_id', schoolId)
+        .eq('is_active', true)
+        .inFilter('asset_type', ['letterhead', 'principal_stamp', 'proprietor_stamp', 'discipline_master_stamp']);
+
+    final result = <String, String>{};
+    for (final row in rows) {
+      final type = row['asset_type'] as String?;
+      final url = row['file_url'] as String?;
+      if (type != null && url != null) result[type] = url;
+    }
+    return result;
+  }
+
   // The student-photos bucket is private, so a stored public URL will not
   // load. Turn each stored URL/path into a short-lived signed URL.
   static const _studentPhotoBucket = 'student-photos';

@@ -78,3 +78,9 @@ final attendanceForDateProvider = FutureProvider.family<
         date: params.date,
       );
 });
+
+/// Letterhead / stamp URLs for the teacher's school (used by PDF exports).
+final teacherBrandingAssetsProvider = FutureProvider.family<Map<String, String>, String>((ref, schoolId) {
+  ref.watch(teacherUserIdProvider);
+  return ref.watch(teacherRepositoryProvider).getOfficialBranding(schoolId);
+});

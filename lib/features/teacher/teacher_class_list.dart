@@ -6,6 +6,7 @@ import '../../core/error_state.dart';
 import '../../core/export/export_service.dart';
 import '../../core/l10n/app_strings.dart';
 import '../../core/responsive.dart';
+import '../../shared/official_document_branding.dart';
 import '../landing/landing_providers.dart';
 import 'teacher_models.dart';
 import 'teacher_navigation.dart';
@@ -94,7 +95,7 @@ class TeacherClassListPage extends ConsumerWidget {
                       IconButton(
                         icon: const Icon(Icons.picture_as_pdf_outlined),
                         tooltip: 'PDF',
-                        onPressed: students.isEmpty ? null : () => _exportPdf(students, schoolName, theme.colorScheme.primary, strings),
+                        onPressed: students.isEmpty ? null : () => _exportPdf(ref, students, schoolName, theme.colorScheme.primary, strings),
                       ),
                     ]),
                     const SizedBox(height: 8),
@@ -188,14 +189,33 @@ class TeacherClassListPage extends ConsumerWidget {
     );
   }
 
-  Future<void> _exportPdf(List<RosterStudent> students, String schoolName, Color primary, AppStrings strings) async {
+  Future<void> _exportPdf(
+    WidgetRef ref,
+    List<RosterStudent> students,
+    String schoolName,
+    Color primary,
+    AppStrings strings,
+  ) async {
+    // The school's letterhead, if one has been uploaded. Any failure
+    // here just means the PDF uses the plain title layout instead.
+    OfficialBranding? branding;
+    try {
+      final assets = await ref.read(teacherBrandingAssetsProvider(profile.schoolId).future);
+      branding = await OfficialBranding.fetch(assets);
+    } catch (_) {
+      branding = null;
+    }
+    final hasLetterhead = branding != null && branding.letterhead != null;
+
     await ExportService.exportPdf(
       fileName: '$_baseFileName.pdf',
-      title: '$schoolName - ${assignment.className}',
+      // The letterhead already carries the school's name.
+      title: hasLetterhead ? assignment.className : '$schoolName - ${assignment.className}',
       subtitle: '${assignment.subjectName} - ${strings.tClassListTitle} (${students.length} ${strings.studentsLabel})',
       headers: _headers(strings),
       accentColor: PdfColor.fromInt(primary.toARGB32()),
       rows: _rows(students, strings),
+      branding: branding,
     );
   }
 }

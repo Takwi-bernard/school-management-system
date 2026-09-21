@@ -10,12 +10,17 @@ import 'package:pdf/widgets.dart' as pw;
 /// never re-implement header/stamp logic on their own.
 class OfficialBranding {
   final pw.MemoryImage? letterhead;
+
+  /// width / height of the letterhead image, so it can be drawn edge to
+  /// edge at exactly its own proportions. Null if it could not be read.
+  final double? letterheadAspectRatio;
   final pw.MemoryImage? principalStamp;
   final pw.MemoryImage? proprietorStamp;
   final pw.MemoryImage? disciplineMasterStamp;
 
   const OfficialBranding({
     this.letterhead,
+    this.letterheadAspectRatio,
     this.principalStamp,
     this.proprietorStamp,
     this.disciplineMasterStamp,
@@ -30,8 +35,10 @@ class OfficialBranding {
   /// letterhead does NOT, since it's a full rectangular header
   /// image, not a seal meant to sit transparently over content.
   static Future<OfficialBranding> fetch(Map<String, String> assets) async {
+    final letterheadBytes = await _fetchBytes(assets['letterhead']);
     return OfficialBranding(
-      letterhead: await _fetchImage(assets['letterhead']),
+      letterhead: letterheadBytes == null ? null : pw.MemoryImage(letterheadBytes),
+      letterheadAspectRatio: letterheadBytes == null ? null : _aspectRatioOf(letterheadBytes),
       principalStamp: await _fetchStamp(assets['principal_stamp']),
       proprietorStamp: await _fetchStamp(assets['proprietor_stamp']),
       disciplineMasterStamp: await _fetchStamp(assets['discipline_master_stamp']),
@@ -49,9 +56,14 @@ class OfficialBranding {
     return null;
   }
 
-  static Future<pw.MemoryImage?> _fetchImage(String? url) async {
-    final bytes = await _fetchBytes(url);
-    return bytes == null ? null : pw.MemoryImage(bytes);
+  static double? _aspectRatioOf(Uint8List bytes) {
+    try {
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null || decoded.height == 0) return null;
+      return decoded.width / decoded.height;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// A photographed/scanned stamp almost always sits on a white (or
@@ -117,6 +129,37 @@ pw.Widget buildDocumentHeader({
       pw.Text(schoolName, style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
       if (motto.isNotEmpty) pw.Text(motto, style: pw.TextStyle(fontSize: 10, fontStyle: pw.FontStyle.italic)),
     ],
+  );
+}
+
+/// The letterhead drawn edge to edge across [width] points, at exactly
+/// the image's own proportions: no fixed-height box, no padding, so
+/// there is no dead white space above, below or beside it and whatever
+/// follows starts right under it. Use it on a page with small margins
+/// (a few millimetres) and pass width = page width - both side margins.
+pw.Widget buildFullWidthLetterhead({
+  required OfficialBranding branding,
+  required double width,
+}) {
+  final image = branding.letterhead;
+  if (image == null) return pw.SizedBox();
+
+  final ratio = branding.letterheadAspectRatio;
+  if (ratio == null || ratio <= 0) {
+    // Proportions unknown: fall back to a fitted band rather than risk
+    // stretching the image.
+    return pw.Container(
+      width: width,
+      height: width / 6,
+      alignment: pw.Alignment.center,
+      child: pw.Image(image, fit: pw.BoxFit.contain),
+    );
+  }
+
+  return pw.SizedBox(
+    width: width,
+    height: width / ratio,
+    child: pw.Image(image, fit: pw.BoxFit.fill),
   );
 }
 

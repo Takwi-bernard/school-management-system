@@ -7,6 +7,8 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
+import '../../shared/official_document_branding.dart';
+
 /// Shared export utility - not Teacher-specific, so any future module
 /// (Parent, Principal, etc.) needing a class-list-style export can
 /// reuse this instead of duplicating export logic per feature.
@@ -51,6 +53,11 @@ class ExportService {
   /// caller should pass it. It's optional only so the service still
   /// compiles/works for a caller that genuinely has no school context;
   /// the fallback is a neutral gray, not a "default brand."
+  ///
+  /// [branding]: when it carries a letterhead, the page switches to small
+  /// margins (8 mm) and the letterhead is drawn edge to edge across the
+  /// top of the first page, with the title and table starting right
+  /// beneath it. Without a letterhead the layout is exactly as before.
   static Future<void> exportPdf({
     required String fileName,
     required String title,
@@ -58,6 +65,7 @@ class ExportService {
     required List<String> headers,
     required List<List<String>> rows,
     PdfColor? accentColor,
+    OfficialBranding? branding,
   }) async {
     final doc = pw.Document();
     final accent = accentColor ?? PdfColors.blueGrey700;
@@ -67,20 +75,42 @@ class ExportService {
     final luminance = 0.299 * accent.red + 0.587 * accent.green + 0.114 * accent.blue;
     final onAccent = luminance > 0.6 ? PdfColors.black : PdfColors.white;
 
+    final hasLetterhead = branding != null && branding.letterhead != null;
+    // A few millimetres from every page edge, so even a small letterhead
+    // image is drawn as large as the page allows.
+    const sideMargin = 8 * PdfPageFormat.mm;
+    const topMargin = 8 * PdfPageFormat.mm;
+    const bottomMargin = 12 * PdfPageFormat.mm;
+    final contentWidth = PdfPageFormat.a4.width - 2 * sideMargin;
+
     doc.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
+        margin: hasLetterhead
+            ? const pw.EdgeInsets.fromLTRB(sideMargin, topMargin, sideMargin, bottomMargin)
+            : null,
+        footer: (context) => pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            '${context.pageNumber} / ${context.pagesCount}',
+            style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
+          ),
+        ),
         build: (context) => [
-          pw.Text(title, style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
+          if (hasLetterhead) ...[
+            buildFullWidthLetterhead(branding: branding!, width: contentWidth),
+            pw.SizedBox(height: 8),
+          ],
+          pw.Text(title, style: pw.TextStyle(fontSize: hasLetterhead ? 15 : 20, fontWeight: pw.FontWeight.bold)),
           pw.SizedBox(height: 4),
-          pw.Text(subtitle, style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey700)),
-          pw.SizedBox(height: 16),
+          pw.Text(subtitle, style: pw.TextStyle(fontSize: hasLetterhead ? 10 : 12, color: PdfColors.grey700)),
+          pw.SizedBox(height: hasLetterhead ? 10 : 16),
           pw.TableHelper.fromTextArray(
             headers: headers,
             data: rows,
             headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: onAccent),
             headerDecoration: pw.BoxDecoration(color: accent),
-            cellPadding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            cellPadding: pw.EdgeInsets.symmetric(horizontal: 8, vertical: hasLetterhead ? 4 : 6),
             cellAlignment: pw.Alignment.centerLeft,
           ),
         ],
