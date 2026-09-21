@@ -7,7 +7,7 @@ import 'principal_providers.dart';
 
 // ============================================================
 // SLOT-FIRST TEACHING SLOT CREATOR
-// Department -> Class -> Subject -> periods/day/time -> Select Teacher
+// Department -> Class -> Subject -> periods/days/time -> Select Teacher
 // ============================================================
 
 class CreateTeachingSlotPage extends ConsumerStatefulWidget {
@@ -23,7 +23,7 @@ class _CreateTeachingSlotPageState extends ConsumerState<CreateTeachingSlotPage>
   ManagedClass? _class;
   ManagedSubject? _subject;
   final _periodsController = TextEditingController(text: '3');
-  int? _preferredDay;
+  final Set<int> _preferredDays = {};
   TimeOfDay? _start;
   TimeOfDay? _end;
 
@@ -110,9 +110,24 @@ class _CreateTeachingSlotPageState extends ConsumerState<CreateTeachingSlotPage>
                 if (_slotReady) ...[
                   TextFormField(controller: _periodsController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Periods per week', border: OutlineInputBorder())),
                   const SizedBox(height: 14),
-                  Text('Preferred teaching time (optional)', style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700)),
+                  Text('Preferred teaching days (optional)', style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  Text('A teacher can be free on more than one day - select all that apply.', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
                   const SizedBox(height: 8),
-                  Wrap(spacing: 6, children: List.generate(7, (i) => ChoiceChip(label: Text(_weekdays[i]), selected: _preferredDay == i + 1, onSelected: (sel) => setState(() => _preferredDay = sel ? i + 1 : null)))),
+                  Wrap(
+                    spacing: 6,
+                    children: List.generate(7, (i) => FilterChip(
+                          label: Text(_weekdays[i]),
+                          selected: _preferredDays.contains(i + 1),
+                          onSelected: (sel) => setState(() {
+                            if (sel) {
+                              _preferredDays.add(i + 1);
+                            } else {
+                              _preferredDays.remove(i + 1);
+                            }
+                          }),
+                        )),
+                  ),
                   const SizedBox(height: 10),
                   Row(children: [
                     Expanded(child: OutlinedButton(onPressed: () async { final p = await showTimePicker(context: context, initialTime: _start ?? const TimeOfDay(hour: 8, minute: 0)); if (p != null) setState(() => _start = p); }, child: Text(_start == null ? 'Start time' : _start!.format(context)))),
@@ -130,7 +145,7 @@ class _CreateTeachingSlotPageState extends ConsumerState<CreateTeachingSlotPage>
                         subjectId: _subject!.id,
                         subjectName: _subject!.subjectName,
                         periodsPerWeek: int.tryParse(_periodsController.text) ?? 1,
-                        preferredDay: _preferredDay,
+                        preferredDays: _preferredDays.isEmpty ? null : _preferredDays.toList(),
                         preferredStartTime: _fmtTime(_start),
                         preferredEndTime: _fmtTime(_end),
                       ),
@@ -159,7 +174,7 @@ class SelectTeacherDialog extends ConsumerStatefulWidget {
   final String subjectId;
   final String subjectName;
   final int periodsPerWeek;
-  final int? preferredDay;
+  final List<int>? preferredDays;
   final String? preferredStartTime;
   final String? preferredEndTime;
 
@@ -171,7 +186,7 @@ class SelectTeacherDialog extends ConsumerStatefulWidget {
     required this.subjectId,
     required this.subjectName,
     required this.periodsPerWeek,
-    this.preferredDay,
+    this.preferredDays,
     this.preferredStartTime,
     this.preferredEndTime,
   });
@@ -186,10 +201,6 @@ class _SelectTeacherDialogState extends ConsumerState<SelectTeacherDialog> {
   Future<void> _confirm(AllTeacherProfile teacher) async {
     setState(() => _saving = true);
     try {
-      // Fetched fresh, awaited, right here - no dependency on
-      // whether something loaded earlier in initState. This is what
-      // was silently failing before: a stale/not-yet-loaded value
-      // caused a silent early return with zero feedback.
       final academicYearId = await ref.read(principalRepositoryProvider).getCurrentAcademicYearId(widget.schoolId);
       final principal = await ref.read(principalProfileProvider.future);
 
@@ -228,7 +239,7 @@ class _SelectTeacherDialogState extends ConsumerState<SelectTeacherDialog> {
             classId: widget.classId,
             subjectId: widget.subjectId,
             periodsPerWeek: widget.periodsPerWeek,
-            preferredDay: widget.preferredDay,
+            preferredDays: widget.preferredDays,
             preferredStartTime: widget.preferredStartTime,
             preferredEndTime: widget.preferredEndTime,
           );
@@ -328,7 +339,6 @@ class _SelectTeacherDialogState extends ConsumerState<SelectTeacherDialog> {
     );
   }
 }
-
 
 // ============================================================
 // TEACHER OVERVIEW - every teacher, assigned or not, full profile

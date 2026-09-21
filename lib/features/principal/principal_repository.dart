@@ -93,14 +93,14 @@ class PrincipalRepository {
     return rows.map((r) => TeacherAssignmentInfo.fromMap(r)).toList();
   }
 
-  Future<void> createAssignment({
+    Future<void> createAssignment({
     required String schoolId,
     required String academicYearId,
     required String teacherId,
     required String classId,
     required String subjectId,
     required int periodsPerWeek,
-    int? preferredDay,
+    List<int>? preferredDays,
     String? preferredStartTime,
     String? preferredEndTime,
   }) async {
@@ -117,15 +117,50 @@ class PrincipalRepository {
         .select()
         .single();
 
-    if (preferredDay != null) {
-      await _client.from('teacher_period_preferences').insert({
-        'school_id': schoolId,
-        'teacher_assignment_id': inserted['id'],
-        'preferred_day': preferredDay,
-        'preferred_start_time': preferredStartTime,
-        'preferred_end_time': preferredEndTime,
-      });
+    // One preference row per selected day - the schema already
+    // supports this, the old UI just never let a teacher pick more
+    // than one at a time.
+    if (preferredDays != null && preferredDays.isNotEmpty) {
+      await _client.from('teacher_period_preferences').insert([
+        for (final day in preferredDays)
+          {
+            'school_id': schoolId,
+            'teacher_assignment_id': inserted['id'],
+            'preferred_day': day,
+            'preferred_start_time': preferredStartTime,
+            'preferred_end_time': preferredEndTime,
+          },
+      ]);
     }
+  }
+
+  Future<void> approveAndAssign({
+    required String schoolId,
+    required String academicYearId,
+    required String teacherId,
+    required bool wasAlreadyApproved,
+    required String principalId,
+    required String classId,
+    required String subjectId,
+    required int periodsPerWeek,
+    List<int>? preferredDays,
+    String? preferredStartTime,
+    String? preferredEndTime,
+  }) async {
+    if (!wasAlreadyApproved) {
+      await approveTeacher(teacherId, principalId);
+    }
+    await createAssignment(
+      schoolId: schoolId,
+      academicYearId: academicYearId,
+      teacherId: teacherId,
+      classId: classId,
+      subjectId: subjectId,
+      periodsPerWeek: periodsPerWeek,
+      preferredDays: preferredDays,
+      preferredStartTime: preferredStartTime,
+      preferredEndTime: preferredEndTime,
+    );
   }
 
   Future<void> deleteAssignment(String assignmentId) async {
@@ -1365,39 +1400,7 @@ Future<List<ManagedClass>> getClassesWithPendingAdmissions(String schoolId, Stri
     return rows.map((r) => AllTeacherProfile.fromMap(r)).toList();
   }
 
-  /// Filling a slot with a pending teacher approves them as part of
-  /// this same action - a separate silent auto-approve would hide
-  /// what just happened; this makes the approval explicit in the
-  /// same confirmation the UI already shows before calling it.
-  Future<void> approveAndAssign({
-    required String schoolId,
-    required String academicYearId,
-    required String teacherId,
-    required bool wasAlreadyApproved,
-    required String principalId,
-    required String classId,
-    required String subjectId,
-    required int periodsPerWeek,
-    int? preferredDay,
-    String? preferredStartTime,
-    String? preferredEndTime,
-  }) async {
-    if (!wasAlreadyApproved) {
-      await approveTeacher(teacherId, principalId);
-    }
-    await createAssignment(
-      schoolId: schoolId,
-      academicYearId: academicYearId,
-      teacherId: teacherId,
-      classId: classId,
-      subjectId: subjectId,
-      periodsPerWeek: periodsPerWeek,
-      preferredDay: preferredDay,
-      preferredStartTime: preferredStartTime,
-      preferredEndTime: preferredEndTime,
-    );
-  }
-
+  
 
 /// Only departments/classes that actually have marks for this term
 /// - mirrors the marks-review drill-down, so the Principal only
