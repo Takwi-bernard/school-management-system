@@ -41,7 +41,10 @@ class TeacherTimetableTab extends ConsumerWidget {
     return SafeArea(
       child: timetableAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('$e')),
+        error: (e, _) => TeacherErrorView(
+          error: e,
+          onRetry: () => ref.invalidate(teacherTimetableProvider),
+        ),
         data: (entries) {
           if (entries.isEmpty) {
             return Center(

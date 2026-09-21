@@ -46,9 +46,29 @@ class TeacherRepository {
     required Uint8List bytes,
     required String extension,
   }) async {
-    final path = '$schoolId/$userId/${DateTime.now().millisecondsSinceEpoch}.$extension';
-    await client.storage.from('staff-photos').uploadBinary(path, bytes);
-    return client.storage.from('staff-photos').getPublicUrl(path);
+    final ext = extension.toLowerCase();
+    const contentTypes = {
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'webp': 'image/webp',
+    };
+    final contentType = contentTypes[ext];
+    if (contentType == null) {
+      throw const FormatException('Unsupported image type.');
+    }
+
+    // One fixed file per teacher and format, replaced in place (upsert),
+    // so changing photos never piles up orphaned files in the bucket.
+    final path = '$schoolId/$userId/avatar.$ext';
+    await client.storage.from('staff-photos').uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: contentType, upsert: true),
+        );
+    final url = client.storage.from('staff-photos').getPublicUrl(path);
+    // The path stays the same, so add a version to defeat browser caching.
+    return '$url?v=${DateTime.now().millisecondsSinceEpoch}';
   }
 
   Future<String?> _currentAcademicYearId(String schoolId) async {
@@ -109,20 +129,56 @@ class TeacherRepository {
   }) async {
     final rows = await client
         .from('class_enrollments')
-        .select('students(*)')
+        .select(
+            'students(id, admission_number, first_name, last_name, gender, student_photo_url)')
         .eq('class_id', classId)
         .eq('academic_year_id', academicYearId)
         .eq('enrollment_status', 'active');
 
-    return rows.map((r) => RosterStudent.fromMap(r)).toList()
+    final students = rows.map((r) => RosterStudent.fromMap(r)).toList()
       ..sort((a, b) => a.fullName.compareTo(b.fullName));
+    return _withSignedPhotoUrls(students);
+  }
+
+  // The student-photos bucket is private, so a stored public URL will not
+  // load. Turn each stored URL/path into a short-lived signed URL.
+  static const _studentPhotoBucket = 'student-photos';
+
+  String? _studentPhotoPath(String stored) {
+    if (!stored.startsWith('http')) return stored; // already a bare path
+    const marker = '/$_studentPhotoBucket/';
+    final index = stored.indexOf(marker);
+    if (index == -1) return null;
+    final path = stored.substring(index + marker.length).split('?').first;
+    return Uri.decodeComponent(path);
+  }
+
+  Future<List<RosterStudent>> _withSignedPhotoUrls(List<RosterStudent> students) {
+    final storage = client.storage.from(_studentPhotoBucket);
+    return Future.wait(students.map((student) async {
+      final stored = student.photoUrl;
+      if (stored == null || stored.isEmpty) return student;
+      final path = _studentPhotoPath(stored);
+      if (path == null) return student;
+      try {
+        final signed = await storage.createSignedUrl(path, 6 * 60 * 60);
+        return student.withPhotoUrl(signed);
+      } catch (_) {
+        // A photo that cannot be signed just shows the placeholder icon.
+        return student.withPhotoUrl(null);
+      }
+    }));
   }
 
   Future<List<ExamPeriod>> getExamPeriods(String schoolId) async {
+    final yearId = await _currentAcademicYearId(schoolId);
+    if (yearId == null) return [];
+
     final rows = await client
         .from('exam_periods')
         .select()
         .eq('school_id', schoolId)
+        .eq('academic_year_id', yearId)
         .order('sequence_order');
     return rows.map((r) => ExamPeriod.fromMap(r)).toList();
   }
@@ -132,12 +188,14 @@ class TeacherRepository {
   Future<List<MarkEntry>> getMarks({
     required String classId,
     required String subjectId,
+    required String academicYearId,
   }) async {
     final rows = await client
         .from('marks')
         .select()
         .eq('class_id', classId)
-        .eq('subject_id', subjectId);
+        .eq('subject_id', subjectId)
+        .eq('academic_year_id', academicYearId);
     return rows.map((r) => MarkEntry.fromMap(r)).toList();
   }
 
@@ -217,11 +275,15 @@ class TeacherRepository {
   }
 
   Future<List<TeacherTimetableEntry>> getTimetable(TeacherProfile profile) async {
+    final yearId = await _currentAcademicYearId(profile.schoolId);
+    if (yearId == null) return [];
+
     final rows = await client
         .from('timetable_items')
         .select(
-            '*, teacher_assignments!inner(teacher_id, subjects(subject_name), classes(class_name))')
-        .eq('teacher_assignments.teacher_id', profile.teacherId);
+            '*, teacher_assignments!inner(teacher_id, academic_year_id, subjects(subject_name), classes(class_name))')
+        .eq('teacher_assignments.teacher_id', profile.teacherId)
+        .eq('teacher_assignments.academic_year_id', yearId);
 
     return rows.map((r) => TeacherTimetableEntry.fromMap(r)).toList()
       ..sort((a, b) {

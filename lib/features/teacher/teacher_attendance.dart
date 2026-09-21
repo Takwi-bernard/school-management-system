@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -22,21 +23,30 @@ class TeacherAttendancePage extends ConsumerStatefulWidget {
 }
 
 class _TeacherAttendancePageState extends ConsumerState<TeacherAttendancePage> {
-  DateTime _date = DateTime.now();
+  // Date only (no time of day) so the provider key is stable and the
+  // cache/invalidate below actually match.
+  static DateTime _today() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  DateTime _date = _today();
   final Map<String, String> _status = {};
   bool _saving = false;
   bool _loadedForDate = false;
 
   Future<void> _pickDate() async {
+    final today = _today();
     final picked = await showDatePicker(
       context: context,
       initialDate: _date,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
+      // Attendance cannot be recorded for the future.
+      firstDate: DateTime(today.year - 1, today.month, today.day),
+      lastDate: today,
     );
     if (picked != null) {
       setState(() {
-        _date = picked;
+        _date = DateTime(picked.year, picked.month, picked.day);
         _status.clear();
         _loadedForDate = false;
       });
@@ -58,10 +68,18 @@ class _TeacherAttendancePageState extends ConsumerState<TeacherAttendancePage> {
             entries: entries,
           );
 
+      // Re-read from the database next time this date is opened.
+      ref.invalidate(attendanceForDateProvider((
+        classId: widget.assignment.classId,
+        subjectId: widget.assignment.subjectId,
+        date: _date,
+      )));
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings.attendanceSavedMessage)));
       }
     } catch (e) {
+      debugPrint('[TeacherAttendance] save failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings.saveAttendanceError)));
       }
@@ -106,11 +124,25 @@ class _TeacherAttendancePageState extends ConsumerState<TeacherAttendancePage> {
               Expanded(
                 child: rosterAsync.when(
                   loading: () => const Center(child: CircularProgressIndicator()),
-                  error: (e, _) => Center(child: Text('$e')),
+                  error: (e, _) => TeacherErrorView(
+                    error: e,
+                    onRetry: () => ref.invalidate(rosterProvider((
+                      classId: widget.assignment.classId,
+                      academicYearId: widget.assignment.academicYearId,
+                    ))),
+                  ),
                   data: (students) {
                     return existingAsync.when(
+                      skipLoadingOnReload: true,
                       loading: () => const Center(child: CircularProgressIndicator()),
-                      error: (e, _) => Center(child: Text('$e')),
+                      error: (e, _) => TeacherErrorView(
+                        error: e,
+                        onRetry: () => ref.invalidate(attendanceForDateProvider((
+                          classId: widget.assignment.classId,
+                          subjectId: widget.assignment.subjectId,
+                          date: _date,
+                        ))),
+                      ),
                       data: (existing) {
                         if (!_loadedForDate) {
                           for (final s in students) {
@@ -143,7 +175,20 @@ class _TeacherAttendancePageState extends ConsumerState<TeacherAttendancePage> {
                                 ),
                               ]),
                             ),
-                            const SizedBox(height: 18),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
+                              children: [
+                                for (final entry in statusLabels.entries)
+                                  _countChip(
+                                    theme,
+                                    entry.value,
+                                    _status.values.where((v) => v == entry.key).length,
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
                             Expanded(
                               child: TeacherCard(
                                 padding: EdgeInsets.zero,
@@ -194,6 +239,17 @@ class _TeacherAttendancePageState extends ConsumerState<TeacherAttendancePage> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _countChip(ThemeData theme, String label, int count) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text('$label: $count', style: theme.textTheme.labelMedium),
     );
   }
 

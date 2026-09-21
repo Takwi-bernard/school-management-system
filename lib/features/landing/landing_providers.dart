@@ -27,7 +27,23 @@ final localeOverrideProvider = StateProvider<Locale?>((ref) => null);
 final landingProvider = FutureProvider<LandingModel>((ref) async {
   final locale = ref.watch(activeLocaleProvider);
   final repository = ref.watch(landingRepositoryProvider);
-  return repository.load(language: locale.languageCode);
+  final model = await repository.load(language: locale.languageCode);
+
+  // Remember the school's default language as soon as we know it - here,
+  // not only when the landing page is on screen. Otherwise opening or
+  // reloading /sign-in or /teacher directly would show a French-only
+  // school in English, because the landing page never ran.
+  try {
+    final notifier = ref.read(_lastKnownLanguageModeProvider.notifier);
+    if (notifier.state != model.languageMode) {
+      notifier.state = model.languageMode;
+    }
+  } catch (_) {
+    // The provider was already rebuilt/disposed while loading (for
+    // example the language was toggled) - nothing to record.
+  }
+
+  return model;
 });
 
 /// FIX: previously hardcoded to Locale('en') regardless of the school's

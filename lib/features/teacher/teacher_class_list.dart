@@ -10,6 +10,7 @@ import '../landing/landing_providers.dart';
 import 'teacher_models.dart';
 import 'teacher_navigation.dart';
 import 'teacher_providers.dart';
+import 'teacher_strings.dart';
 import 'teacher_ui.dart';
 
 /// Reached via pushTeacherContent, not Navigator.push - stays inside
@@ -52,6 +53,7 @@ class TeacherClassListPage extends ConsumerWidget {
                   TeacherBackHeader(title: assignment.className, subtitle: assignment.subjectName, onBack: () => popTeacherContent(ref)),
                   const SizedBox(height: 20),
                   ErrorStateView(
+                    error: e,
                     onRetry: () => ref.invalidate(
                       rosterProvider((classId: assignment.classId, academicYearId: assignment.academicYearId)),
                     ),
@@ -87,12 +89,12 @@ class TeacherClassListPage extends ConsumerWidget {
                       IconButton(
                         icon: const Icon(Icons.table_view_outlined),
                         tooltip: 'Excel',
-                        onPressed: students.isEmpty ? null : () => _exportExcel(students, schoolName),
+                        onPressed: students.isEmpty ? null : () => _exportExcel(students, strings),
                       ),
                       IconButton(
                         icon: const Icon(Icons.picture_as_pdf_outlined),
                         tooltip: 'PDF',
-                        onPressed: students.isEmpty ? null : () => _exportPdf(students, schoolName, theme.colorScheme.primary),
+                        onPressed: students.isEmpty ? null : () => _exportPdf(students, schoolName, theme.colorScheme.primary, strings),
                       ),
                     ]),
                     const SizedBox(height: 8),
@@ -122,6 +124,7 @@ class TeacherClassListPage extends ConsumerWidget {
                                     radius: 18,
                                     backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
                                     backgroundImage: students[i].photoUrl != null ? NetworkImage(students[i].photoUrl!) : null,
+                                    onBackgroundImageError: students[i].photoUrl != null ? (_, __) {} : null,
                                     child: students[i].photoUrl == null
                                         ? Icon(Icons.person_outline, color: theme.colorScheme.primary, size: 18)
                                         : null,
@@ -140,7 +143,7 @@ class TeacherClassListPage extends ConsumerWidget {
                                       color: theme.colorScheme.surfaceContainerHighest,
                                       borderRadius: BorderRadius.circular(10),
                                     ),
-                                    child: Text(students[i].gender, style: theme.textTheme.labelSmall),
+                                    child: Text(strings.tGenderLabel(students[i].gender), style: theme.textTheme.labelSmall),
                                   ),
                                 ]),
                               ),
@@ -159,38 +162,40 @@ class TeacherClassListPage extends ConsumerWidget {
     );
   }
 
-  void _exportExcel(List<RosterStudent> students, String schoolName) {
-    ExportService.exportExcel(
-      fileName: '${assignment.className}_${assignment.subjectName}_class_list.xlsx',
-      headers: const ['#', 'Full Name', 'Admission No.', 'Gender'],
-      rows: [
+  // Keeps letters, digits, underscore and dash so the file name is safe
+  // on every operating system.
+  String _safeName(String value) => value.replaceAll(RegExp(r'[^\w\-]+'), '_');
+
+  String get _baseFileName => '${_safeName(assignment.className)}_${_safeName(assignment.subjectName)}_class_list';
+
+  List<String> _headers(AppStrings strings) => ['#', strings.fullName, strings.tAdmissionNo, strings.tGender];
+
+  List<List<String>> _rows(List<RosterStudent> students, AppStrings strings) => [
         for (var i = 0; i < students.length; i++)
           [
             '${i + 1}',
             students[i].fullName,
             students[i].admissionNumber,
-            students[i].gender,
+            strings.tGenderLabel(students[i].gender),
           ],
-      ],
+      ];
+
+  void _exportExcel(List<RosterStudent> students, AppStrings strings) {
+    ExportService.exportExcel(
+      fileName: '$_baseFileName.xlsx',
+      headers: _headers(strings),
+      rows: _rows(students, strings),
     );
   }
 
-  Future<void> _exportPdf(List<RosterStudent> students, String schoolName, Color primary) async {
+  Future<void> _exportPdf(List<RosterStudent> students, String schoolName, Color primary, AppStrings strings) async {
     await ExportService.exportPdf(
-      fileName: '${assignment.className}_${assignment.subjectName}_class_list.pdf',
+      fileName: '$_baseFileName.pdf',
       title: '$schoolName - ${assignment.className}',
-      subtitle: '${assignment.subjectName} - Class List (${students.length} students)',
-      headers: const ['#', 'Full Name', 'Admission No.', 'Gender'],
+      subtitle: '${assignment.subjectName} - ${strings.tClassListTitle} (${students.length} ${strings.studentsLabel})',
+      headers: _headers(strings),
       accentColor: PdfColor.fromInt(primary.toARGB32()),
-      rows: [
-        for (var i = 0; i < students.length; i++)
-          [
-            '${i + 1}',
-            students[i].fullName,
-            students[i].admissionNumber,
-            students[i].gender,
-          ],
-      ],
+      rows: _rows(students, strings),
     );
   }
 }

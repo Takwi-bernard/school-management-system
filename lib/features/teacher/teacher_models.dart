@@ -119,6 +119,19 @@ class RosterStudent {
 
   String get fullName => '$firstName $lastName';
 
+  /// Same student with a different photo URL (or none). A separate
+  /// method rather than copyWith so passing null really clears it.
+  RosterStudent withPhotoUrl(String? url) {
+    return RosterStudent(
+      studentId: studentId,
+      admissionNumber: admissionNumber,
+      firstName: firstName,
+      lastName: lastName,
+      photoUrl: url,
+      gender: gender,
+    );
+  }
+
   factory RosterStudent.fromMap(Map<String, dynamic> map) {
     final student = map['students'] as Map<String, dynamic>? ?? map;
     return RosterStudent(
@@ -126,7 +139,8 @@ class RosterStudent {
       admissionNumber: student['admission_number'] as String? ?? '',
       firstName: student['first_name'] as String? ?? '',
       lastName: student['last_name'] as String? ?? '',
-      photoUrl: student['photo_url'] as String?,
+      // The column is students.student_photo_url (not photo_url).
+      photoUrl: student['student_photo_url'] as String?,
       gender: student['gender'] as String? ?? '',
     );
   }
@@ -144,6 +158,7 @@ class MarkEntry {
   final double score;
   final String status;
   final String? remarks;
+  final String? principalFeedback;
 
   const MarkEntry({
     this.id,
@@ -154,6 +169,7 @@ class MarkEntry {
     required this.score,
     this.status = 'draft',
     this.remarks,
+    this.principalFeedback,
   });
 
   factory MarkEntry.fromMap(Map<String, dynamic> map) {
@@ -166,6 +182,7 @@ class MarkEntry {
       score: (map['score'] as num).toDouble(),
       status: map['status'] as String? ?? 'draft',
       remarks: map['remarks'] as String?,
+      principalFeedback: map['principal_feedback'] as String?,
     );
   }
 }
@@ -173,12 +190,14 @@ class MarkEntry {
 class ExamPeriod {
   final String id;
   final String name;
+  final String academicYearId;
   final bool isOpen;
   final DateTime? dueDate;
 
   const ExamPeriod({
     required this.id,
     required this.name,
+    required this.academicYearId,
     required this.isOpen,
     this.dueDate,
   });
@@ -186,7 +205,9 @@ class ExamPeriod {
   factory ExamPeriod.fromMap(Map<String, dynamic> map) {
     return ExamPeriod(
       id: map['id'] as String,
-      name: map['name'] as String? ?? '',
+      // The column is exam_periods.period_name (not name).
+      name: map['period_name'] as String? ?? '',
+      academicYearId: map['academic_year_id'] as String? ?? '',
       isOpen: map['is_open'] as bool? ?? false,
       dueDate: map['marks_due_date'] != null
           ? DateTime.tryParse(map['marks_due_date'] as String)

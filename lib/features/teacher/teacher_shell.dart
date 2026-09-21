@@ -24,8 +24,11 @@ import 'teacher_timetable.dart';
 /// actual palette.
 enum TeacherDestination { dashboard, timetable, profile }
 
-final teacherActiveDestinationProvider =
-    StateProvider<TeacherDestination>((ref) => TeacherDestination.dashboard);
+final teacherActiveDestinationProvider = StateProvider<TeacherDestination>((ref) {
+  // Back to the dashboard whenever a different user signs in.
+  ref.watch(teacherUserIdProvider);
+  return TeacherDestination.dashboard;
+});
 
 class TeacherShell extends ConsumerWidget {
   final TeacherProfile profile;

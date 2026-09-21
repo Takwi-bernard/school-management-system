@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -7,6 +8,7 @@ import '../../core/responsive.dart';
 import '../landing/landing_providers.dart';
 import 'teacher_models.dart';
 import 'teacher_providers.dart';
+import 'teacher_strings.dart';
 import '../../shared/sign_out_button.dart';
 import 'teacher_ui.dart';
 
@@ -36,13 +38,30 @@ class _TeacherProfileTabState extends ConsumerState<TeacherProfileTab> {
   }
 
   Future<void> _changePhoto(AppStrings strings) async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 80);
-    if (picked == null) return;
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1024,
+      maxHeight: 1024,
+      imageQuality: 80,
+    );
+    if (picked == null || !mounted) return;
+
+    final ext = (picked.name.contains('.') ? picked.name.split('.').last : 'jpg').toLowerCase();
+    const allowedExtensions = {'jpg', 'jpeg', 'png', 'webp'};
+    if (!allowedExtensions.contains(ext)) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings.tPhotoBadType)));
+      return;
+    }
 
     setState(() => _uploadingPhoto = true);
     try {
       final bytes = await picked.readAsBytes();
-      final ext = picked.name.contains('.') ? picked.name.split('.').last : 'jpg';
+      if (bytes.length > 5 * 1024 * 1024) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings.tPhotoTooLarge)));
+        }
+        return;
+      }
       final url = await ref.read(teacherRepositoryProvider).uploadProfilePhoto(
             schoolId: widget.profile.schoolId,
             userId: widget.profile.userId,
@@ -57,7 +76,8 @@ class _TeacherProfileTabState extends ConsumerState<TeacherProfileTab> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings.photoUpdatedMessage)));
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[TeacherProfile] photo upload failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings.photoUploadError)));
       }
@@ -67,6 +87,11 @@ class _TeacherProfileTabState extends ConsumerState<TeacherProfileTab> {
   }
 
   Future<void> _save(AppStrings strings) async {
+    if (_nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings.tNameRequired)));
+      return;
+    }
+
     setState(() => _saving = true);
     try {
       await ref.read(teacherRepositoryProvider).updateProfile(
@@ -78,7 +103,8 @@ class _TeacherProfileTabState extends ConsumerState<TeacherProfileTab> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings.profileUpdatedMessage)));
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[TeacherProfile] save failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings.profileSaveError)));
       }

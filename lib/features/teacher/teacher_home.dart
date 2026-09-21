@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +12,7 @@ import '../auth/auth_gate.dart';
 import '../landing/landing_providers.dart';
 import 'teacher_models.dart';
 import 'teacher_providers.dart';
+import 'teacher_strings.dart';
 import 'teacher_shell.dart';
 import '../../shared/sign_out_button.dart';
 import 'teacher_ui.dart';
@@ -23,14 +26,24 @@ class TeacherHome extends ConsumerWidget {
     final locale = ref.watch(activeLocaleProvider);
 
     return landing.when(
+      // A language switch (or the one-time refetch for French schools)
+      // reloads the school data; keep the dashboard on screen meanwhile.
+      skipLoadingOnReload: true,
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Scaffold(body: Center(child: Text('$e'))),
+      error: (e, _) => Scaffold(
+        body: TeacherErrorView(error: e, onRetry: () => ref.invalidate(landingProvider)),
+      ),
       data: (school) {
         final sessionAsync = ref.watch(sessionProfileProvider(school.schoolId));
 
         return sessionAsync.when(
           loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-          error: (e, _) => Scaffold(body: Center(child: Text('$e'))),
+          error: (e, _) => Scaffold(
+            body: TeacherErrorView(
+              error: e,
+              onRetry: () => ref.invalidate(sessionProfileProvider(school.schoolId)),
+            ),
+          ),
           data: (session) {
             if (session == null) {
               WidgetsBinding.instance.addPostFrameCallback((_) => context.go('/sign-in'));
@@ -64,8 +77,13 @@ class _TeacherProfileGate extends ConsumerWidget {
     final strings = AppStrings(locale);
 
     return profileAsync.when(
+      // Keep whatever is on screen while the profile refreshes (after a
+      // profile edit, or the "check status" refresh on the pending page).
+      skipLoadingOnReload: true,
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Scaffold(body: Center(child: Text('$e'))),
+      error: (e, _) => Scaffold(
+        body: TeacherErrorView(error: e, onRetry: () => ref.invalidate(teacherProfileProvider)),
+      ),
       data: (profile) {
         if (profile == null) {
           return Scaffold(body: Center(child: Text(strings.profileNotFound)));
@@ -105,7 +123,7 @@ class _TeacherProfileGate extends ConsumerWidget {
   }
 }
 
-class _PendingApproval extends ConsumerWidget {
+class _PendingApproval extends ConsumerStatefulWidget {
   final String schoolName;
   final String motto;
   final String logoUrl;
@@ -123,7 +141,43 @@ class _PendingApproval extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_PendingApproval> createState() => _PendingApprovalState();
+}
+
+class _PendingApprovalState extends ConsumerState<_PendingApproval> {
+  Timer? _poll;
+  bool _checking = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Re-check every 30 seconds so the teacher gets in as soon as the
+    // principal approves, without having to reload the page.
+    _poll = Timer.periodic(const Duration(seconds: 30), (_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    if (!mounted || _checking) return;
+    setState(() => _checking = true);
+    ref.invalidate(teacherProfileProvider);
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    if (mounted) setState(() => _checking = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final schoolName = widget.schoolName;
+    final motto = widget.motto;
+    final logoUrl = widget.logoUrl;
+    final principalEmail = widget.principalEmail;
+    final rejected = widget.rejected;
+    final strings = widget.strings;
     final theme = Theme.of(context);
     final isWide = MediaQuery.sizeOf(context).width >= 720;
 
@@ -243,6 +297,14 @@ class _PendingApproval extends ConsumerWidget {
                                   ),
                                 ),
                               ]),
+                            ),
+                          ],
+                          if (!rejected) ...[
+                            const SizedBox(height: 20),
+                            OutlinedButton.icon(
+                              onPressed: _checking ? null : _refresh,
+                              icon: const Icon(Icons.refresh_rounded, size: 18),
+                              label: Text(strings.tCheckStatus),
                             ),
                           ],
                           const SizedBox(height: 28),

@@ -41,7 +41,10 @@ class TeacherDashboardTab extends ConsumerWidget {
                   padding: EdgeInsets.symmetric(vertical: 60),
                   child: Center(child: CircularProgressIndicator()),
                 ),
-                error: (e, _) => Center(child: Text('$e')),
+                error: (e, _) => TeacherErrorView(
+                  error: e,
+                  onRetry: () => ref.invalidate(teacherAssignmentsProvider),
+                ),
                 data: (assignments) {
                   final subjectCount = assignments.map((a) => a.subjectId).toSet().length;
                   final classCount = assignments.map((a) => a.classId).toSet().length;

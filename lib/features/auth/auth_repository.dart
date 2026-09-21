@@ -42,11 +42,14 @@ class AuthRepository {
   Future<UserProfile?> fetchProfile(String userId) async {
     final row = await _client
         .from('users')
-        .select('id, role, school_id')
+        .select('id, role, school_id, is_active')
         .eq('id', userId)
         .maybeSingle();
 
     if (row == null) return null;
+    // A deactivated account is treated as "no profile" so it cannot get
+    // past the sign-in gate (the caller signs the user out).
+    if (row['is_active'] == false) return null;
     return UserProfile(
       userId: row['id'] as String,
       role: row['role'] as String,

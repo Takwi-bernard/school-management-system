@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../core/error_state.dart';
+
 /// Small local design system for the Teacher module. Kept quiet and
 /// disciplined on purpose - the sidebar (see teacher_shell.dart) is
 /// the one bold gesture in this module; everything here just needs
@@ -215,6 +217,28 @@ class TeacherEmptyState extends StatelessWidget {
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         ],
+      ),
+    );
+  }
+}
+
+/// Friendly, centered error card with an optional retry button. Replaces
+/// the bare Text('$e') that used to print raw exception text at teachers.
+class TeacherErrorView extends StatelessWidget {
+  final Object? error;
+  final VoidCallback? onRetry;
+
+  const TeacherErrorView({super.key, this.error, this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: ErrorStateView(error: error, onRetry: onRetry),
+        ),
       ),
     );
   }

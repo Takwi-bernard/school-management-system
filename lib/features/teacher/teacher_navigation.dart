@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'teacher_providers.dart' show teacherUserIdProvider;
+
 /// A single "screen" shown inside the current tab's content area.
 ///
 /// This module's drill-down is shallow (dashboard -> assignment detail
@@ -19,7 +21,11 @@ class TeacherContentPage {
   const TeacherContentPage({required this.title, required this.builder});
 }
 
-final teacherContentStackProvider = StateProvider<List<TeacherContentPage>>((ref) => []);
+/// Resets to an empty stack whenever a different user signs in.
+final teacherContentStackProvider = StateProvider<List<TeacherContentPage>>((ref) {
+  ref.watch(teacherUserIdProvider);
+  return const <TeacherContentPage>[];
+});
 
 void pushTeacherContent(WidgetRef ref, TeacherContentPage page) {
   ref.read(teacherContentStackProvider.notifier).update((stack) => [...stack, page]);
