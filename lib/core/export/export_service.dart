@@ -54,10 +54,21 @@ class ExportService {
   /// compiles/works for a caller that genuinely has no school context;
   /// the fallback is a neutral gray, not a "default brand."
   ///
-  /// [branding]: when it carries a letterhead, the page switches to small
-  /// margins (8 mm) and the letterhead is drawn edge to edge across the
-  /// top of the first page, with the title and table starting right
-  /// beneath it. Without a letterhead the layout is exactly as before.
+  /// [branding]: when it carries a letterhead, the PAGE itself uses small
+  /// margins (8 mm) so the letterhead image is drawn edge to edge, close
+  /// to the full width of the paper. The BODY (title, subtitle, table)
+  /// is then independently inset by [_bodySideMargin] (2.5 cm) from the
+  /// page edge, like a normal letter - it does not line up with the
+  /// letterhead's own margin. Without a letterhead the whole page,
+  /// including the body, uses that same 2.5 cm margin throughout.
+  static const _letterheadSideMargin = 8 * PdfPageFormat.mm;
+  static const _letterheadTopMargin = 8 * PdfPageFormat.mm;
+  static const _letterheadBottomMargin = 12 * PdfPageFormat.mm;
+
+  static const _bodySideMargin = 2.5 * PdfPageFormat.cm;
+  static const _bodyTopMargin = 2.5 * PdfPageFormat.cm;
+  static const _bodyBottomMargin = 2.5 * PdfPageFormat.cm;
+
   static Future<void> exportPdf({
     required String fileName,
     required String title,
@@ -76,19 +87,40 @@ class ExportService {
     final onAccent = luminance > 0.6 ? PdfColors.black : PdfColors.white;
 
     final hasLetterhead = branding != null && branding.letterhead != null;
-    // A few millimetres from every page edge, so even a small letterhead
-    // image is drawn as large as the page allows.
-    const sideMargin = 8 * PdfPageFormat.mm;
-    const topMargin = 8 * PdfPageFormat.mm;
-    const bottomMargin = 12 * PdfPageFormat.mm;
-    final contentWidth = PdfPageFormat.a4.width - 2 * sideMargin;
+    final letterheadWidth = PdfPageFormat.a4.width - 2 * _letterheadSideMargin;
+    // How much further in than the page margin the body needs to sit -
+    // 0 when the body margin is already the page margin (no letterhead).
+    final bodyExtraInset = hasLetterhead ? (_bodySideMargin - _letterheadSideMargin) : 0.0;
+
+    final bodyContent = pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(title, style: pw.TextStyle(fontSize: hasLetterhead ? 15 : 20, fontWeight: pw.FontWeight.bold)),
+        pw.SizedBox(height: 4),
+        pw.Text(subtitle, style: pw.TextStyle(fontSize: hasLetterhead ? 10 : 12, color: PdfColors.grey700)),
+        pw.SizedBox(height: hasLetterhead ? 10 : 16),
+        pw.TableHelper.fromTextArray(
+          headers: headers,
+          data: rows,
+          headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: onAccent),
+          headerDecoration: pw.BoxDecoration(color: accent),
+          cellPadding: pw.EdgeInsets.symmetric(horizontal: 8, vertical: hasLetterhead ? 4 : 6),
+          cellAlignment: pw.Alignment.centerLeft,
+        ),
+      ],
+    );
 
     doc.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
+        // The page frame follows the LETTERHEAD margin (tight) when
+        // there is one, so the image can run close to full width; the
+        // body's own wider margin is added back with a Padding below,
+        // independently of this.
         margin: hasLetterhead
-            ? const pw.EdgeInsets.fromLTRB(sideMargin, topMargin, sideMargin, bottomMargin)
-            : null,
+            ? const pw.EdgeInsets.fromLTRB(
+                _letterheadSideMargin, _letterheadTopMargin, _letterheadSideMargin, _letterheadBottomMargin)
+            : const pw.EdgeInsets.fromLTRB(_bodySideMargin, _bodyTopMargin, _bodySideMargin, _bodyBottomMargin),
         footer: (context) => pw.Align(
           alignment: pw.Alignment.centerRight,
           child: pw.Text(
@@ -98,21 +130,14 @@ class ExportService {
         ),
         build: (context) => [
           if (hasLetterhead) ...[
-            buildFullWidthLetterhead(branding: branding!, width: contentWidth),
-            pw.SizedBox(height: 8),
-          ],
-          pw.Text(title, style: pw.TextStyle(fontSize: hasLetterhead ? 15 : 20, fontWeight: pw.FontWeight.bold)),
-          pw.SizedBox(height: 4),
-          pw.Text(subtitle, style: pw.TextStyle(fontSize: hasLetterhead ? 10 : 12, color: PdfColors.grey700)),
-          pw.SizedBox(height: hasLetterhead ? 10 : 16),
-          pw.TableHelper.fromTextArray(
-            headers: headers,
-            data: rows,
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: onAccent),
-            headerDecoration: pw.BoxDecoration(color: accent),
-            cellPadding: pw.EdgeInsets.symmetric(horizontal: 8, vertical: hasLetterhead ? 4 : 6),
-            cellAlignment: pw.Alignment.centerLeft,
-          ),
+            buildFullWidthLetterhead(branding: branding!, width: letterheadWidth),
+            pw.SizedBox(height: 14),
+            pw.Padding(
+              padding: pw.EdgeInsets.symmetric(horizontal: bodyExtraInset),
+              child: bodyContent,
+            ),
+          ] else
+            bodyContent,
         ],
       ),
     );
