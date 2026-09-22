@@ -363,6 +363,8 @@ class _GenerateTimetablePageState extends ConsumerState<GenerateTimetablePage> {
 // VIEW / DOWNLOAD TIMETABLE - Department -> Class -> weekly grid
 // ============================================================
 
+enum _ViewScope { class_, department, school }
+
 class ViewTimetablePage extends ConsumerStatefulWidget {
   final String schoolId;
   final LandingModel landing;
@@ -373,19 +375,15 @@ class ViewTimetablePage extends ConsumerStatefulWidget {
 }
 
 class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
+  _ViewScope _scope = _ViewScope.class_;
   DepartmentFull? _department;
   ManagedClass? _class;
 
-  PdfColor _parseColor(String hex) {
-    var v = hex.replaceAll('#', '');
-    if (v.length == 6) v = 'FF$v';
-    return PdfColor.fromInt(int.tryParse(v, radix: 16) ?? 0xFF1A73E8);
+  void _resetSelection() {
+    setState(() { _department = null; _class = null; });
   }
 
-  Future<void> _downloadPdf(List<TimetableSlot> slots) async {
-    final assets = await ref.read(officialBrandingProvider(widget.schoolId).future);
-    final branding = await OfficialBranding.fetch(assets);
-
+  pw.Widget _buildClassSection(String className, List<TimetableSlot> slots) {
     final byDay = <String, List<TimetableSlot>>{};
     for (final s in slots) {
       byDay.putIfAbsent(s.dayOfWeek, () => []).add(s);
@@ -393,6 +391,44 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
     for (final list in byDay.values) {
       list.sort((a, b) => a.startTime.compareTo(b.startTime));
     }
+
+    return pw.Column(children: [
+      pw.Text('$className - Weekly Timetable', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+      pw.SizedBox(height: 10),
+      pw.Table(
+        border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey400),
+        children: [
+          pw.TableRow(decoration: const pw.BoxDecoration(color: PdfColors.grey200), children: [
+            for (final d in ['1', '2', '3', '4', '5', '6'])
+              pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(_dayNames[d] ?? '', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center)),
+          ]),
+          pw.TableRow(children: [
+            for (final d in ['1', '2', '3', '4', '5', '6'])
+              pw.Padding(
+                padding: const pw.EdgeInsets.all(4),
+                child: pw.Column(children: [
+                  for (final slot in (byDay[d] ?? []))
+                    pw.Container(
+                      margin: const pw.EdgeInsets.only(bottom: 4),
+                      padding: const pw.EdgeInsets.all(4),
+                      decoration: pw.BoxDecoration(color: slot.needsTeacher ? PdfColors.orange100 : PdfColors.blue50, borderRadius: pw.BorderRadius.circular(3)),
+                      child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+                        pw.Text('${slot.startTime}-${slot.endTime}', style: const pw.TextStyle(fontSize: 7)),
+                        pw.Text(slot.subjectName, style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                        pw.Text(slot.needsTeacher ? 'No teacher yet' : (slot.teacherName ?? ''), style: pw.TextStyle(fontSize: 7, color: slot.needsTeacher ? PdfColors.orange900 : PdfColors.grey700)),
+                      ]),
+                    ),
+                ]),
+              ),
+          ]),
+        ],
+      ),
+    ]);
+  }
+
+  Future<void> _downloadSingleClass(String className, List<TimetableSlot> slots) async {
+    final assets = await ref.read(officialBrandingProvider(widget.schoolId).future);
+    final branding = await OfficialBranding.fetch(assets);
 
     final doc = pw.Document();
     doc.addPage(pw.Page(
@@ -402,154 +438,45 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
         child: pw.Column(children: [
           buildDocumentHeader(branding: branding, schoolName: widget.landing.schoolName, motto: widget.landing.motto),
           pw.SizedBox(height: 10),
-          pw.Text('${_class!.className} - Weekly Timetable', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
-          pw.SizedBox(height: 12),
-          pw.Table(
-            border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey400),
-            children: [
-              pw.TableRow(decoration: const pw.BoxDecoration(color: PdfColors.grey200), children: [
-                for (final d in ['1', '2', '3', '4', '5', '6']) pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(_dayNames[d] ?? '', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center)),
-              ]),
-              pw.TableRow(children: [
-                for (final d in ['1', '2', '3', '4', '5', '6'])
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Column(children: [
-                      for (final slot in (byDay[d] ?? []))
-                        pw.Container(
-                          margin: const pw.EdgeInsets.only(bottom: 4),
-                          padding: const pw.EdgeInsets.all(4),
-                          decoration: pw.BoxDecoration(color: slot.needsTeacher ? PdfColors.orange100 : PdfColors.blue50, borderRadius: pw.BorderRadius.circular(3)),
-                          child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-                            pw.Text('${slot.startTime}-${slot.endTime}', style: const pw.TextStyle(fontSize: 7)),
-                            pw.Text(slot.subjectName, style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
-                            pw.Text(slot.needsTeacher ? 'No teacher yet' : (slot.teacherName ?? ''), style: pw.TextStyle(fontSize: 7, color: slot.needsTeacher ? PdfColors.orange900 : PdfColors.grey700)),
-                          ]),
-                        ),
-                    ]),
-                  ),
-              ]),
-            ],
-          ),
+          _buildClassSection(className, slots),
         ]),
       ),
     ));
+    await Printing.sharePdf(bytes: await doc.save(), filename: 'timetable_${className.replaceAll(' ', '_')}.pdf');
+  }
 
-    await Printing.sharePdf(bytes: await doc.save(), filename: 'timetable_${_class!.className.replaceAll(' ', '_')}.pdf');
+  /// One PDF, one page PER CLASS - used for both "download whole
+  /// department" and "download whole school".
+  Future<void> _downloadMultipleClasses(String label, Map<String, String> classIdToName, Map<String, List<TimetableSlot>> byClass) async {
+    final assets = await ref.read(officialBrandingProvider(widget.schoolId).future);
+    final branding = await OfficialBranding.fetch(assets);
+
+    final doc = pw.Document();
+    for (final entry in classIdToName.entries) {
+      final slots = byClass[entry.key] ?? [];
+      if (slots.isEmpty) continue; // skip classes with no generated timetable yet
+      doc.addPage(pw.Page(
+        pageFormat: PdfPageFormat.a4.landscape,
+        build: (context) => pw.Padding(
+          padding: const pw.EdgeInsets.all(24),
+          child: pw.Column(children: [
+            buildDocumentHeader(branding: branding, schoolName: widget.landing.schoolName, motto: widget.landing.motto),
+            pw.SizedBox(height: 10),
+            _buildClassSection(entry.value, slots),
+          ]),
+        ),
+      ));
+    }
+    if (doc.document.pdfPageList.pages.isEmpty) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No generated timetables found to download.')));
+      return;
+    }
+    await Printing.sharePdf(bytes: await doc.save(), filename: 'timetable_${label.replaceAll(' ', '_')}.pdf');
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final yearIdAsync = ref.watch(principalCurrentAcademicYearIdProvider(widget.schoolId));
-
-    if (_class != null) {
-      return Padding(
-        padding: EdgeInsets.all(Responsive.pagePadding(context)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: () => setState(() => _class = null)),
-              Expanded(child: Text('${_class!.className} · ${_department!.departmentName}', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
-            ]),
-            const SizedBox(height: 12),
-            Expanded(
-              child: yearIdAsync.when(
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Text('$e'),
-                data: (yearId) {
-                  if (yearId == null) return const Text('No current academic year set.');
-                  final slotsAsync = ref.watch(classTimetableProvider((classId: _class!.id, academicYearId: yearId)));
-                  return slotsAsync.when(
-                    loading: () => const Center(child: CircularProgressIndicator()),
-                    error: (e, _) => Text('$e'),
-                    data: (slots) {
-                      if (slots.isEmpty) return const Center(child: Text('No timetable generated for this class yet.'));
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          OutlinedButton.icon(onPressed: () => _downloadPdf(slots), icon: const Icon(Icons.download_rounded), label: const Text('Download PDF')),
-                          const SizedBox(height: 12),
-                          Expanded(
-                            child: ListView(
-                              children: _dayNames.entries.map((entry) {
-                                final daySlots = slots.where((s) => s.dayOfWeek == entry.key).toList()..sort((a, b) => a.startTime.compareTo(b.startTime));
-                                if (daySlots.isEmpty) return const SizedBox();
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 12),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(entry.value, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
-                                      const SizedBox(height: 6),
-                                      ...daySlots.map((s) => Container(
-                                            margin: const EdgeInsets.only(bottom: 6),
-                                            padding: const EdgeInsets.all(12),
-                                            decoration: BoxDecoration(
-                                              color: s.needsTeacher ? Colors.orange.withValues(alpha: 0.1) : theme.colorScheme.surfaceContainerHighest,
-                                              borderRadius: BorderRadius.circular(10),
-                                            ),
-                                            child: Row(children: [
-                                              Text('${s.startTime} - ${s.endTime}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                                              const SizedBox(width: 12),
-                                              Expanded(child: Text(s.subjectName)),
-                                              Text(s.needsTeacher ? 'No teacher yet' : (s.teacherName ?? ''), style: TextStyle(color: s.needsTeacher ? Colors.orange.shade800 : theme.colorScheme.outline, fontWeight: s.needsTeacher ? FontWeight.w700 : FontWeight.normal)),
-                                            ]),
-                                          )),
-                                    ],
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_department != null) {
-      return Padding(
-        padding: EdgeInsets.all(Responsive.pagePadding(context)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: () => setState(() => _department = null)),
-              Text(_department!.departmentName, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-            ]),
-            const SizedBox(height: 12),
-            Expanded(
-              child: Consumer(
-                builder: (context, ref, _) {
-                  final classesAsync = ref.watch(managedClassesProvider(widget.schoolId));
-                  return classesAsync.when(
-                    loading: () => const Center(child: CircularProgressIndicator()),
-                    error: (e, _) => Text('$e'),
-                    data: (classes) {
-                      final filtered = classes.where((c) => c.departmentId == _department!.id).toList();
-                      if (filtered.isEmpty) return const Center(child: Text('No classes in this department.'));
-                      return ListView.separated(
-                        itemCount: filtered.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, i) => _drillTile(filtered[i].className, () => setState(() => _class = filtered[i])),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      );
-    }
 
     return Padding(
       padding: EdgeInsets.all(Responsive.pagePadding(context)),
@@ -557,25 +484,297 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('View Timetables', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 12),
+          SegmentedButton<_ViewScope>(
+            segments: const [
+              ButtonSegment(value: _ViewScope.class_, label: Text('One Class')),
+              ButtonSegment(value: _ViewScope.department, label: Text('Department')),
+              ButtonSegment(value: _ViewScope.school, label: Text('Whole School')),
+            ],
+            selected: {_scope},
+            onSelectionChanged: (s) { setState(() => _scope = s.first); _resetSelection(); },
+          ),
           const SizedBox(height: 16),
+          Expanded(child: _buildBody(theme)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBody(ThemeData theme) {
+    if (_scope == _ViewScope.school) return _buildSchoolView(theme);
+    if (_scope == _ViewScope.department) return _buildDepartmentPicker(theme);
+    return _buildClassPicker(theme);
+  }
+
+  // ---------- WHOLE SCHOOL ----------
+
+  Widget _buildSchoolView(ThemeData theme) {
+    final yearIdAsync = ref.watch(principalCurrentAcademicYearIdProvider(widget.schoolId));
+    return yearIdAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Text('$e'),
+      data: (yearId) {
+        if (yearId == null) return const Text('No current academic year set.');
+        final classesAsync = ref.watch(managedClassesProvider(widget.schoolId));
+        return classesAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Text('$e'),
+          data: (classes) {
+            if (classes.isEmpty) return const Center(child: Text('No classes configured yet.'));
+            final classIds = classes.map((c) => c.id).toList();
+            final idToName = {for (final c in classes) c.id: c.className};
+            final timetablesAsync = ref.watch(classesTimetableProvider((classIds: classIds, academicYearId: yearId)));
+            return timetablesAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Text('$e'),
+              data: (byClass) {
+                final generatedCount = classes.where((c) => (byClass[c.id]?.isNotEmpty ?? false)).length;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('$generatedCount of ${classes.length} classes have a generated timetable.', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: () => _downloadMultipleClasses('Whole School', idToName, byClass),
+                      icon: const Icon(Icons.download_rounded),
+                      label: const Text('Download All (Whole School)'),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: ListView.separated(
+                        itemCount: classes.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, i) {
+                          final c = classes[i];
+                          final slots = byClass[c.id] ?? [];
+                          return Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
+                            child: Row(children: [
+                              Expanded(child: Text(c.className, style: const TextStyle(fontWeight: FontWeight.w700))),
+                              Text(slots.isEmpty ? 'Not generated' : '${slots.length} slots', style: TextStyle(color: slots.isEmpty ? theme.colorScheme.outline : Colors.green)),
+                              if (slots.isNotEmpty)
+                                IconButton(icon: const Icon(Icons.download_outlined), onPressed: () => _downloadSingleClass(c.className, slots)),
+                            ]),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ---------- DEPARTMENT ----------
+
+  Widget _buildDepartmentPicker(ThemeData theme) {
+    if (_department != null) return _buildDepartmentView(theme);
+    return Consumer(
+      builder: (context, ref, _) {
+        final departmentsAsync = ref.watch(departmentsFullProvider(widget.schoolId));
+        return departmentsAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Text('$e'),
+          data: (departments) => ListView.separated(
+            itemCount: departments.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, i) => _drillTile(departments[i].departmentName, () => setState(() => _department = departments[i])),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDepartmentView(ThemeData theme) {
+    final yearIdAsync = ref.watch(principalCurrentAcademicYearIdProvider(widget.schoolId));
+    return yearIdAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Text('$e'),
+      data: (yearId) {
+        if (yearId == null) return const Text('No current academic year set.');
+        final classesAsync = ref.watch(managedClassesProvider(widget.schoolId));
+        return classesAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Text('$e'),
+          data: (allClasses) {
+            final classes = allClasses.where((c) => c.departmentId == _department!.id).toList();
+            if (classes.isEmpty) {
+              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _Breadcrumb(label: _department!.departmentName, onTap: () => setState(() => _department = null)),
+                const SizedBox(height: 12),
+                const Text('No classes in this department.'),
+              ]);
+            }
+            final classIds = classes.map((c) => c.id).toList();
+            final idToName = {for (final c in classes) c.id: c.className};
+            final timetablesAsync = ref.watch(classesTimetableProvider((classIds: classIds, academicYearId: yearId)));
+            return timetablesAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Text('$e'),
+              data: (byClass) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _Breadcrumb(label: _department!.departmentName, onTap: () => setState(() => _department = null)),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: () => _downloadMultipleClasses(_department!.departmentName, idToName, byClass),
+                      icon: const Icon(Icons.download_rounded),
+                      label: const Text('Download All (Department)'),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: ListView.separated(
+                        itemCount: classes.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, i) {
+                          final c = classes[i];
+                          final slots = byClass[c.id] ?? [];
+                          return Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
+                            child: Row(children: [
+                              Expanded(child: Text(c.className, style: const TextStyle(fontWeight: FontWeight.w700))),
+                              Text(slots.isEmpty ? 'Not generated' : '${slots.length} slots', style: TextStyle(color: slots.isEmpty ? theme.colorScheme.outline : Colors.green)),
+                              if (slots.isNotEmpty)
+                                IconButton(icon: const Icon(Icons.download_outlined), onPressed: () => _downloadSingleClass(c.className, slots)),
+                            ]),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ---------- SINGLE CLASS (original detailed day-by-day view) ----------
+
+  Widget _buildClassPicker(ThemeData theme) {
+    if (_class != null) return _buildClassView(theme);
+    if (_department != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _Breadcrumb(label: _department!.departmentName, onTap: () => setState(() => _department = null)),
+          const SizedBox(height: 12),
           Expanded(
             child: Consumer(
               builder: (context, ref, _) {
-                final departmentsAsync = ref.watch(departmentsFullProvider(widget.schoolId));
-                return departmentsAsync.when(
+                final classesAsync = ref.watch(managedClassesProvider(widget.schoolId));
+                return classesAsync.when(
                   loading: () => const Center(child: CircularProgressIndicator()),
                   error: (e, _) => Text('$e'),
-                  data: (departments) => ListView.separated(
-                    itemCount: departments.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, i) => _drillTile(departments[i].departmentName, () => setState(() => _department = departments[i])),
-                  ),
+                  data: (classes) {
+                    final filtered = classes.where((c) => c.departmentId == _department!.id).toList();
+                    if (filtered.isEmpty) return const Center(child: Text('No classes in this department.'));
+                    return ListView.separated(
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, i) => _drillTile(filtered[i].className, () => setState(() => _class = filtered[i])),
+                    );
+                  },
                 );
               },
             ),
           ),
         ],
-      ),
+      );
+    }
+    return Consumer(
+      builder: (context, ref, _) {
+        final departmentsAsync = ref.watch(departmentsFullProvider(widget.schoolId));
+        return departmentsAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Text('$e'),
+          data: (departments) => ListView.separated(
+            itemCount: departments.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, i) => _drillTile(departments[i].departmentName, () => setState(() => _department = departments[i])),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildClassView(ThemeData theme) {
+    final yearIdAsync = ref.watch(principalCurrentAcademicYearIdProvider(widget.schoolId));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: () => setState(() => _class = null)),
+          Expanded(child: Text('${_class!.className} · ${_department!.departmentName}', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
+        ]),
+        const SizedBox(height: 12),
+        Expanded(
+          child: yearIdAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Text('$e'),
+            data: (yearId) {
+              if (yearId == null) return const Text('No current academic year set.');
+              final slotsAsync = ref.watch(classTimetableProvider((classId: _class!.id, academicYearId: yearId)));
+              return slotsAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Text('$e'),
+                data: (slots) {
+                  if (slots.isEmpty) return const Center(child: Text('No timetable generated for this class yet.'));
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      OutlinedButton.icon(onPressed: () => _downloadSingleClass(_class!.className, slots), icon: const Icon(Icons.download_rounded), label: const Text('Download PDF')),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: ListView(
+                          children: _dayNames.entries.map((entry) {
+                            final daySlots = slots.where((s) => s.dayOfWeek == entry.key).toList()..sort((a, b) => a.startTime.compareTo(b.startTime));
+                            if (daySlots.isEmpty) return const SizedBox();
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(entry.value, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+                                  const SizedBox(height: 6),
+                                  ...daySlots.map((s) => Container(
+                                        margin: const EdgeInsets.only(bottom: 6),
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: s.needsTeacher ? Colors.orange.withValues(alpha: 0.1) : theme.colorScheme.surfaceContainerHighest,
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        child: Row(children: [
+                                          Text('${s.startTime} - ${s.endTime}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                                          const SizedBox(width: 12),
+                                          Expanded(child: Text(s.subjectName)),
+                                          Text(s.needsTeacher ? 'No teacher yet' : (s.teacherName ?? ''), style: TextStyle(color: s.needsTeacher ? Colors.orange.shade800 : theme.colorScheme.outline, fontWeight: s.needsTeacher ? FontWeight.w700 : FontWeight.normal)),
+                                        ]),
+                                      )),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -587,4 +786,15 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
       child: InkWell(borderRadius: BorderRadius.circular(12), onTap: onTap, child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w700))), const Icon(Icons.chevron_right_rounded)]))),
     );
   }
+}
+
+class _Breadcrumb extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _Breadcrumb({required this.label, required this.onTap});
+  @override
+  Widget build(BuildContext context) => Row(children: [
+        IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: onTap),
+        Text(label, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+      ]);
 }
