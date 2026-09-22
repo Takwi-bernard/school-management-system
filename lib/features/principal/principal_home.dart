@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
+import 'principal_timetable.dart';
 import '../../core/l10n/app_strings.dart';
 import '../../core/responsive.dart';
 import '../auth/auth_gate.dart';
@@ -178,6 +178,28 @@ class _PrincipalShellState extends ConsumerState<_PrincipalShell> {
             title: strings.isFrench ? 'Générer des cartes' : 'Generate ID Cards',
             description: strings.isFrench ? 'Créer les cartes d\'élève, avant et arrière.' : 'Create student cards, front and back.',
             onTap: () => setState(() => _body = IdCardManagementPage(schoolId: widget.schoolId, landing: widget.landing)),
+          ),
+        ],
+      
+      ),
+       _NavGroup(
+        icon: Icons.calendar_month_outlined,
+        title: strings.isFrench ? 'Emploi du temps' : 'Timetable',
+        items: [
+          _NavLeaf(
+            title: strings.isFrench ? 'Paramètres' : 'Settings',
+            description: strings.isFrench ? 'Durée des périodes, horaires, pauses.' : 'Period length, hours, breaks.',
+            onTap: () => setState(() => _body = TimetableSettingsPage(schoolId: widget.schoolId)),
+          ),
+          _NavLeaf(
+            title: strings.isFrench ? 'Générer' : 'Generate',
+            description: strings.isFrench ? 'Créer l\'emploi du temps avec l\'IA.' : 'Create the timetable with AI.',
+            onTap: () => setState(() => _body = GenerateTimetablePage(schoolId: widget.schoolId)),
+          ),
+          _NavLeaf(
+            title: strings.isFrench ? 'Voir / télécharger' : 'View / Download',
+            description: strings.isFrench ? 'Consulter et télécharger par classe.' : 'View and download per class.',
+            onTap: () => setState(() => _body = ViewTimetablePage(schoolId: widget.schoolId, landing: widget.landing)),
           ),
         ],
       ),

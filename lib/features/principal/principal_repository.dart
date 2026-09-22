@@ -167,8 +167,99 @@ class PrincipalRepository {
     await _client.from('teacher_assignments').delete().eq('id', assignmentId);
   }
 
-  
+    // --------------------------------------------------
+  // AI TIMETABLE GENERATION
+  // --------------------------------------------------
 
+  Future<Map<String, dynamic>> generateTimetable({
+    required String schoolId,
+    required String scopeType, // 'school' | 'department' | 'class'
+    String? departmentId,
+    String? classId,
+    String? principalNote,
+  }) async {
+    final response = await _client.functions.invoke('generate-timetable', body: {
+      'school_id': schoolId,
+      'scope_type': scopeType,
+      if (departmentId != null) 'department_id': departmentId,
+      if (classId != null) 'class_id': classId,
+      if (principalNote != null && principalNote.trim().isNotEmpty) 'principal_note': principalNote.trim(),
+    });
+
+    final data = response.data as Map;
+    if (data['success'] != true) {
+      throw Exception(data['message'] ?? 'Timetable generation failed.');
+    }
+    return Map<String, dynamic>.from(data);
+  }
+
+
+
+  Future<List<TimetableGenerationRecord>> getTimetableGenerationHistory(String schoolId) async {
+    final rows = await _client
+        .from('timetable_generations')
+        .select('*, classes(class_name), departments(department_name)')
+        .eq('school_id', schoolId)
+        .order('generated_at', ascending: false);
+    return rows.map((r) => TimetableGenerationRecord.fromMap(r)).toList();
+  }
+  Future<List<TimetableSlot>> getTimetableForClass(String classId, String academicYearId) async {
+    final grouped = await getTimetableForClasses([classId], academicYearId);
+    return grouped[classId] ?? [];
+  }
+  Future<TimetableSettings> getTimetableSettings(String schoolId) async {
+    final row = await _client.from('school_timetable_settings').select().eq('school_id', schoolId).maybeSingle();
+    if (row == null) {
+      // Sensible Cameroon-school defaults, matching what you described
+      return const TimetableSettings(
+        periodDurationMinutes: 55, dayStartTime: '07:30', dayEndTime: '15:30',
+        breakPeriods: [], workingDays: [1, 2, 3, 4, 5],
+      );
+    }
+    return TimetableSettings.fromMap(row);
+  }
+
+  Future<void> saveTimetableSettings({
+    required String schoolId,
+    required int periodDurationMinutes,
+    required String dayStartTime,
+    required String dayEndTime,
+    required List<Map<String, String>> breakPeriods,
+    required List<int> workingDays,
+  }) async {
+    await _client.from('school_timetable_settings').upsert({
+      'school_id': schoolId,
+      'period_duration_minutes': periodDurationMinutes,
+      'day_start_time': dayStartTime,
+      'day_end_time': dayEndTime,
+      'break_periods': breakPeriods,
+      'working_days': workingDays,
+    });
+  }
+  /// Fetches timetables for MULTIPLE classes in one query - used by
+  /// department and whole-school views/downloads, not just a single
+  /// class. Correctly scoped by academic year via the timetables join,
+  /// which the earlier single-class version was missing entirely.
+  Future<Map<String, List<TimetableSlot>>> getTimetableForClasses(List<String> classIds, String academicYearId) async {
+    if (classIds.isEmpty) return {};
+    final rows = await _client
+        .from('timetable_items')
+        .select('''
+          class_id, day_of_week, start_time, end_time, room_name, needs_teacher,
+          teacher_assignments ( subjects(subject_name), teachers(full_name) ),
+          subjects ( subject_name ),
+          timetables!inner(academic_year_id)
+        ''')
+        .inFilter('class_id', classIds)
+        .eq('timetables.academic_year_id', academicYearId);
+
+    final grouped = <String, List<TimetableSlot>>{};
+    for (final r in rows) {
+      final classId = r['class_id'] as String;
+      grouped.putIfAbsent(classId, () => []).add(TimetableSlot.fromMap(r));
+    }
+    return grouped;
+  }
     // --------------------------------------------------
   // MARKS WINDOW (per exam period)
   // --------------------------------------------------

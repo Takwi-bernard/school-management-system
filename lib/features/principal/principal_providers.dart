@@ -182,3 +182,18 @@ final generatedReportCardsForScopeProvider = FutureProvider.family<List<ReportCa
         classId: p.classId, reportScope: p.reportScope, termId: p.termId, examPeriodId: p.examPeriodId,
       );
 });
+
+final classTimetableProvider = FutureProvider.family<List<TimetableSlot>, ({String classId, String academicYearId})>((ref, p) {
+  return ref.watch(principalRepositoryProvider).getTimetableForClass(p.classId, p.academicYearId);
+});
+
+final timetableHistoryProvider = FutureProvider.family<List<TimetableGenerationRecord>, String>((ref, schoolId) {
+  return ref.watch(principalRepositoryProvider).getTimetableGenerationHistory(schoolId);
+});
+  final classesTimetableProvider = FutureProvider.family<Map<String, List<TimetableSlot>>, ({List<String> classIds, String academicYearId})>((ref, p) {
+  return ref.watch(principalRepositoryProvider).getTimetableForClasses(p.classIds, p.academicYearId);
+});
+
+final timetableSettingsProvider = FutureProvider.family<TimetableSettings, String>((ref, schoolId) {
+  return ref.watch(principalRepositoryProvider).getTimetableSettings(schoolId);
+});

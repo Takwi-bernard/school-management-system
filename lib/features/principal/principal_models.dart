@@ -210,6 +210,98 @@ class SchoolStudent {
   }
 }
 
+
+class TimetableSlot {
+  final String dayOfWeek;
+  final String startTime;
+  final String endTime;
+  final String subjectName;
+  final String? teacherName;
+  final bool needsTeacher;
+  final String? roomName;
+
+  const TimetableSlot({
+    required this.dayOfWeek,
+    required this.startTime,
+    required this.endTime,
+    required this.subjectName,
+    this.teacherName,
+    required this.needsTeacher,
+    this.roomName,
+  });
+
+  factory TimetableSlot.fromMap(Map<String, dynamic> map) {
+    final assignment = map['teacher_assignments'] as Map?;
+    final subjectFromAssignment = assignment?['subjects'] as Map?;
+    final teacher = assignment?['teachers'] as Map?;
+    final directSubject = map['subjects'] as Map?;
+
+    return TimetableSlot(
+      dayOfWeek: map['day_of_week'].toString(),
+      startTime: (map['start_time'] as String).substring(0, 5),
+      endTime: (map['end_time'] as String).substring(0, 5),
+      subjectName: (subjectFromAssignment?['subject_name'] ?? directSubject?['subject_name'] ?? 'Unknown') as String,
+      teacherName: teacher?['full_name'] as String?,
+      needsTeacher: map['needs_teacher'] as bool? ?? false,
+      roomName: map['room_name'] as String?,
+    );
+  }
+}
+
+class TimetableGenerationRecord {
+  final String id;
+  final String scopeType;
+  final String? scopeLabel;
+  final String? principalNote;
+  final String? aiSummary;
+  final DateTime generatedAt;
+
+  const TimetableGenerationRecord({
+    required this.id,
+    required this.scopeType,
+    this.scopeLabel,
+    this.principalNote,
+    this.aiSummary,
+    required this.generatedAt,
+  });
+
+  factory TimetableGenerationRecord.fromMap(Map<String, dynamic> map) {
+    final cls = map['classes'] as Map?;
+    final dept = map['departments'] as Map?;
+    return TimetableGenerationRecord(
+      id: map['id'] as String,
+      scopeType: map['scope_type'] as String? ?? '',
+      scopeLabel: cls?['class_name'] as String? ?? dept?['department_name'] as String? ?? 'Whole School',
+      principalNote: map['principal_note'] as String?,
+      aiSummary: map['ai_summary'] as String?,
+      generatedAt: DateTime.tryParse(map['generated_at'] as String? ?? '') ?? DateTime.now(),
+    );
+  }
+}
+
+class TimetableSettings {
+  final int periodDurationMinutes;
+  final String dayStartTime;
+  final String dayEndTime;
+  final List<Map<String, String>> breakPeriods;
+  final List<int> workingDays;
+
+  const TimetableSettings({
+    required this.periodDurationMinutes,
+    required this.dayStartTime,
+    required this.dayEndTime,
+    required this.breakPeriods,
+    required this.workingDays,
+  });
+
+  factory TimetableSettings.fromMap(Map<String, dynamic> map) => TimetableSettings(
+        periodDurationMinutes: map['period_duration_minutes'] as int? ?? 55,
+        dayStartTime: (map['day_start_time'] as String?)?.substring(0, 5) ?? '07:30',
+        dayEndTime: (map['day_end_time'] as String?)?.substring(0, 5) ?? '15:30',
+        breakPeriods: (map['break_periods'] as List? ?? []).map((b) => Map<String, String>.from(b as Map)).toList(),
+        workingDays: (map['working_days'] as List? ?? [1, 2, 3, 4, 5]).map((d) => d as int).toList(),
+      );
+}
 class GuardianInfo {
   final String fullName;
   final String relationshipType;
