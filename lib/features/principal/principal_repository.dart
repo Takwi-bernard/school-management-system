@@ -630,7 +630,7 @@ class PrincipalRepository {
 // --------------------------------------------------
   // BULK REPORT CARD GENERATION + PUBLISHING
   // --------------------------------------------------
-    Future<Map<String, dynamic>> generateReportCardsForClass({
+ Future<Map<String, dynamic>> generateReportCardsForClass({
     required String schoolId,
     required String classId,
     required String termId,

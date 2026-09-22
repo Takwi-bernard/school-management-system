@@ -383,7 +383,7 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
     setState(() { _department = null; _class = null; });
   }
 
-  pw.Widget _buildClassSection(String className, List<TimetableSlot> slots) {
+    pw.Widget _buildClassSection(String className, List<TimetableSlot> slots) {
     final byDay = <String, List<TimetableSlot>>{};
     for (final s in slots) {
       byDay.putIfAbsent(s.dayOfWeek, () => []).add(s);
@@ -392,38 +392,52 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
       list.sort((a, b) => a.startTime.compareTo(b.startTime));
     }
 
-    return pw.Column(children: [
-      pw.Text('$className - Weekly Timetable', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
-      pw.SizedBox(height: 10),
-      pw.Table(
-        border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey400),
-        children: [
-          pw.TableRow(decoration: const pw.BoxDecoration(color: PdfColors.grey200), children: [
-            for (final d in ['1', '2', '3', '4', '5', '6'])
-              pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(_dayNames[d] ?? '', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center)),
-          ]),
-          pw.TableRow(children: [
-            for (final d in ['1', '2', '3', '4', '5', '6'])
-              pw.Padding(
-                padding: const pw.EdgeInsets.all(4),
-                child: pw.Column(children: [
-                  for (final slot in (byDay[d] ?? []))
-                    pw.Container(
-                      margin: const pw.EdgeInsets.only(bottom: 4),
-                      padding: const pw.EdgeInsets.all(4),
-                      decoration: pw.BoxDecoration(color: slot.needsTeacher ? PdfColors.orange100 : PdfColors.blue50, borderRadius: pw.BorderRadius.circular(3)),
-                      child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-                        pw.Text('${slot.startTime}-${slot.endTime}', style: const pw.TextStyle(fontSize: 7)),
-                        pw.Text(slot.subjectName, style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
-                        pw.Text(slot.needsTeacher ? 'No teacher yet' : (slot.teacherName ?? ''), style: pw.TextStyle(fontSize: 7, color: slot.needsTeacher ? PdfColors.orange900 : PdfColors.grey700)),
-                      ]),
-                    ),
-                ]),
-              ),
-          ]),
-        ],
-      ),
-    ]);
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch, // was missing - this is the actual fix
+      children: [
+        pw.Text('$className - Weekly Timetable', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+        pw.SizedBox(height: 10),
+        pw.Table(
+          border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey400),
+          // Explicit equal widths - a Table with no defined widths and
+          // no stretched parent can render with zero effective width,
+          // which is why the page was blank below the header.
+          columnWidths: const {
+            0: pw.FlexColumnWidth(1),
+            1: pw.FlexColumnWidth(1),
+            2: pw.FlexColumnWidth(1),
+            3: pw.FlexColumnWidth(1),
+            4: pw.FlexColumnWidth(1),
+            5: pw.FlexColumnWidth(1),
+          },
+          children: [
+            pw.TableRow(decoration: const pw.BoxDecoration(color: PdfColors.grey200), children: [
+              for (final d in ['1', '2', '3', '4', '5', '6'])
+                pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(_dayNames[d] ?? '', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center)),
+            ]),
+            pw.TableRow(children: [
+              for (final d in ['1', '2', '3', '4', '5', '6'])
+                pw.Padding(
+                  padding: const pw.EdgeInsets.all(4),
+                  child: pw.Column(children: [
+                    for (final slot in (byDay[d] ?? []))
+                      pw.Container(
+                        margin: const pw.EdgeInsets.only(bottom: 4),
+                        padding: const pw.EdgeInsets.all(4),
+                        decoration: pw.BoxDecoration(color: slot.needsTeacher ? PdfColors.orange100 : PdfColors.blue50, borderRadius: pw.BorderRadius.circular(3)),
+                        child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+                          pw.Text('${slot.startTime}-${slot.endTime}', style: const pw.TextStyle(fontSize: 7)),
+                          pw.Text(slot.subjectName, style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                          pw.Text(slot.needsTeacher ? 'No teacher yet' : (slot.teacherName ?? ''), style: pw.TextStyle(fontSize: 7, color: slot.needsTeacher ? PdfColors.orange900 : PdfColors.grey700)),
+                        ]),
+                      ),
+                  ]),
+                ),
+            ]),
+          ],
+        ),
+      ],
+    );
   }
 
   Future<void> _downloadSingleClass(String className, List<TimetableSlot> slots) async {
@@ -435,7 +449,7 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
       pageFormat: PdfPageFormat.a4.landscape,
       build: (context) => pw.Padding(
         padding: const pw.EdgeInsets.all(24),
-        child: pw.Column(children: [
+        child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
           buildDocumentHeader(branding: branding, schoolName: widget.landing.schoolName, motto: widget.landing.motto),
           pw.SizedBox(height: 10),
           _buildClassSection(className, slots),
