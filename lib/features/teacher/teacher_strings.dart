@@ -80,4 +80,39 @@ extension TeacherStrings on AppStrings {
         return value;
     }
   }
+
+  // ---- Dashboard -----------------------------------------------------
+  String get tTodaysClasses => isFrench ? 'Cours du jour' : "Today's classes";
+  String get tNoClassesToday =>
+      isFrench ? 'Aucun cours prévu aujourd\'hui.' : 'No classes scheduled today.';
+  String get tNowLabel => isFrench ? 'En cours' : 'Now';
+  String get tUpNextLabel => isFrench ? 'À suivre' : 'Up next';
+  String get tTakeAttendance => isFrench ? 'Faire l\'appel' : 'Take attendance';
+  String get tAttendanceDone => isFrench ? 'Présence faite' : 'Attendance taken';
+  String get tAttendanceNotDoneToday =>
+      isFrench ? 'Présence non faite aujourd\'hui' : 'Attendance not taken today';
+
+  String get tMarksToDo => isFrench ? 'Notes à traiter' : 'Marks to-do';
+  String get tMarksAllCaughtUpTitle =>
+      isFrench ? 'Tout est à jour' : "You're all caught up";
+  String get tMarksAllCaughtUpBody => isFrench
+      ? 'Aucune note en attente pour la période en cours.'
+      : 'No marks are waiting on you for the current period.';
+  String get tNoOpenPeriod => isFrench
+      ? 'Aucune période d\'examen n\'est ouverte pour le moment.'
+      : 'No exam period is open right now.';
+  String get tMarksStatusNotStarted => isFrench ? 'Non commencé' : 'Not started';
+  String tMarksProgress(int entered, int total) =>
+      total > 0 ? '$entered/$total' : '$entered';
+  String get tDueLabel => isFrench ? 'Échéance' : 'Due';
+  String tDueInDays(int days) {
+    if (days < 0) return isFrench ? 'En retard' : 'Overdue';
+    if (days == 0) return isFrench ? 'Aujourd\'hui' : 'Due today';
+    if (days == 1) return isFrench ? 'Demain' : 'Due tomorrow';
+    return isFrench ? 'Dans $days jours' : 'Due in $days days';
+  }
+
+  String get tMyClasses => isFrench ? 'Mes classes' : 'My classes';
+  String tStudentsCount(int count) =>
+      isFrench ? '$count élève${count == 1 ? '' : 's'}' : '$count student${count == 1 ? '' : 's'}';
 }
