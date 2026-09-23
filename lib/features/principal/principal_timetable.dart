@@ -385,7 +385,7 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
     setState(() { _department = null; _class = null; });
   }
 
-    pw.Widget _buildClassSection(String className, List<TimetableSlot> slots) {
+     pw.Widget _buildClassSection(String className, List<TimetableSlot> slots) {
     final byDay = <String, List<TimetableSlot>>{};
     for (final s in slots) {
       byDay.putIfAbsent(s.dayOfWeek, () => []).add(s);
@@ -395,15 +395,19 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
     }
 
     return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.stretch, // was missing - this is the actual fix
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       children: [
-        pw.Text('$className - Weekly Timetable', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
-        pw.SizedBox(height: 10),
+        pw.Text('$className - Weekly Timetable', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+        pw.SizedBox(height: 12),
         pw.Table(
-          border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey400),
-          // Explicit equal widths - a Table with no defined widths and
-          // no stretched parent can render with zero effective width,
-          // which is why the page was blank below the header.
+          border: pw.TableBorder(
+            horizontalInside: const pw.BorderSide(width: 0.5, color: PdfColors.grey400),
+            verticalInside: const pw.BorderSide(width: 0.5, color: PdfColors.grey400),
+            top: const pw.BorderSide(width: 0.75, color: PdfColors.grey700),
+            bottom: const pw.BorderSide(width: 0.75, color: PdfColors.grey700),
+            left: const pw.BorderSide(width: 0.75, color: PdfColors.grey700),
+            right: const pw.BorderSide(width: 0.75, color: PdfColors.grey700),
+          ),
           columnWidths: const {
             0: pw.FlexColumnWidth(1),
             1: pw.FlexColumnWidth(1),
@@ -413,35 +417,72 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
             5: pw.FlexColumnWidth(1),
           },
           children: [
-            pw.TableRow(decoration: const pw.BoxDecoration(color: PdfColors.grey200), children: [
-              for (final d in ['1', '2', '3', '4', '5', '6'])
-                pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(_dayNames[d] ?? '', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center)),
-            ]),
-            pw.TableRow(children: [
-              for (final d in ['1', '2', '3', '4', '5', '6'])
-                pw.Padding(
-                  padding: const pw.EdgeInsets.all(4),
-                  child: pw.Column(children: [
-                    for (final slot in (byDay[d] ?? []))
-                      pw.Container(
-                        margin: const pw.EdgeInsets.only(bottom: 4),
-                        padding: const pw.EdgeInsets.all(4),
-                        decoration: pw.BoxDecoration(color: slot.needsTeacher ? PdfColors.orange100 : PdfColors.blue50, borderRadius: pw.BorderRadius.circular(3)),
-                        child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-                          pw.Text('${slot.startTime}-${slot.endTime}', style: const pw.TextStyle(fontSize: 7)),
-                          pw.Text(slot.subjectName, style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
-                          pw.Text(slot.needsTeacher ? 'No teacher yet' : (slot.teacherName ?? ''), style: pw.TextStyle(fontSize: 7, color: slot.needsTeacher ? PdfColors.orange900 : PdfColors.grey700)),
-                        ]),
-                      ),
-                  ]),
-                ),
-            ]),
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: PdfColors.blueGrey800),
+              children: [
+                for (final d in ['1', '2', '3', '4', '5', '6'])
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.symmetric(vertical: 8),
+                    child: pw.Text(_dayNames[d] ?? '', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.white), textAlign: pw.TextAlign.center),
+                  ),
+              ],
+            ),
+            pw.TableRow(
+              children: [
+                for (final d in ['1', '2', '3', '4', '5', '6'])
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(6),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                      children: (byDay[d] ?? []).map((slot) => _slotCard(slot)).toList(),
+                    ),
+                  ),
+              ],
+            ),
           ],
         ),
+        pw.SizedBox(height: 10),
+        pw.Row(children: [
+          _legendDot(PdfColors.blue50, PdfColors.blue300),
+          pw.SizedBox(width: 4),
+          pw.Text('Assigned', style: const pw.TextStyle(fontSize: 8)),
+          pw.SizedBox(width: 14),
+          _legendDot(PdfColors.orange100, PdfColors.orange300),
+          pw.SizedBox(width: 4),
+          pw.Text('Needs teacher', style: const pw.TextStyle(fontSize: 8)),
+        ]),
       ],
     );
   }
 
+  pw.Widget _slotCard(TimetableSlot slot) {
+    return pw.Container(
+      margin: const pw.EdgeInsets.only(bottom: 5),
+      padding: const pw.EdgeInsets.all(6),
+      decoration: pw.BoxDecoration(
+        color: slot.needsTeacher ? PdfColors.orange50 : PdfColors.blue50,
+        border: pw.Border.all(color: slot.needsTeacher ? PdfColors.orange300 : PdfColors.blue300, width: 0.5),
+        borderRadius: pw.BorderRadius.circular(4),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text('${slot.startTime} - ${slot.endTime}', style: pw.TextStyle(fontSize: 6.5, color: PdfColors.grey600)),
+          pw.SizedBox(height: 2),
+          pw.Text(slot.subjectName, style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold), maxLines: 2),
+          pw.SizedBox(height: 1),
+          pw.Text(
+            slot.needsTeacher ? 'No teacher yet' : (slot.teacherName ?? ''),
+            style: pw.TextStyle(fontSize: 6.5, color: slot.needsTeacher ? PdfColors.orange800 : PdfColors.grey600, fontStyle: slot.needsTeacher ? pw.FontStyle.italic : pw.FontStyle.normal),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _legendDot(PdfColor fill, PdfColor border) {
+    return pw.Container(width: 8, height: 8, decoration: pw.BoxDecoration(color: fill, border: pw.Border.all(color: border, width: 0.5), borderRadius: pw.BorderRadius.circular(2)));
+  }
   bool _downloading = false;
 
   //function for single class pdf download
