@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/error_state.dart';
 import '../../core/l10n/app_strings.dart';
 import '../../core/responsive.dart';
 import '../landing/landing_model.dart';
@@ -30,7 +31,7 @@ class ParentPaymentHistoryTab extends ConsumerWidget {
           padding: EdgeInsets.symmetric(vertical: 60),
           child: Center(child: CircularProgressIndicator()),
         ),
-        error: (e, _) => Text('$e'),
+        error: (e, _) => ErrorStateView(error: e, onRetry: () => ref.invalidate(paymentHistoryProvider)),
         data: (transactions) {
           if (transactions.isEmpty) {
             return Padding(
@@ -83,8 +84,12 @@ class _PaymentHistoryTileState extends ConsumerState<_PaymentHistoryTile> {
     setState(() => _downloading = true);
     try {
       await generateReceiptPdf(ref: ref, transaction: widget.transaction, landing: widget.landing);
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+          widget.strings.isFrench ? 'Échec du téléchargement. Veuillez réessayer.' : 'Download failed. Please try again.',
+        )));
+      }
     } finally {
       if (mounted) setState(() => _downloading = false);
     }
@@ -97,10 +102,12 @@ class _PaymentHistoryTileState extends ConsumerState<_PaymentHistoryTile> {
     final strings = widget.strings;
 
     final (Color color, String label, IconData icon) = t.isSuccessful
-        ? (Colors.green, strings.isFrench ? 'Payé' : 'Paid', Icons.check_circle_rounded)
+        ? (theme.colorScheme.tertiary, strings.isFrench ? 'Payé' : 'Paid', Icons.check_circle_rounded)
         : t.isFailed
-            ? (Colors.red, strings.isFrench ? 'Échoué' : 'Failed', Icons.cancel_rounded)
-            : (Colors.orange, strings.isFrench ? 'En attente' : 'Pending', Icons.hourglass_top_rounded);
+            ? (theme.colorScheme.error, strings.isFrench ? 'Échoué' : 'Failed', Icons.cancel_rounded)
+            : t.isCancelled
+                ? (theme.colorScheme.error, strings.isFrench ? 'Annulé' : 'Cancelled', Icons.block_rounded)
+                : (theme.colorScheme.primary, strings.isFrench ? 'En attente' : 'Pending', Icons.hourglass_top_rounded);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),

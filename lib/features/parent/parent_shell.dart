@@ -6,6 +6,7 @@ import '../../core/l10n/app_strings.dart';
 import '../../core/responsive.dart';
 import '../../shared/sign_out_button.dart';
 import '../landing/landing_model.dart';
+import 'parent_children_tab.dart';
 import 'parent_dashboard_tab.dart';
 import 'parent_fees_tab.dart';
 import 'parent_models.dart';
@@ -59,7 +60,7 @@ class ParentShell extends ConsumerWidget {
         icon: Icons.family_restroom_outlined,
         activeIcon: Icons.family_restroom_rounded,
         title: strings.myChildren,
-        content: (context) => _ComingSoon(strings: strings),
+        content: (context) => ParentChildrenTab(schoolId: schoolId, landing: landing, strings: strings),
       ),
       _ParentNavItem(
         key: 'fees',
@@ -75,13 +76,13 @@ class ParentShell extends ConsumerWidget {
         title: strings.admissions,
         legacy: () => context.push('/parent/enroll', extra: schoolId),
       ),
-      // _ParentNavItem(
-      //   key: 'report_cards',
-      //   icon: Icons.assessment_outlined,
-      //   activeIcon: Icons.assessment_rounded,
-      //   title: strings.reportCards,
-      //   childContent: (context, child) => ParentReportCard(child: child, landing: landing, strings: strings),
-      // ),
+      _ParentNavItem(
+        key: 'report_cards',
+        icon: Icons.assessment_outlined,
+        activeIcon: Icons.assessment_rounded,
+        title: strings.reportCards,
+        childContent: (context, child) => ParentReportCardTab(child: child, landing: landing, strings: strings),
+      ),
       _ParentNavItem(
         key: 'review',
         icon: Icons.rate_review_outlined,

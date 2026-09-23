@@ -12,8 +12,6 @@ import '../features/teacher/teacher_home.dart';
 import '../features/parent/parent_home.dart';
 import '../features/parent/parent_enrollment.dart';
 import '../features/parent/parent_fees.dart';
-import '../features/parent/parent_report_card_tab.dart';
-import '../features/parent/parent_profile_tab.dart';
 import '../features/parent/parent_models.dart';
 import '../features/principal/principal_home.dart';
 /// FIX: default GoRouter navigation is an abrupt cut with no
@@ -69,24 +67,12 @@ final appRouter = GoRouter(
           path: 'enroll',
           pageBuilder: (c, s) => _page(EnrollChildPage(schoolId: s.extra as String), s),
         ),
-        // GoRoute(
-        //   path: 'fees',
-        //   pageBuilder: (c, s) => _page(ChildFeesPage(child: s.extra as EnrolledChild), s),
-        // ),
-        GoRoute(
-          path: 'report-card',
-          pageBuilder: (c, s) => _page(ReportCardPage(child: s.extra as EnrolledChild), s),
-        ),
-        GoRoute(
-          path: 'review',
-          pageBuilder: (c, s) => _page(ReviewChildPage(child: s.extra as EnrolledChild), s),
-        ),
-        GoRoute(
-          path: 'profile',
-          pageBuilder: (c, s) => _page(const ParentProfileTab(), s),
-        ),
-             
-        
+        // 'fees', 'report-card', 'review' and 'profile' routes removed -
+        // all four are now reached in-shell (ParentShell's own nav
+        // items), which is where the app actually navigates to them.
+        // The pages they used to point to either had their own
+        // duplicate Scaffold/Theme (escaping the shell's sidebar) or,
+        // for report-card and review, were plain unreachable dead code.
         GoRoute(
           path: 'payment',
           pageBuilder: (c, s) {

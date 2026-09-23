@@ -5,260 +5,318 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import '../../shared/official_document_branding.dart';
+import '../../core/error_state.dart';
 import '../../core/l10n/app_strings.dart';
 import '../../core/responsive.dart';
-import '../landing/landing_providers.dart';
+import '../landing/landing_model.dart';
 import 'parent_models.dart';
+import 'parent_navigation.dart';
 import 'parent_providers.dart';
-import '../../features/landing/landing_model.dart';
 
-class ReportCardPage extends ConsumerStatefulWidget {
+/// In-shell replacement for the old ReportCardPage (which had its own
+/// Scaffold/AppBar/Theme and was reached via a router route). This
+/// feature was fully built but never actually reachable - its sidebar
+/// entry in parent_shell.dart was commented out and nothing pushed to
+/// its route anymore. Same content, hosted in-shell like every other
+/// tab, with a download button in its own header instead of an AppBar.
+class ParentReportCardTab extends ConsumerStatefulWidget {
   final EnrolledChild child;
-  const ReportCardPage({super.key, required this.child});
+  final LandingModel landing;
+  final AppStrings strings;
+  const ParentReportCardTab({super.key, required this.child, required this.landing, required this.strings});
 
   @override
-  ConsumerState<ReportCardPage> createState() => _ReportCardPageState();
+  ConsumerState<ParentReportCardTab> createState() => _ParentReportCardTabState();
 }
 
-class _ReportCardPageState extends ConsumerState<ReportCardPage> {
+class _ParentReportCardTabState extends ConsumerState<ParentReportCardTab> {
   String? _selectedTermId;
+  bool _downloading = false;
+
+  Future<void> _download(ReportCardSummary report) async {
+    setState(() => _downloading = true);
+    try {
+      final assets = await ref.read(officialBrandingProvider(widget.landing.schoolId).future);
+      final branding = await OfficialBranding.fetch(assets);
+
+      pw.MemoryImage? fallbackLogo;
+      if (branding.letterhead == null && widget.landing.logoUrl.isNotEmpty) {
+        try {
+          final res = await http.get(Uri.parse(widget.landing.logoUrl));
+          if (res.statusCode == 200) fallbackLogo = pw.MemoryImage(res.bodyBytes);
+        } catch (_) {
+          // No fallback logo - the document just prints without one.
+        }
+      }
+      await generateReportCardPdf(report: report, branding: branding, landing: widget.landing, fallbackLogo: fallbackLogo);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+          widget.strings.isFrench ? 'Échec du téléchargement. Veuillez réessayer.' : 'Download failed. Please try again.',
+        )));
+      }
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final landing = ref.watch(landingProvider).value;
-    if (landing == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    final strings = AppStrings(ref.watch(activeLocaleProvider));
-    final yearIdAsync = ref.watch(currentAcademicYearIdProvider(widget.child.schoolId));
+    final strings = widget.strings;
+    final landing = widget.landing;
+    final child = widget.child;
+    final yearIdAsync = ref.watch(currentAcademicYearIdProvider(child.schoolId));
 
-    return Theme(
-      data: buildSchoolTheme(landing.primaryColor, landing.secondaryColor),
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(strings.reportCards),
-          actions: [
-            if (_selectedTermId != null)
-              Consumer(
-                builder: (context, ref, _) {
-                  final reportAsync = ref.watch(
-                    reportCardProvider((studentId: widget.child.studentId, termId: _selectedTermId!)),
-                  );
-                  final report = reportAsync.valueOrNull;
-                  if (report == null) return const SizedBox();
-                  return IconButton(
-                    icon: const Icon(Icons.download_rounded),
-                    tooltip: strings.downloadReceipt,
-                    onPressed: () => _downloadReportCard(context, report, landing),
-                  );
-                },
-              ),
-          ],
-        ),
-        body: yearIdAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('$e')),
-          data: (yearId) {
-            if (yearId == null) {
-              return Center(child: Text(strings.academicYearNotSet));
-            }
-            final termsAsync = ref.watch(termsForYearProvider(yearId));
-
-            return termsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('$e')),
-              data: (terms) {
-                if (terms.isEmpty) return Center(child: Text(strings.academicYearNotSet));
-                _selectedTermId ??= terms.firstWhere((t) => t.isCurrent, orElse: () => terms.first).id;
-
-                return Column(
-                  children: [
-                    Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        Responsive.pagePadding(context), Responsive.pagePadding(context), Responsive.pagePadding(context), 8,
-                      ),
-                      child: brandedSubpageHeader(
-                        context,
-                        schoolName: landing.schoolName,
-                        logoUrl: landing.logoUrl,
-                        subtitle: widget.child.fullName,
-                      ),
-                    ),
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: Responsive.pagePadding(context)),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            strings.isFrench
-                                ? 'Choisissez un trimestre pour voir le bulletin publié par l\'école.'
-                                : 'Choose a term to view the report card published by the school.',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.outline),
-                          ),
-                          const SizedBox(height: 10),
-                          DropdownButtonFormField<String>(
-                            initialValue: _selectedTermId,
-                            decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(14))),
-                            items: terms.map((t) => DropdownMenuItem(value: t.id, child: Text(t.termName))).toList(),
-                            onChanged: (value) => setState(() => _selectedTermId = value),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: Consumer(
-                        builder: (context, ref, _) {
-                          final reportAsync = ref.watch(
-                            reportCardProvider((studentId: widget.child.studentId, termId: _selectedTermId!)),
-                          );
-                          return reportAsync.when(
-                            loading: () => const Center(child: CircularProgressIndicator()),
-                            error: (e, _) => Center(child: Text('$e')),
-                            data: (report) {
-                              if (report == null) {
-                                return _NotPublishedView(landing: landing, strings: strings);
-                              }
-                              return _ReportCardView(report: report, strings: strings);
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                );
-              },
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-    Future<void> _downloadReportCard(BuildContext context, ReportCardSummary report, LandingModel landing) async {
-    final assets = await ref.read(officialBrandingProvider(landing.schoolId).future);
-    final branding = await OfficialBranding.fetch(assets);
-
-    pw.MemoryImage? fallbackLogo;
-    if (branding.letterhead == null && landing.logoUrl.isNotEmpty) {
-      try {
-        final res = await http.get(Uri.parse(landing.logoUrl));
-        if (res.statusCode == 200) fallbackLogo = pw.MemoryImage(res.bodyBytes);
-      } catch (_) {}
-    }
-
-    final doc = pw.Document();
-    doc.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        build: (context) => pw.Padding(
-          padding: const pw.EdgeInsets.all(32),
-          child: pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.center,
+    return Padding(
+      padding: EdgeInsets.all(Responsive.pagePadding(context)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              buildDocumentHeader(
-                branding: branding,
-                schoolName: landing.schoolName,
-                motto: landing.motto,
-                fallbackLogo: fallbackLogo,
+              Expanded(
+                child: brandedSubpageHeader(
+                  context,
+                  schoolName: landing.schoolName,
+                  logoUrl: landing.logoUrl,
+                  subtitle: child.fullName,
+                ),
               ),
-              pw.SizedBox(height: 16),
-              pw.Container(
-                padding: const pw.EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                decoration: pw.BoxDecoration(border: pw.Border.all(width: 0.5)),
-                child: pw.Text('STUDENT REPORT CARD', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+              IconButton(
+                onPressed: () => popParentContent(ref),
+                icon: const Icon(Icons.close_rounded),
+                tooltip: strings.isFrench ? 'Fermer' : 'Close',
               ),
-              pw.SizedBox(height: 20),
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text('Student: ${report.studentName}', style: const pw.TextStyle(fontSize: 11)),
-                  pw.Text('Class: ${report.className}', style: const pw.TextStyle(fontSize: 11)),
-                ],
-              ),
-              pw.SizedBox(height: 4),
-              pw.Align(
-                alignment: pw.Alignment.centerLeft,
-                child: pw.Text('Term: ${report.termName}', style: const pw.TextStyle(fontSize: 11)),
-              ),
-              pw.SizedBox(height: 16),
-              pw.Table(
-                border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey400),
-                columnWidths: {
-                  0: const pw.FlexColumnWidth(3),
-                  1: const pw.FlexColumnWidth(1),
-                  2: const pw.FlexColumnWidth(1),
-                  3: const pw.FlexColumnWidth(1),
-                  4: const pw.FlexColumnWidth(2),
-                },
-                children: [
-                  pw.TableRow(
-                    decoration: const pw.BoxDecoration(color: PdfColors.grey200),
-                    children: [
-                      _cell('Subject', bold: true),
-                      _cell('Mark', bold: true, center: true),
-                      _cell('Coef.', bold: true, center: true),
-                      _cell('Grade', bold: true, center: true),
-                      _cell('Remark', bold: true),
-                    ],
-                  ),
-                  for (final s in report.subjects)
-                    pw.TableRow(children: [
-                      _cell(s.subjectName),
-                      _cell(s.score.toStringAsFixed(1), center: true),
-                      _cell('${s.coefficient}', center: true),
-                      _cell(s.grade ?? '-', center: true),
-                      _cell(s.remark ?? ''),
-                    ]),
-                ],
-              ),
-              pw.SizedBox(height: 20),
-              pw.Divider(),
-              if (report.overallAverage != null) _summaryLine('Average', report.overallAverage!.toStringAsFixed(2)),
-              if (report.classRank != null && report.totalStudents != null)
-                _summaryLine('Class Rank', '${report.classRank} / ${report.totalStudents}'),
-              if (report.principalComment != null && report.principalComment!.isNotEmpty)
-                _summaryLine('Principal\'s Remark', report.principalComment!),
-              pw.SizedBox(height: 20),
-              // A report card is an ACADEMIC document - stamped by the
-              // Principal, not the Proprietor (whose stamp belongs on
-              // financial documents like the receipt instead).
-              pw.Align(
-                alignment: pw.Alignment.centerRight,
-                child: buildStampBlock(branding.principalStamp),
-              ),
-              pw.SizedBox(height: 16),
-              pw.Text('Generated automatically by the school management system.',
-                  style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
             ],
           ),
-        ),
-      ),
-    );
+          Text(
+            strings.isFrench
+                ? 'Choisissez un trimestre pour voir le bulletin publié par l\'école.'
+                : 'Choose a term to view the report card published by the school.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.outline),
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: yearIdAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => ErrorStateView(
+                error: e,
+                onRetry: () => ref.invalidate(currentAcademicYearIdProvider(child.schoolId)),
+              ),
+              data: (yearId) {
+                if (yearId == null) {
+                  return Center(child: Text(strings.academicYearNotSet));
+                }
+                final termsAsync = ref.watch(termsForYearProvider(yearId));
 
-    await Printing.sharePdf(bytes: await doc.save(), filename: 'report_card_${report.studentName.replaceAll(' ', '_')}.pdf');
-  }
-  pw.Widget _cell(String text, {bool bold = false, bool center = false}) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-      child: pw.Text(
-        text,
-        textAlign: center ? pw.TextAlign.center : pw.TextAlign.left,
-        style: pw.TextStyle(fontSize: 9, fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal),
-      ),
-    );
-  }
+                return termsAsync.when(
+                  loading: () => const Center(child: CircularProgressIndicator()),
+                  error: (e, _) => ErrorStateView(
+                    error: e,
+                    onRetry: () => ref.invalidate(termsForYearProvider(yearId)),
+                  ),
+                  data: (terms) {
+                    if (terms.isEmpty) return Center(child: Text(strings.academicYearNotSet));
+                    _selectedTermId ??= terms.firstWhere((t) => t.isCurrent, orElse: () => terms.first).id;
 
-  pw.Widget _summaryLine(String label, String value) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 3),
-      child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-        children: [
-          pw.Text(label, style: const pw.TextStyle(fontSize: 10)),
-          pw.Text(value, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                initialValue: _selectedTermId,
+                                decoration:
+                                    InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(14))),
+                                items: terms.map((t) => DropdownMenuItem(value: t.id, child: Text(t.termName))).toList(),
+                                onChanged: (value) => setState(() => _selectedTermId = value),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: Consumer(
+                            builder: (context, ref, _) {
+                              final reportAsync = ref.watch(
+                                reportCardProvider((studentId: child.studentId, termId: _selectedTermId!)),
+                              );
+                              return reportAsync.when(
+                                loading: () => const Center(child: CircularProgressIndicator()),
+                                error: (e, _) => ErrorStateView(
+                                  error: e,
+                                  onRetry: () => ref.invalidate(
+                                    reportCardProvider((studentId: child.studentId, termId: _selectedTermId!)),
+                                  ),
+                                ),
+                                data: (report) {
+                                  if (report == null) {
+                                    return _NotPublishedView(landing: landing, strings: strings);
+                                  }
+                                  return Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Align(
+                                        alignment: Alignment.centerRight,
+                                        child: FilledButton.icon(
+                                          onPressed: _downloading ? null : () => _download(report),
+                                          icon: _downloading
+                                              ? const SizedBox(
+                                                  width: 16,
+                                                  height: 16,
+                                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                                )
+                                              : const Icon(Icons.download_rounded, size: 18),
+                                          label: Text(strings.downloadReceipt),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Expanded(child: _ReportCardView(report: report, strings: strings)),
+                                    ],
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+            ),
+          ),
         ],
       ),
     );
   }
+}
+
+/// Standalone so it doesn't need a State - shared by ParentReportCardTab
+/// above (own document only) and could be reused for a Principal-side
+/// bulk export later without dragging a widget along with it.
+Future<void> generateReportCardPdf({
+  required ReportCardSummary report,
+  required OfficialBranding branding,
+  required LandingModel landing,
+  pw.MemoryImage? fallbackLogo,
+}) async {
+  final doc = pw.Document();
+  doc.addPage(
+    pw.Page(
+      pageFormat: PdfPageFormat.a4,
+      build: (context) => pw.Padding(
+        padding: const pw.EdgeInsets.all(32),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.center,
+          children: [
+            buildDocumentHeader(
+              branding: branding,
+              schoolName: landing.schoolName,
+              motto: landing.motto,
+              fallbackLogo: fallbackLogo,
+            ),
+            pw.SizedBox(height: 16),
+            pw.Container(
+              padding: const pw.EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              decoration: pw.BoxDecoration(border: pw.Border.all(width: 0.5)),
+              child: pw.Text('STUDENT REPORT CARD', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.SizedBox(height: 20),
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text('Student: ${report.studentName}', style: const pw.TextStyle(fontSize: 11)),
+                pw.Text('Class: ${report.className}', style: const pw.TextStyle(fontSize: 11)),
+              ],
+            ),
+            pw.SizedBox(height: 4),
+            pw.Align(
+              alignment: pw.Alignment.centerLeft,
+              child: pw.Text('Term: ${report.termName}', style: const pw.TextStyle(fontSize: 11)),
+            ),
+            pw.SizedBox(height: 16),
+            pw.Table(
+              border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey400),
+              columnWidths: {
+                0: const pw.FlexColumnWidth(3),
+                1: const pw.FlexColumnWidth(1),
+                2: const pw.FlexColumnWidth(1),
+                3: const pw.FlexColumnWidth(1),
+                4: const pw.FlexColumnWidth(2),
+              },
+              children: [
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                  children: [
+                    _cell('Subject', bold: true),
+                    _cell('Mark', bold: true, center: true),
+                    _cell('Coef.', bold: true, center: true),
+                    _cell('Grade', bold: true, center: true),
+                    _cell('Remark', bold: true),
+                  ],
+                ),
+                for (final s in report.subjects)
+                  pw.TableRow(children: [
+                    _cell(s.subjectName),
+                    _cell(s.score.toStringAsFixed(1), center: true),
+                    _cell('${s.coefficient}', center: true),
+                    _cell(s.grade ?? '-', center: true),
+                    _cell(s.remark ?? ''),
+                  ]),
+              ],
+            ),
+            pw.SizedBox(height: 20),
+            pw.Divider(),
+            if (report.overallAverage != null) _summaryLine('Average', report.overallAverage!.toStringAsFixed(2)),
+            if (report.classRank != null && report.totalStudents != null)
+              _summaryLine('Class Rank', '${report.classRank} / ${report.totalStudents}'),
+            if (report.principalComment != null && report.principalComment!.isNotEmpty)
+              _summaryLine('Principal\'s Remark', report.principalComment!),
+            pw.SizedBox(height: 20),
+            // A report card is an ACADEMIC document - stamped by the
+            // Principal, not the Proprietor (whose stamp belongs on
+            // financial documents like the receipt instead).
+            pw.Align(
+              alignment: pw.Alignment.centerRight,
+              child: buildStampBlock(branding.principalStamp),
+            ),
+            pw.SizedBox(height: 16),
+            pw.Text('Generated automatically by the school management system.',
+                style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  await Printing.sharePdf(bytes: await doc.save(), filename: 'report_card_${report.studentName.replaceAll(' ', '_')}.pdf');
+}
+
+pw.Widget _cell(String text, {bool bold = false, bool center = false}) {
+  return pw.Padding(
+    padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+    child: pw.Text(
+      text,
+      textAlign: center ? pw.TextAlign.center : pw.TextAlign.left,
+      style: pw.TextStyle(fontSize: 9, fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal),
+    ),
+  );
+}
+
+pw.Widget _summaryLine(String label, String value) {
+  return pw.Padding(
+    padding: const pw.EdgeInsets.symmetric(vertical: 3),
+    child: pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      children: [
+        pw.Text(label, style: const pw.TextStyle(fontSize: 10)),
+        pw.Text(value, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+      ],
+    ),
+  );
 }
 
 class _NotPublishedView extends StatelessWidget {
@@ -390,137 +448,6 @@ class _SummaryRow extends StatelessWidget {
           Expanded(child: Text(label, style: TextStyle(color: Theme.of(context).colorScheme.outline))),
           Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
         ],
-      ),
-    );
-  }
-}
-
-// ============================================================
-// REVIEW MY CHILD
-// ============================================================
-
-class ReviewChildPage extends ConsumerWidget {
-  final EnrolledChild child;
-  const ReviewChildPage({super.key, required this.child});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final landing = ref.watch(landingProvider).value;
-    if (landing == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    final strings = AppStrings(ref.watch(activeLocaleProvider));
-    final yearIdAsync = ref.watch(currentAcademicYearIdProvider(child.schoolId));
-    final commentsAsync = ref.watch(approvedCommentsProvider(child.studentId));
-
-    return Theme(
-      data: buildSchoolTheme(landing.primaryColor, landing.secondaryColor),
-      child: Scaffold(
-        appBar: AppBar(title: Text(strings.reviewMyChild)),
-        body: yearIdAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('$e')),
-          data: (yearId) {
-            if (yearId == null) return Center(child: Text(strings.academicYearNotSet));
-            final attendanceAsync =
-                ref.watch(attendanceSummaryProvider((studentId: child.studentId, academicYearId: yearId)));
-
-            return ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                brandedSubpageHeader(context, schoolName: landing.schoolName, logoUrl: landing.logoUrl, subtitle: child.fullName),
-                Text(strings.attendanceSummary, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-                const SizedBox(height: 6),
-                Text(
-                  strings.isFrench
-                      ? 'Ce résumé montre combien de fois votre enfant a été présent, absent ou en retard cette année.'
-                      : 'This summary shows how many times your child has been present, absent, or late this year.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.outline),
-                ),
-                const SizedBox(height: 12),
-                attendanceAsync.when(
-                  loading: () => const Center(child: CircularProgressIndicator()),
-                  error: (e, _) => Text('$e'),
-                  data: (summary) => Row(
-                    children: [
-                      _AttendanceStat(label: strings.present, value: summary.present, color: Colors.green),
-                      _AttendanceStat(label: strings.absent, value: summary.absent, color: Colors.red),
-                      _AttendanceStat(label: strings.late, value: summary.late, color: Colors.orange),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 28),
-                Text(strings.schoolComments, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-                const SizedBox(height: 6),
-                Text(
-                  strings.isFrench
-                      ? 'Ces commentaires sont écrits par les enseignants et approuvés par le Directeur avant d\'apparaître ici.'
-                      : 'These comments are written by teachers and approved by the Principal before appearing here.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.outline),
-                ),
-                const SizedBox(height: 12),
-                commentsAsync.when(
-                  loading: () => const Center(child: CircularProgressIndicator()),
-                  error: (e, _) => Text('$e'),
-                  data: (comments) {
-                    if (comments.isEmpty) {
-                      return Text(strings.noCommentYet,
-                          style: TextStyle(color: Theme.of(context).colorScheme.outline));
-                    }
-                    return Column(
-                      children: comments
-                          .map((c) => Container(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(c.teacherName, style: const TextStyle(fontWeight: FontWeight.w700)),
-                                        Text(c.examPeriodName, style: TextStyle(color: Theme.of(context).colorScheme.outline, fontSize: 12)),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(c.comment),
-                                  ],
-                                ),
-                              ))
-                          .toList(),
-                    );
-                  },
-                ),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class _AttendanceStat extends StatelessWidget {
-  final String label;
-  final int value;
-  final Color color;
-  const _AttendanceStat({required this.label, required this.value, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(14)),
-        child: Column(
-          children: [
-            Text('$value', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: color)),
-            Text(label, style: TextStyle(color: color, fontSize: 12)),
-          ],
-        ),
       ),
     );
   }

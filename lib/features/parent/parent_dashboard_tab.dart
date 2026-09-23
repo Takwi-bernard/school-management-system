@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/error_state.dart';
 import '../../core/l10n/app_strings.dart';
 import '../../core/motion.dart';
 import '../../core/responsive.dart';
@@ -80,7 +81,7 @@ class ParentDashboardTab extends ConsumerWidget {
                       ),
                       const SizedBox(height: 12),
                       ...pending.map((p) => RevealOnScroll(
-                            child: _PendingAdmissionCard(admission: p, strings: strings, landing: landing, schoolId: schoolId),
+                            child: PendingAdmissionCard(admission: p, strings: strings, landing: landing, schoolId: schoolId),
                           )),
                       const SizedBox(height: 24),
                     ],
@@ -94,7 +95,10 @@ class ParentDashboardTab extends ConsumerWidget {
               padding: EdgeInsets.symmetric(vertical: 40),
               child: Center(child: CircularProgressIndicator()),
             ),
-            error: (e, _) => Text('$e'),
+            error: (e, _) => ErrorStateView(
+              error: e,
+              onRetry: () => ref.invalidate(enrolledChildrenProvider),
+            ),
             data: (children) {
               if (children.isEmpty) {
                 return RevealOnScroll(
@@ -159,12 +163,13 @@ class ParentDashboardTab extends ConsumerWidget {
 
 /// Explicit about WHY the child isn't visible to the school yet - not
 /// just a status label with a hidden button.
-class _PendingAdmissionCard extends ConsumerWidget {
+class PendingAdmissionCard extends ConsumerWidget {
   final PendingAdmission admission;
   final AppStrings strings;
   final LandingModel landing;
   final String schoolId;
-  const _PendingAdmissionCard({
+  const PendingAdmissionCard({
+    super.key,
     required this.admission,
     required this.strings,
     required this.landing,

@@ -1,13 +1,24 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/supabase_providers.dart';
+import '../auth/auth_gate.dart' show authStateChangesProvider;
 import 'parent_models.dart';
 import 'parent_repository.dart';
+
+/// The id of whoever is signed in right now (null when signed out).
+/// parentProfileProvider (and everything below that derives from it)
+/// depends on this, so cached data from a previous parent is dropped -
+/// not shown - the moment a different person signs in on the same tab.
+final parentUserIdProvider = Provider<String?>((ref) {
+  ref.watch(authStateChangesProvider);
+  return ref.watch(supabaseClientProvider).auth.currentUser?.id;
+});
 
 final parentRepositoryProvider = Provider<ParentRepository>((ref) {
   return ParentRepository(ref.watch(supabaseClientProvider));
 });
 
 final parentProfileProvider = FutureProvider<ParentProfile?>((ref) {
+  ref.watch(parentUserIdProvider);
   return ref.watch(parentRepositoryProvider).getProfile();
 });
 
@@ -111,3 +122,11 @@ class ParentProfileActions {
 }
 
 final parentProfileActionsProvider = Provider<ParentProfileActions>((ref) => ParentProfileActions(ref));
+
+/// The unfinished child capture from sign-up, if any - offered as a
+/// "continue where you left off?" prompt at the start of enrollment.
+final childDraftProvider = FutureProvider<Map<String, dynamic>?>((ref) async {
+  final profile = await ref.watch(parentProfileProvider.future);
+  if (profile == null) return null;
+  return ref.watch(parentRepositoryProvider).getChildDraft(profile.parentId);
+});

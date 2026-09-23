@@ -102,9 +102,40 @@ class EnrolledChild {
 
   String get fullName => '$firstName $lastName';
 
+  /// Same child with a different photo URL (or none) - a separate
+  /// method rather than copyWith so passing null really clears it.
+  EnrolledChild withPhotoUrl(String? url) {
+    return EnrolledChild(
+      studentId: studentId,
+      schoolId: schoolId,
+      admissionNumber: admissionNumber,
+      firstName: firstName,
+      lastName: lastName,
+      photoUrl: url,
+      classId: classId,
+      className: className,
+      currentStatus: currentStatus,
+    );
+  }
+
   factory EnrolledChild.fromMap(Map<String, dynamic> map) {
-    final enrollments = map['class_enrollments'] as List?;
-    final currentEnrollment = enrollments?.isNotEmpty == true ? enrollments!.first as Map : null;
+    final enrollments = (map['class_enrollments'] as List?)?.cast<Map>() ?? const <Map>[];
+    // Picks the enrollment for the CURRENT academic year, so a child who
+    // changed class mid-year (or has an old, no-longer-active enrollment
+    // row) doesn't show a stale class. Falls back to any active
+    // enrollment, then to the first row, rather than showing nothing.
+    Map? currentEnrollment;
+    for (final e in enrollments) {
+      final isCurrentYear = (e['academic_years'] as Map?)?['is_current'] == true;
+      if (e['enrollment_status'] == 'active' && isCurrentYear) {
+        currentEnrollment = e;
+        break;
+      }
+    }
+    currentEnrollment ??= enrollments.cast<Map?>().firstWhere(
+          (e) => e?['enrollment_status'] == 'active',
+          orElse: () => enrollments.isNotEmpty ? enrollments.first : null,
+        );
     final classData = currentEnrollment?['classes'] as Map?;
     return EnrolledChild(
       studentId: map['id'] as String,
@@ -150,7 +181,25 @@ class PendingAdmission {
 
   String get fullName => '$firstName $lastName';
   bool get needsPayment => status == 'awaiting_payment';
+  bool get isUnderReview => status == 'under_review';
   bool get isRejected => status == 'rejected';
+
+  /// Same request with a different photo URL (or none) - a separate
+  /// method rather than copyWith so passing null really clears it.
+  PendingAdmission withPhotoUrl(String? url) {
+    return PendingAdmission(
+      id: id,
+      schoolId: schoolId,
+      firstName: firstName,
+      lastName: lastName,
+      photoUrl: url,
+      requestedClassId: requestedClassId,
+      requestedClassName: requestedClassName,
+      academicYearId: academicYearId,
+      status: status,
+      rejectionReason: rejectionReason,
+    );
+  }
 
   factory PendingAdmission.fromMap(Map<String, dynamic> map) {
     final classData = map['classes'] as Map?;
@@ -406,6 +455,12 @@ class PaymentTransaction {
   bool get isPending => status == 'pending';
   bool get isSuccessful => status == 'success';
   bool get isFailed => status == 'failed';
+  // 'cancelled' is a real terminal state (payment_status enum) that was
+  // previously falling through every check above and showing as an
+  // indefinite "Pending" screen. It ends the same way a failure does -
+  // no retry is meaningful, the parent just tries again from scratch.
+  bool get isCancelled => status == 'cancelled';
+  bool get isTerminal => isSuccessful || isFailed || isCancelled;
 
   factory PaymentTransaction.fromMap(Map<String, dynamic> map) {
     final student = map['students'] as Map?;

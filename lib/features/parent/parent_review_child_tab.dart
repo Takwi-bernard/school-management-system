@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/error_state.dart';
 import '../../core/l10n/app_strings.dart';
 import '../landing/landing_model.dart';
 import 'parent_models.dart';
@@ -25,7 +26,10 @@ class ParentReviewChildTab extends ConsumerWidget {
 
     return yearIdAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('$e')),
+      error: (e, _) => ErrorStateView(
+        error: e,
+        onRetry: () => ref.invalidate(currentAcademicYearIdProvider(child.schoolId)),
+      ),
       data: (yearId) {
         if (yearId == null) return Center(child: Text(strings.academicYearNotSet));
         final attendanceAsync = ref.watch(attendanceSummaryProvider((studentId: child.studentId, academicYearId: yearId)));
@@ -59,12 +63,15 @@ class ParentReviewChildTab extends ConsumerWidget {
             const SizedBox(height: 12),
             attendanceAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Text('$e'),
+              error: (e, _) => ErrorStateView(
+                error: e,
+                onRetry: () => ref.invalidate(attendanceSummaryProvider((studentId: child.studentId, academicYearId: yearId))),
+              ),
               data: (summary) => Row(
                 children: [
-                  _AttendanceStat(label: strings.present, value: summary.present, color: Colors.green),
-                  _AttendanceStat(label: strings.absent, value: summary.absent, color: Colors.red),
-                  _AttendanceStat(label: strings.late, value: summary.late, color: Colors.orange),
+                  _AttendanceStat(label: strings.present, value: summary.present, color: theme.colorScheme.tertiary),
+                  _AttendanceStat(label: strings.absent, value: summary.absent, color: theme.colorScheme.error),
+                  _AttendanceStat(label: strings.late, value: summary.late, color: theme.colorScheme.primary),
                 ],
               ),
             ),
@@ -80,7 +87,7 @@ class ParentReviewChildTab extends ConsumerWidget {
             const SizedBox(height: 12),
             commentsAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Text('$e'),
+              error: (e, _) => ErrorStateView(error: e, onRetry: () => ref.invalidate(approvedCommentsProvider(child.studentId))),
               data: (comments) {
                 if (comments.isEmpty) {
                   return Text(strings.noCommentYet, style: TextStyle(color: theme.colorScheme.outline));

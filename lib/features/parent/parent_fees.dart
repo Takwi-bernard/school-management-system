@@ -70,7 +70,12 @@ class _MobileMoneyPaymentPageState extends ConsumerState<MobileMoneyPaymentPage>
         'amount': widget.amount,
       });
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) {
+        // initiatePayment throws Exception(serverMessage) - strip the
+        // "Exception: " prefix Dart adds so the parent doesn't see it.
+        final message = e.toString().replaceFirst('Exception: ', '');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -194,8 +199,16 @@ class PaymentStatusPage extends ConsumerStatefulWidget {
 }
 
 class _PaymentStatusPageState extends ConsumerState<PaymentStatusPage> {
+  // 20 tries * 6s = 2 minutes. Past that a Mobile Money prompt has
+  // almost certainly expired - polling forever (silently, on a page
+  // the parent may have walked away from) wastes their data for no
+  // reason, so it stops and offers a manual re-check instead.
+  static const _maxAttempts = 20;
+
   PaymentTransaction? _transaction;
   bool _checking = false;
+  bool _timedOut = false;
+  int _attempts = 0;
 
   @override
   void initState() {
@@ -210,7 +223,12 @@ class _PaymentStatusPageState extends ConsumerState<PaymentStatusPage> {
       final result = await ref.read(parentRepositoryProvider).verifyPayment(widget.transactionId);
       if (!mounted) return;
       setState(() => _transaction = result);
-      if (result.isPending) {
+      if (!result.isTerminal) {
+        _attempts++;
+        if (_attempts >= _maxAttempts) {
+          setState(() => _timedOut = true);
+          return;
+        }
         await Future.delayed(const Duration(seconds: 6));
         if (mounted) _poll();
       } else {
@@ -218,9 +236,19 @@ class _PaymentStatusPageState extends ConsumerState<PaymentStatusPage> {
         ref.invalidate(enrolledChildrenProvider);
       }
     } catch (_) {
+      // A network blip while polling isn't a failed payment - just
+      // stop this round quietly; "Check again" lets the parent retry.
     } finally {
       if (mounted) setState(() => _checking = false);
     }
+  }
+
+  void _checkAgain() {
+    setState(() {
+      _timedOut = false;
+      _attempts = 0;
+    });
+    _poll();
   }
 
   Future<void> _generateReceipt(BuildContext context) async {
@@ -232,7 +260,10 @@ class _PaymentStatusPageState extends ConsumerState<PaymentStatusPage> {
     final strings = AppStrings(ref.watch(activeLocaleProvider));
     final t = _transaction;
     final success = t?.isSuccessful ?? false;
-    final failed = t?.isFailed ?? false;
+    // A cancelled payment reads the same as a failed one here - both
+    // are dead ends that need a fresh attempt, just worded differently.
+    final failed = (t?.isFailed ?? false) || (t?.isCancelled ?? false);
+    final cancelled = t?.isCancelled ?? false;
 
     return Theme(
       data: buildSchoolTheme(widget.landing.primaryColor, widget.landing.secondaryColor),
@@ -249,13 +280,31 @@ class _PaymentStatusPageState extends ConsumerState<PaymentStatusPage> {
                   brandedSubpageHeader(context, schoolName: widget.landing.schoolName, logoUrl: widget.landing.logoUrl),
                   const SizedBox(height: 8),
                   Icon(
-                    success ? Icons.check_circle_rounded : failed ? Icons.cancel_rounded : Icons.hourglass_top_rounded,
+                    success
+                        ? Icons.check_circle_rounded
+                        : failed
+                            ? Icons.cancel_rounded
+                            : _timedOut
+                                ? Icons.schedule_rounded
+                                : Icons.hourglass_top_rounded,
                     size: 72,
-                    color: success ? Colors.green : failed ? Colors.red : Theme.of(context).colorScheme.primary,
+                    color: success
+                        ? Theme.of(context).colorScheme.tertiary
+                        : failed
+                            ? Theme.of(context).colorScheme.error
+                            : Theme.of(context).colorScheme.primary,
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    success ? strings.paymentSuccessful : failed ? strings.paymentFailed : strings.paymentPending,
+                    success
+                        ? strings.paymentSuccessful
+                        : cancelled
+                            ? (strings.isFrench ? 'Paiement annulé' : 'Payment cancelled')
+                            : failed
+                                ? strings.paymentFailed
+                                : _timedOut
+                                    ? (strings.isFrench ? 'Toujours en attente' : 'Still pending')
+                                    : strings.paymentPending,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 8),
@@ -268,9 +317,13 @@ class _PaymentStatusPageState extends ConsumerState<PaymentStatusPage> {
                             ? (strings.isFrench
                                 ? 'Le paiement n\'a pas pu être confirmé. Vous pouvez réessayer.'
                                 : 'The payment could not be confirmed. You can try again.')
-                            : (strings.isFrench
-                                ? 'Vérifiez votre téléphone et entrez votre code secret Mobile Money pour continuer. Cette page se mettra à jour automatiquement.'
-                                : 'Check your phone and enter your Mobile Money PIN to continue. This page will update automatically.'),
+                            : _timedOut
+                                ? (strings.isFrench
+                                    ? 'Nous n\'avons pas encore reçu de confirmation. Vous pouvez vérifier à nouveau, ou consulter l\'historique des paiements plus tard.'
+                                    : 'We haven\'t received confirmation yet. You can check again, or look at your payment history later.')
+                                : (strings.isFrench
+                                    ? 'Vérifiez votre téléphone et entrez votre code secret Mobile Money pour continuer. Cette page se mettra à jour automatiquement.'
+                                    : 'Check your phone and enter your Mobile Money PIN to continue. This page will update automatically.'),
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Theme.of(context).colorScheme.outline),
                   ),
@@ -281,7 +334,14 @@ class _PaymentStatusPageState extends ConsumerState<PaymentStatusPage> {
                       icon: const Icon(Icons.receipt_long_rounded),
                       label: Text(strings.downloadReceipt),
                     ),
-                  if (!success && !failed) const Padding(padding: EdgeInsets.only(top: 12), child: CircularProgressIndicator()),
+                  if (!success && !failed && !_timedOut)
+                    const Padding(padding: EdgeInsets.only(top: 12), child: CircularProgressIndicator()),
+                  if (!success && !failed && _timedOut)
+                    FilledButton.icon(
+                      onPressed: _checkAgain,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: Text(strings.isFrench ? 'Vérifier à nouveau' : 'Check again'),
+                    ),
                   if (failed) OutlinedButton(onPressed: () => Navigator.pop(context), child: Text(strings.tryAgain)),
                 ],
               ),

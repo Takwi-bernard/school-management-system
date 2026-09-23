@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'parent_providers.dart' show parentUserIdProvider;
+
 /// A single "screen" shown inside the parent shell's content area.
 ///
 /// Mirrors teacher_navigation.dart exactly, same reasoning: a page
@@ -18,14 +20,22 @@ class ParentContentPage {
   const ParentContentPage({required this.title, required this.builder});
 }
 
-final parentContentStackProvider = StateProvider<List<ParentContentPage>>((ref) => []);
+/// Resets to an empty stack whenever a different user signs in.
+final parentContentStackProvider = StateProvider<List<ParentContentPage>>((ref) {
+  ref.watch(parentUserIdProvider);
+  return const <ParentContentPage>[];
+});
 
 /// Tracks which sidebar/drawer item should show as highlighted -
 /// public (moved here from parent_shell.dart) so any widget that can
 /// trigger in-shell content - not just the shell's own nav taps - can
 /// keep the highlight consistent with what's actually showing. See
 /// parent_dashboard_tab.dart's child cards for the other call site.
-final parentActiveNavKeyProvider = StateProvider<String>((ref) => 'home');
+final parentActiveNavKeyProvider = StateProvider<String>((ref) {
+  // Back to Home whenever a different user signs in.
+  ref.watch(parentUserIdProvider);
+  return 'home';
+});
 
 /// Nav items behave as top-level destinations here (unlike Teacher's
 /// mix of tabs + drill-down) - selecting one REPLACES the stack

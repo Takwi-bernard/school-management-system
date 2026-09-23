@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:school_management_system/features/landing/landing_providers.dart';
 
+import '../../core/error_state.dart';
 import '../../core/l10n/app_strings.dart';
 import '../../shared/sign_out_button.dart';
 import 'parent_models.dart';
 import 'parent_providers.dart';
+import 'parent_repository.dart' show WrongPasswordException;
 
 /// Migrated from ParentProfilePage - no own Scaffold/AppBar/Theme
 /// wrap anymore, ParentShell provides all three. Sign-out row
@@ -24,7 +26,7 @@ class ParentProfileTab extends ConsumerWidget {
 
     return profileAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('$e')),
+      error: (e, _) => ErrorStateView(error: e, onRetry: () => ref.invalidate(parentProfileProvider)),
       data: (profile) {
         if (profile == null) return Center(child: Text(strings.profileNotFound));
         return ListView(
@@ -129,7 +131,9 @@ class _EditableInfoCardState extends ConsumerState<_EditableInfoCard> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${widget.strings.profileSaveError} ($e)')));
+        final detail = e.toString().replaceFirst('Exception: ', '');
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('${widget.strings.profileSaveError} ($detail)')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -265,6 +269,9 @@ class _ChangePasswordDialogState extends ConsumerState<_ChangePasswordDialog> {
             newPassword: _newPass.text,
           );
       if (mounted) Navigator.pop(context, true);
+    } on WrongPasswordException {
+      final strings = AppStrings(ref.read(activeLocaleProvider));
+      setState(() => _error = strings.isFrench ? 'Votre mot de passe actuel est incorrect.' : 'Your current password is incorrect.');
     } catch (e) {
       setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {

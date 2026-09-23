@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/browser_chrome.dart';
+import '../../core/error_state.dart';
 import '../../core/l10n/app_strings.dart';
 import '../../core/school_color.dart';
 import '../auth/auth_gate.dart';
@@ -23,14 +24,18 @@ class ParentHome extends ConsumerWidget {
     final locale = ref.watch(activeLocaleProvider);
 
     return landing.when(
+      skipLoadingOnReload: true,
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Scaffold(body: Center(child: Text('$e'))),
+      error: (e, _) => Scaffold(body: ErrorStateView(error: e, onRetry: () => ref.invalidate(landingProvider))),
       data: (school) {
         final sessionAsync = ref.watch(sessionProfileProvider(school.schoolId));
 
         return sessionAsync.when(
+          skipLoadingOnReload: true,
           loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-          error: (e, _) => Scaffold(body: Center(child: Text('$e'))),
+          error: (e, _) => Scaffold(
+            body: ErrorStateView(error: e, onRetry: () => ref.invalidate(sessionProfileProvider(school.schoolId))),
+          ),
           data: (session) {
             if (session == null) {
               WidgetsBinding.instance.addPostFrameCallback((_) => context.go('/sign-in'));
@@ -38,7 +43,13 @@ class ParentHome extends ConsumerWidget {
             }
             if (session.role != 'parent') {
               return Scaffold(
-                body: Center(child: Text('This account is a ${session.role} account, not Parent.')),
+                body: Center(
+                  child: Text(
+                    locale.languageCode == 'fr'
+                        ? 'Ce compte est un compte ${session.role}, pas Parent.'
+                        : 'This account is a ${session.role} account, not Parent.',
+                  ),
+                ),
               );
             }
 

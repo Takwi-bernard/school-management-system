@@ -2,6 +2,13 @@ import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'parent_models.dart';
 
+/// Thrown by changePassword specifically for a wrong CURRENT password,
+/// so the UI (which has the locale) can show a localized message
+/// instead of a hardcoded English one baked in here.
+class WrongPasswordException implements Exception {
+  const WrongPasswordException();
+}
+
 class ParentRepository {
   ParentRepository(this._client);
   final SupabaseClient _client;
@@ -37,16 +44,18 @@ class ParentRepository {
             student_photo_url, current_status,
             class_enrollments (
               enrollment_status,
-              classes ( id, class_name )
+              classes ( id, class_name ),
+              academic_years ( is_current )
             )
           ),
           guardians!inner ( parent_id )
         ''')
         .eq('guardians.parent_id', parentId);
 
-    return rows
+    final children = rows
         .map((r) => EnrolledChild.fromMap(r['students'] as Map<String, dynamic>))
         .toList();
+    return _withSignedPhotoUrls(children);
   }
 
   Future<List<PendingAdmission>> getPendingAdmissions(String parentId) async {
@@ -57,7 +66,48 @@ class ParentRepository {
         .not('status', 'eq', 'approved') // approved ones become real students above
         .order('created_at', ascending: false);
 
-    return rows.map((r) => PendingAdmission.fromMap(r)).toList();
+    final admissions = rows.map((r) => PendingAdmission.fromMap(r)).toList();
+    final signed = await Future.wait(admissions.map((a) async {
+      final path = a.photoUrl;
+      if (path == null || path.isEmpty) return a;
+      final url = await _signedStudentPhotoUrl(path);
+      return a.withPhotoUrl(url);
+    }));
+    return signed;
+  }
+
+  // The student-photos bucket is private, so a stored value can never be
+  // opened directly - it must always be re-signed. Handles both a bare
+  // storage path (the current format) and an old getPublicUrl-style link
+  // from before this fix, so previously-submitted rows keep working.
+  static const _studentPhotoBucket = 'student-photos';
+
+  String? _studentPhotoPath(String stored) {
+    if (!stored.startsWith('http')) return stored;
+    const marker = '/$_studentPhotoBucket/';
+    final index = stored.indexOf(marker);
+    if (index == -1) return null;
+    return Uri.decodeComponent(stored.substring(index + marker.length).split('?').first);
+  }
+
+  Future<String?> _signedStudentPhotoUrl(String stored) async {
+    final path = _studentPhotoPath(stored);
+    if (path == null) return null;
+    try {
+      return await _client.storage.from(_studentPhotoBucket).createSignedUrl(path, 6 * 60 * 60);
+    } catch (_) {
+      // A photo that can no longer be signed (moved/deleted) just shows
+      // the placeholder icon instead of a broken image.
+      return null;
+    }
+  }
+
+  Future<List<EnrolledChild>> _withSignedPhotoUrls(List<EnrolledChild> children) {
+    return Future.wait(children.map((child) async {
+      final stored = child.photoUrl;
+      if (stored == null || stored.isEmpty) return child;
+      return child.withPhotoUrl(await _signedStudentPhotoUrl(stored));
+    }));
   }
 
   // --------------------------------------------------
@@ -69,7 +119,13 @@ class ParentRepository {
         .from('classes')
         .select('id, class_name, department_id')
         .eq('school_id', schoolId)
-        .eq('isactive', true)
+        // NOTE: `classes` has BOTH an `active` and an `is_active` column in
+        // the schema - going with `is_active` since it matches the naming
+        // used everywhere else (users, school_assets). Flag me if a class
+        // you've deliberately disabled still shows up here, or if the
+        // Principal side actually toggles the OTHER column - then this
+        // needs to switch to `active` instead.
+        .eq('is_active', true)
         .order('level_order');
     return rows.map((r) => ClassOption.fromMap(r)).toList();
   }
@@ -116,9 +172,29 @@ class ParentRepository {
   }) async {
     String? photoUrl;
     if (photoBytes != null && photoExtension != null) {
-      final path = '$schoolId/$parentId/${DateTime.now().millisecondsSinceEpoch}.$photoExtension';
-      await _client.storage.from('student-photos').uploadBinary(path, photoBytes);
-      photoUrl = _client.storage.from('student-photos').getPublicUrl(path);
+      final userId = _client.auth.currentUser?.id;
+      if (userId == null) {
+        throw StateError('No signed-in user - cannot upload a child photo.');
+      }
+      // The student-photos bucket is private. Its SELECT policy only lets
+      // the uploader read a file back when the 2nd folder segment equals
+      // their OWN auth.uid() - using parentId (the parents table row,
+      // not the auth user) here silently broke read-back for the parent
+      // who just uploaded the photo. Store the bare path, not a public
+      // URL the private bucket will never actually serve; callers sign
+      // it on read via _signedStudentPhotoUrl.
+      final path = '$schoolId/$userId/${DateTime.now().millisecondsSinceEpoch}.$photoExtension';
+      const contentTypes = {'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'webp': 'image/webp'};
+      final contentType = contentTypes[photoExtension.toLowerCase()];
+      if (contentType == null) {
+        throw const FormatException('Unsupported image type.');
+      }
+      await _client.storage.from('student-photos').uploadBinary(
+            path,
+            photoBytes,
+            fileOptions: FileOptions(contentType: contentType),
+          );
+      photoUrl = path;
     }
 
     final request = await _client
@@ -150,6 +226,29 @@ class ParentRepository {
     }
 
     return request['id'] as String;
+  }
+
+  // --------------------------------------------------
+  // SIGN-UP DRAFT - the optional child name/photo captured on the
+  // registration screen, reconciled into the real enrollment flow so
+  // it isn't silently thrown away.
+  // --------------------------------------------------
+
+  Future<Map<String, dynamic>?> getChildDraft(String parentId) async {
+    return _client
+        .from('parent_child_drafts')
+        .select()
+        .eq('parent_id', parentId)
+        // A draft that has already produced a real student is done -
+        // don't offer to "continue" it again.
+        .filter('converted_to_student_id', 'is', null)
+        .order('created_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
+  }
+
+  Future<void> deleteChildDraft(String draftId) async {
+    await _client.from('parent_child_drafts').delete().eq('id', draftId);
   }
 
   // --------------------------------------------------
@@ -253,7 +352,7 @@ class ParentRepository {
     try {
       await _client.auth.signInWithPassword(email: email, password: currentPassword);
     } on AuthException {
-      throw Exception('Your current password is incorrect.');
+      throw const WrongPasswordException();
     }
 
     await _client.auth.updateUser(UserAttributes(password: newPassword));

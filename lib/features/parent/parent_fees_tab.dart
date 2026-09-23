@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/error_state.dart';
 import '../../core/l10n/app_strings.dart';
 import '../landing/landing_model.dart';
 import 'parent_models.dart';
@@ -25,7 +26,10 @@ class ParentFeesTab extends ConsumerWidget {
 
     return academicYearIdAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('$e')),
+      error: (e, _) => ErrorStateView(
+        error: e,
+        onRetry: () => ref.invalidate(currentAcademicYearIdProvider(child.schoolId)),
+      ),
       data: (yearId) {
         if (yearId == null) {
           return _FeesInfoState(icon: Icons.event_busy_rounded, message: strings.academicYearNotSet);
@@ -43,7 +47,12 @@ class ParentFeesTab extends ConsumerWidget {
         );
         return feesAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('$e')),
+          error: (e, _) => ErrorStateView(
+            error: e,
+            onRetry: () => ref.invalidate(
+              childFeesProvider((studentId: child.studentId, classId: child.classId!, academicYearId: yearId)),
+            ),
+          ),
           data: (fees) {
             if (fees.isEmpty) {
               return _FeesInfoState(icon: Icons.receipt_long_outlined, message: strings.noFeesConfigured);
