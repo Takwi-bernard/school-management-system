@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdf/pdf.dart';
@@ -440,54 +442,78 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
     );
   }
 
-  Future<void> _downloadSingleClass(String className, List<TimetableSlot> slots) async {
-    final assets = await ref.read(officialBrandingProvider(widget.schoolId).future);
-    final branding = await OfficialBranding.fetch(assets);
+  bool _downloading = false;
 
-    final doc = pw.Document();
-    doc.addPage(pw.Page(
-      pageFormat: PdfPageFormat.a4.landscape,
-      build: (context) => pw.Padding(
-        padding: const pw.EdgeInsets.all(24),
-        child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
+  //function for single class pdf download
+
+  Future<void> _downloadSingleClass(String className, List<TimetableSlot> slots) async {
+    setState(()  => _downloading = true);
+
+    try{
+      final assets = await ref.read(officialBrandingProvider(widget.schoolId).future);
+      final branding = await OfficialBranding.fetch(assets);
+
+      final doc = pw.Document();
+
+      doc.addPage(pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.all(24),
+        build: (context)=> [
           buildDocumentHeader(branding: branding, schoolName: widget.landing.schoolName, motto: widget.landing.motto),
-          pw.SizedBox(height: 10),
-          _buildClassSection(className, slots),
-        ]),
-      ),
-    ));
-    await Printing.sharePdf(bytes: await doc.save(), filename: 'timetable_${className.replaceAll(' ', '_')}.pdf');
+        pw.SizedBox(height: 10),
+        _buildClassSection(className, slots)
+        ]));
+        final bytes = await doc.save();
+        await Printing.sharePdf(bytes: bytes, filename: 'timetable_${className.replaceAll('', '_')}.pdf');
+       
+    }
+    catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('could not generate PDF: $e')));
+      
+    }
+    finally {
+      if (mounted)  setState(() => _downloading = false);
+    }
   }
 
-  /// One PDF, one page PER CLASS - used for both "download whole
-  /// department" and "download whole school".
-  Future<void> _downloadMultipleClasses(String label, Map<String, String> classIdToName, Map<String, List<TimetableSlot>> byClass) async {
-    final assets = await ref.read(officialBrandingProvider(widget.schoolId).future);
-    final branding = await OfficialBranding.fetch(assets);
+  Future<void> _downloadMultipleClasses(String label, Map<String , String> classIdToName, Map< String, List<TimetableSlot>> byClass) async {
+    setState(() => _downloading = true);
 
-    final doc = pw.Document();
-    for (final entry in classIdToName.entries) {
-      final slots = byClass[entry.key] ?? [];
-      if (slots.isEmpty) continue; // skip classes with no generated timetable yet
-      doc.addPage(pw.Page(
-        pageFormat: PdfPageFormat.a4.landscape,
-        build: (context) => pw.Padding(
-          padding: const pw.EdgeInsets.all(24),
-          child: pw.Column(children: [
+    try {
+      final assets = await ref.read(officialBrandingProvider(widget.schoolId).future);
+      final branding = await OfficialBranding.fetch(assets);
+
+      final doc = pw.Document();
+      var addedAny = false;
+
+      for ( final entry in classIdToName.entries) {
+        final slots = byClass[entry.key] ?? [];
+        if (slots.isEmpty) continue;
+        addedAny = true;
+        doc.addPage(pw.MultiPage(
+          pageFormat: PdfPageFormat.a4.landscape,
+          margin: const pw.EdgeInsets.all(24),
+          build: (context)=> [
             buildDocumentHeader(branding: branding, schoolName: widget.landing.schoolName, motto: widget.landing.motto),
             pw.SizedBox(height: 10),
             _buildClassSection(entry.value, slots),
-          ]),
-        ),
-      ));
+          ]));
+      }
+      if (!addedAny) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar( const SnackBar(content: Text('no generated timetables for found for to download.')));
+       return;
+      }
+      final bytes = await doc.save();
+      await Printing.sharePdf(bytes: bytes, filename: 'timetable_${label.replaceAll('', '_')}.pdf');
     }
-    if (doc.document.pdfPageList.pages.isEmpty) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No generated timetables found to download.')));
-      return;
+    catch (e){
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar( SnackBar(content: Text('could not generate PDF: $e')));
+      
     }
-    await Printing.sharePdf(bytes: await doc.save(), filename: 'timetable_${label.replaceAll(' ', '_')}.pdf');
+    finally {
+      if (mounted) setState(() => _downloading = false );
+    }
   }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -747,7 +773,11 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      OutlinedButton.icon(onPressed: () => _downloadSingleClass(_class!.className, slots), icon: const Icon(Icons.download_rounded), label: const Text('Download PDF')),
+                     OutlinedButton.icon(
+                      onPressed: _downloading ? null : () => _downloadSingleClass(_class!.className , slots), 
+                      icon: _downloading ? const SizedBox(width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2,)): const Icon(Icons.download_rounded),
+                      label: Text(_downloading ? 'Generating...' : 'Download PDF'),),
                       const SizedBox(height: 12),
                       Expanded(
                         child: ListView(
