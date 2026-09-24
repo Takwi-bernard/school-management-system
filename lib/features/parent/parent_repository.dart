@@ -163,6 +163,7 @@ class ParentRepository {
     String? gender,
     DateTime? dateOfBirth,
     String? guardianName,
+    String? guardianRelationship,
     String? emergencyContactName,
     String? emergencyContactPhone,
     String? address,
@@ -209,6 +210,7 @@ class ParentRepository {
           'gender': gender,
           'date_of_birth': dateOfBirth?.toIso8601String(),
           'guardian_name': guardianName,
+          'guardian_relationship': guardianRelationship,
           'emergency_contact_name': emergencyContactName,
           'emergency_contact_phone': emergencyContactPhone,
           'address': address,
@@ -249,6 +251,40 @@ class ParentRepository {
 
   Future<void> deleteChildDraft(String draftId) async {
     await _client.from('parent_child_drafts').delete().eq('id', draftId);
+  }
+
+  // --------------------------------------------------
+  // LINK AN ALREADY-ADMITTED CHILD BY ADMISSION NUMBER
+  // For when staff admitted (and possibly already paid for) a child on
+  // the parent's behalf - lets the parent's own account pick that
+  // child up. Both RPCs are SECURITY DEFINER since a parent has no RLS
+  // access to a student they aren't yet linked to.
+  // --------------------------------------------------
+
+  /// Returns minimal info (name, class, photo path) if the admission
+  /// number AND date of birth both match a child at this school, or
+  /// null if not - deliberately not distinguishing which one was wrong.
+  Future<Map<String, dynamic>?> lookupChildByAdmissionNumber({
+    required String schoolId,
+    required String admissionNumber,
+    required DateTime dateOfBirth,
+  }) async {
+    final result = await _client.rpc('lookup_child_by_admission_number', params: {
+      'p_school_id': schoolId,
+      'p_admission_number': admissionNumber.trim(),
+      'p_date_of_birth': dateOfBirth.toIso8601String().split('T').first,
+    });
+    if (result == null) return null;
+    final map = Map<String, dynamic>.from(result as Map);
+    final photoPath = map['photo_path'] as String?;
+    if (photoPath != null && photoPath.isNotEmpty) {
+      map['photo_path'] = await _signedStudentPhotoUrl(photoPath);
+    }
+    return map;
+  }
+
+  Future<void> linkChildToParent(String studentId) async {
+    await _client.rpc('link_child_to_parent', params: {'p_student_id': studentId});
   }
 
   // --------------------------------------------------

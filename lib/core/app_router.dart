@@ -10,7 +10,7 @@ import '../features/auth/teacher_sign_up_page.dart';
 import '../features/auth/auth_gate.dart';
 import '../features/teacher/teacher_home.dart';
 import '../features/parent/parent_home.dart';
-import '../features/parent/parent_enrollment.dart';
+import '../features/parent/parent_add_child_entry.dart';
 import '../features/parent/parent_fees.dart';
 import '../features/parent/parent_models.dart';
 import '../features/principal/principal_home.dart';
@@ -65,7 +65,7 @@ final appRouter = GoRouter(
       routes: [
         GoRoute(
           path: 'enroll',
-          pageBuilder: (c, s) => _page(EnrollChildPage(schoolId: s.extra as String), s),
+          pageBuilder: (c, s) => _page(AddChildEntryPage(schoolId: s.extra as String), s),
         ),
         // 'fees', 'report-card', 'review' and 'profile' routes removed -
         // all four are now reached in-shell (ParentShell's own nav
