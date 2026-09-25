@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdf/pdf.dart';
@@ -11,7 +9,6 @@ import '../../shared/official_document_branding.dart';
 import '../landing/landing_model.dart';
 import 'principal_models.dart';
 import 'principal_providers.dart';
-import 'principal_repository.dart';
 
 const _dayNames = {'1': 'Monday', '2': 'Tuesday', '3': 'Wednesday', '4': 'Thursday', '5': 'Friday', '6': 'Saturday', '7': 'Sunday'};
 
@@ -40,7 +37,9 @@ class _TimetableSettingsPageState extends ConsumerState<TimetableSettingsPage> {
     _periodController.text = s.periodDurationMinutes.toString();
     _dayStart = _parseTime(s.dayStartTime);
     _dayEnd = _parseTime(s.dayEndTime);
-    _workingDays..clear()..addAll(s.workingDays);
+    _workingDays
+      ..clear()
+      ..addAll(s.workingDays);
     _breaks = List.from(s.breakPeriods);
     _loaded = true;
   }
@@ -129,14 +128,20 @@ class _TimetableSettingsPageState extends ConsumerState<TimetableSettingsPage> {
               const SizedBox(height: 8),
               Wrap(
                 spacing: 6,
-                children: _dayNames.entries.map((e) => FilterChip(
-                      label: Text(e.value.substring(0, 3)),
-                      selected: _workingDays.contains(int.parse(e.key)),
-                      onSelected: (sel) => setState(() {
-                        final d = int.parse(e.key);
-                        if (sel) { _workingDays.add(d); } else { _workingDays.remove(d); }
-                      }),
-                    )).toList(),
+                children: _dayNames.entries
+                    .map((e) => FilterChip(
+                          label: Text(e.value.substring(0, 3)),
+                          selected: _workingDays.contains(int.parse(e.key)),
+                          onSelected: (sel) => setState(() {
+                            final d = int.parse(e.key);
+                            if (sel) {
+                              _workingDays.add(d);
+                            } else {
+                              _workingDays.remove(d);
+                            }
+                          }),
+                        ))
+                    .toList(),
               ),
               const SizedBox(height: 20),
               Row(children: [
@@ -164,7 +169,9 @@ class _TimetableSettingsPageState extends ConsumerState<TimetableSettingsPage> {
               const SizedBox(height: 28),
               FilledButton(
                 onPressed: _saving ? null : _save,
-                child: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('Save Settings'),
+                child: _saving
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Save Settings'),
               ),
             ],
           );
@@ -178,7 +185,7 @@ class _TimetableSettingsPageState extends ConsumerState<TimetableSettingsPage> {
 // GENERATE TIMETABLE - scope + optional note + trigger
 // ============================================================
 
-enum _Scope { school, department, class_ }
+enum _GenScope { school, department, class_ }
 
 class GenerateTimetablePage extends ConsumerStatefulWidget {
   final String schoolId;
@@ -189,7 +196,7 @@ class GenerateTimetablePage extends ConsumerStatefulWidget {
 }
 
 class _GenerateTimetablePageState extends ConsumerState<GenerateTimetablePage> {
-  _Scope _scope = _Scope.class_;
+  _GenScope _scope = _GenScope.class_;
   DepartmentFull? _department;
   ManagedClass? _class;
   final _noteController = TextEditingController();
@@ -203,11 +210,11 @@ class _GenerateTimetablePageState extends ConsumerState<GenerateTimetablePage> {
   }
 
   Future<void> _generate() async {
-    if (_scope == _Scope.department && _department == null) {
+    if (_scope == _GenScope.department && _department == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Select a department.')));
       return;
     }
-    if (_scope == _Scope.class_ && _class == null) {
+    if (_scope == _GenScope.class_ && _class == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Select a class.')));
       return;
     }
@@ -217,9 +224,9 @@ class _GenerateTimetablePageState extends ConsumerState<GenerateTimetablePage> {
       builder: (_) => AlertDialog(
         title: const Text('Generate timetable?'),
         content: Text(
-          _scope == _Scope.school
+          _scope == _GenScope.school
               ? 'This regenerates the timetable for EVERY class in the school. Existing slots for these classes will be replaced.'
-              : _scope == _Scope.department
+              : _scope == _GenScope.department
                   ? 'This regenerates the timetable for every class in ${_department!.departmentName}. Existing slots for these classes will be replaced.'
                   : 'This regenerates the timetable for ${_class!.className}. Existing slots for this class will be replaced.',
         ),
@@ -231,18 +238,20 @@ class _GenerateTimetablePageState extends ConsumerState<GenerateTimetablePage> {
     );
     if (confirmed != true) return;
 
-    setState(() { _generating = true; _lastResult = null; });
+    setState(() {
+      _generating = true;
+      _lastResult = null;
+    });
     try {
       final result = await ref.read(principalRepositoryProvider).generateTimetable(
             schoolId: widget.schoolId,
-            scopeType: _scope == _Scope.school ? 'school' : _scope == _Scope.department ? 'department' : 'class',
-            departmentId: _scope == _Scope.department ? _department!.id : null,
-            classId: _scope == _Scope.class_ ? _class!.id : null,
+            scopeType: _scope == _GenScope.school ? 'school' : _scope == _GenScope.department ? 'department' : 'class',
+            departmentId: _scope == _GenScope.department ? _department!.id : null,
+            classId: _scope == _GenScope.class_ ? _class!.id : null,
             principalNote: _noteController.text,
           );
       setState(() => _lastResult = result);
       ref.invalidate(timetableHistoryProvider(widget.schoolId));
-      if (_scope == _Scope.class_) ref.invalidate(classTimetableProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${result['slots_created']} slots created${(result['slots_rejected'] as int) > 0 ? ", ${result['slots_rejected']} rejected by validation" : ""}.')),
@@ -271,17 +280,21 @@ class _GenerateTimetablePageState extends ConsumerState<GenerateTimetablePage> {
             style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
           ),
           const SizedBox(height: 16),
-          SegmentedButton<_Scope>(
+          SegmentedButton<_GenScope>(
             segments: const [
-              ButtonSegment(value: _Scope.class_, label: Text('One Class')),
-              ButtonSegment(value: _Scope.department, label: Text('Department')),
-              ButtonSegment(value: _Scope.school, label: Text('Whole School')),
+              ButtonSegment(value: _GenScope.class_, label: Text('One Class')),
+              ButtonSegment(value: _GenScope.department, label: Text('Department')),
+              ButtonSegment(value: _GenScope.school, label: Text('Whole School')),
             ],
             selected: {_scope},
-            onSelectionChanged: (s) => setState(() { _scope = s.first; _department = null; _class = null; }),
+            onSelectionChanged: (s) => setState(() {
+              _scope = s.first;
+              _department = null;
+              _class = null;
+            }),
           ),
           const SizedBox(height: 16),
-          if (_scope != _Scope.school)
+          if (_scope != _GenScope.school)
             departmentsAsync.when(
               loading: () => const LinearProgressIndicator(),
               error: (e, _) => Text('$e'),
@@ -289,10 +302,13 @@ class _GenerateTimetablePageState extends ConsumerState<GenerateTimetablePage> {
                 initialValue: _department,
                 decoration: const InputDecoration(labelText: 'Department', border: OutlineInputBorder()),
                 items: departments.map((d) => DropdownMenuItem(value: d, child: Text(d.departmentName))).toList(),
-                onChanged: (v) => setState(() { _department = v; _class = null; }),
+                onChanged: (v) => setState(() {
+                  _department = v;
+                  _class = null;
+                }),
               ),
             ),
-          if (_scope == _Scope.class_ && _department != null) ...[
+          if (_scope == _GenScope.class_ && _department != null) ...[
             const SizedBox(height: 12),
             Consumer(
               builder: (context, ref, _) {
@@ -332,7 +348,9 @@ class _GenerateTimetablePageState extends ConsumerState<GenerateTimetablePage> {
           const SizedBox(height: 24),
           FilledButton.icon(
             onPressed: _generating ? null : _generate,
-            icon: _generating ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.auto_awesome_rounded),
+            icon: _generating
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.auto_awesome_rounded),
             label: Text(_generating ? 'Generating...' : 'Generate Timetable'),
           ),
           if (_lastResult != null) ...[
@@ -362,7 +380,7 @@ class _GenerateTimetablePageState extends ConsumerState<GenerateTimetablePage> {
 }
 
 // ============================================================
-// VIEW / DOWNLOAD TIMETABLE - Department -> Class -> weekly grid
+// VIEW / DOWNLOAD TIMETABLE - Class / Department / Whole School
 // ============================================================
 
 enum _ViewScope { class_, department, school }
@@ -380,85 +398,30 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
   _ViewScope _scope = _ViewScope.class_;
   DepartmentFull? _department;
   ManagedClass? _class;
+  bool _downloading = false;
 
   void _resetSelection() {
-    setState(() { _department = null; _class = null; });
+    setState(() {
+      _department = null;
+      _class = null;
+    });
   }
 
-     pw.Widget _buildClassSection(String className, List<TimetableSlot> slots) {
-    final byDay = <String, List<TimetableSlot>>{};
-    for (final s in slots) {
-      byDay.putIfAbsent(s.dayOfWeek, () => []).add(s);
-    }
-    for (final list in byDay.values) {
-      list.sort((a, b) => a.startTime.compareTo(b.startTime));
-    }
+  // ---------------- PDF BUILDING ----------------
 
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-      children: [
-        pw.Text('$className - Weekly Timetable', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
-        pw.SizedBox(height: 12),
-        pw.Table(
-          border: pw.TableBorder(
-            horizontalInside: const pw.BorderSide(width: 0.5, color: PdfColors.grey400),
-            verticalInside: const pw.BorderSide(width: 0.5, color: PdfColors.grey400),
-            top: const pw.BorderSide(width: 0.75, color: PdfColors.grey700),
-            bottom: const pw.BorderSide(width: 0.75, color: PdfColors.grey700),
-            left: const pw.BorderSide(width: 0.75, color: PdfColors.grey700),
-            right: const pw.BorderSide(width: 0.75, color: PdfColors.grey700),
-          ),
-          columnWidths: const {
-            0: pw.FlexColumnWidth(1),
-            1: pw.FlexColumnWidth(1),
-            2: pw.FlexColumnWidth(1),
-            3: pw.FlexColumnWidth(1),
-            4: pw.FlexColumnWidth(1),
-            5: pw.FlexColumnWidth(1),
-          },
-          children: [
-            pw.TableRow(
-              decoration: const pw.BoxDecoration(color: PdfColors.blueGrey800),
-              children: [
-                for (final d in ['1', '2', '3', '4', '5', '6'])
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.symmetric(vertical: 8),
-                    child: pw.Text(_dayNames[d] ?? '', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.white), textAlign: pw.TextAlign.center),
-                  ),
-              ],
-            ),
-            pw.TableRow(
-              children: [
-                for (final d in ['1', '2', '3', '4', '5', '6'])
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(6),
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                      children: (byDay[d] ?? []).map((slot) => _slotCard(slot)).toList(),
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ),
-        pw.SizedBox(height: 10),
-        pw.Row(children: [
-          _legendDot(PdfColors.blue50, PdfColors.blue300),
-          pw.SizedBox(width: 4),
-          pw.Text('Assigned', style: const pw.TextStyle(fontSize: 8)),
-          pw.SizedBox(width: 14),
-          _legendDot(PdfColors.orange100, PdfColors.orange300),
-          pw.SizedBox(width: 4),
-          pw.Text('Needs teacher', style: const pw.TextStyle(fontSize: 8)),
-        ]),
-      ],
-    );
+  TimetableSlot? _findSlot(List<TimetableSlot>? daySlots, String time) {
+    if (daySlots == null) return null;
+    for (final s in daySlots) {
+      if (s.startTime == time) return s;
+    }
+    return null;
   }
 
-  pw.Widget _slotCard(TimetableSlot slot) {
+  pw.Widget _slotForTime(List<TimetableSlot>? daySlots, String time) {
+    final slot = _findSlot(daySlots, time);
+    if (slot == null) return pw.SizedBox(height: 30);
     return pw.Container(
-      margin: const pw.EdgeInsets.only(bottom: 5),
-      padding: const pw.EdgeInsets.all(6),
+      padding: const pw.EdgeInsets.all(5),
       decoration: pw.BoxDecoration(
         color: slot.needsTeacher ? PdfColors.orange50 : PdfColors.blue50,
         border: pw.Border.all(color: slot.needsTeacher ? PdfColors.orange300 : PdfColors.blue300, width: 0.5),
@@ -470,10 +433,13 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
           pw.Text('${slot.startTime} - ${slot.endTime}', style: pw.TextStyle(fontSize: 6.5, color: PdfColors.grey600)),
           pw.SizedBox(height: 2),
           pw.Text(slot.subjectName, style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold), maxLines: 2),
-          pw.SizedBox(height: 1),
           pw.Text(
             slot.needsTeacher ? 'No teacher yet' : (slot.teacherName ?? ''),
-            style: pw.TextStyle(fontSize: 6.5, color: slot.needsTeacher ? PdfColors.orange800 : PdfColors.grey600, fontStyle: slot.needsTeacher ? pw.FontStyle.italic : pw.FontStyle.normal),
+            style: pw.TextStyle(
+              fontSize: 6.5,
+              color: slot.needsTeacher ? PdfColors.orange800 : PdfColors.grey600,
+              fontStyle: slot.needsTeacher ? pw.FontStyle.italic : pw.FontStyle.normal,
+            ),
           ),
         ],
       ),
@@ -481,80 +447,207 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
   }
 
   pw.Widget _legendDot(PdfColor fill, PdfColor border) {
-    return pw.Container(width: 8, height: 8, decoration: pw.BoxDecoration(color: fill, border: pw.Border.all(color: border, width: 0.5), borderRadius: pw.BorderRadius.circular(2)));
+    return pw.Container(
+      width: 8,
+      height: 8,
+      decoration: pw.BoxDecoration(color: fill, border: pw.Border.all(color: border, width: 0.5), borderRadius: pw.BorderRadius.circular(2)),
+    );
   }
-  bool _downloading = false;
 
-  //function for single class pdf download
+  /// Builds the weekly grid for one class, splitting into separate
+  /// table segments wherever a configured break falls, with a
+  /// full-width break bar between segments - this is how a single
+  /// "dividing row" is represented, since pw.Table has no native
+  /// column-spanning cell support.
+  pw.Widget _buildClassSection(String className, List<TimetableSlot> slots, TimetableSettings settings) {
+    final byDay = <String, List<TimetableSlot>>{};
+    for (final s in slots) {
+      byDay.putIfAbsent(s.dayOfWeek, () => []).add(s);
+    }
+
+    final sortedTimes = slots.map((s) => s.startTime).toSet().toList()..sort();
+
+    final breakByTime = <String, Map<String, String>>{};
+    for (final b in settings.breakPeriods) {
+      final rawStart = b['start'] ?? '';
+      final start = rawStart.length >= 5 ? rawStart.substring(0, 5) : rawStart;
+      if (start.isNotEmpty) breakByTime[start] = b;
+    }
+
+    final timeline = <String>{...sortedTimes, ...breakByTime.keys}.toList()..sort();
+
+    final segments = <List<String>>[];
+    var current = <String>[];
+    final breakAfterSegment = <int, Map<String, String>>{}; // segments.length at time of break -> break info
+
+    for (final t in timeline) {
+      if (breakByTime.containsKey(t)) {
+        if (current.isNotEmpty) {
+          segments.add(current);
+          current = [];
+        }
+        breakAfterSegment[segments.length] = breakByTime[t]!;
+      } else {
+        current.add(t);
+      }
+    }
+    if (current.isNotEmpty) segments.add(current);
+
+    pw.Widget buildSegmentTable(List<String> times, {required bool showHeader}) {
+      return pw.Table(
+        border: pw.TableBorder(
+          horizontalInside: const pw.BorderSide(width: 0.5, color: PdfColors.grey400),
+          verticalInside: const pw.BorderSide(width: 0.5, color: PdfColors.grey400),
+          top: const pw.BorderSide(width: 0.75, color: PdfColors.grey700),
+          bottom: const pw.BorderSide(width: 0.75, color: PdfColors.grey700),
+          left: const pw.BorderSide(width: 0.75, color: PdfColors.grey700),
+          right: const pw.BorderSide(width: 0.75, color: PdfColors.grey700),
+        ),
+        columnWidths: const {
+          0: pw.FlexColumnWidth(1),
+          1: pw.FlexColumnWidth(1),
+          2: pw.FlexColumnWidth(1),
+          3: pw.FlexColumnWidth(1),
+          4: pw.FlexColumnWidth(1),
+          5: pw.FlexColumnWidth(1),
+        },
+        children: [
+          if (showHeader)
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: PdfColors.blueGrey800),
+              children: [
+                for (final d in ['1', '2', '3', '4', '5', '6'])
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.symmetric(vertical: 8),
+                    child: pw.Text(_dayNames[d] ?? '', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.white), textAlign: pw.TextAlign.center),
+                  ),
+              ],
+            ),
+          for (final t in times)
+            pw.TableRow(
+              children: [
+                for (final d in ['1', '2', '3', '4', '5', '6'])
+                  pw.Padding(padding: const pw.EdgeInsets.all(5), child: _slotForTime(byDay[d], t)),
+              ],
+            ),
+        ],
+      );
+    }
+
+    pw.Widget buildBreakBar(Map<String, String> b) {
+      return pw.Container(
+        margin: const pw.EdgeInsets.symmetric(vertical: 4),
+        padding: const pw.EdgeInsets.symmetric(vertical: 5),
+        width: double.infinity,
+        decoration: pw.BoxDecoration(color: PdfColors.amber100, border: pw.Border.all(color: PdfColors.amber700, width: 0.75), borderRadius: pw.BorderRadius.circular(3)),
+        child: pw.Center(
+          child: pw.Text(
+            '${b['label'] ?? 'Break'}  ·  ${b['start']} - ${b['end']}',
+            style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold, color: PdfColors.amber900),
+          ),
+        ),
+      );
+    }
+
+    final children = <pw.Widget>[
+      pw.Text('$className - Weekly Timetable', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+      pw.SizedBox(height: 10),
+    ];
+
+    if (segments.isEmpty) {
+      children.add(pw.Text('No slots to display.', style: const pw.TextStyle(fontSize: 10)));
+    } else {
+      for (var i = 0; i < segments.length; i++) {
+        children.add(buildSegmentTable(segments[i], showHeader: i == 0));
+        final brk = breakAfterSegment[i + 1];
+        if (brk != null) children.add(buildBreakBar(brk));
+      }
+    }
+
+    children.addAll([
+      pw.SizedBox(height: 10),
+      pw.Row(children: [
+        _legendDot(PdfColors.blue50, PdfColors.blue300),
+        pw.SizedBox(width: 4),
+        pw.Text('Assigned', style: const pw.TextStyle(fontSize: 8)),
+        pw.SizedBox(width: 14),
+        _legendDot(PdfColors.orange100, PdfColors.orange300),
+        pw.SizedBox(width: 4),
+        pw.Text('Needs teacher', style: const pw.TextStyle(fontSize: 8)),
+      ]),
+    ]);
+
+    return pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: children);
+  }
 
   Future<void> _downloadSingleClass(String className, List<TimetableSlot> slots) async {
-    setState(()  => _downloading = true);
-
-    try{
-      final assets = await ref.read(officialBrandingProvider(widget.schoolId).future);
-      final branding = await OfficialBranding.fetch(assets);
-
-      final doc = pw.Document();
-
-      doc.addPage(pw.MultiPage(
-        pageFormat: PdfPageFormat.a4.landscape,
-        margin: const pw.EdgeInsets.all(24),
-        build: (context)=> [
-          buildDocumentHeader(branding: branding, schoolName: widget.landing.schoolName, motto: widget.landing.motto),
-        pw.SizedBox(height: 10),
-        _buildClassSection(className, slots)
-        ]));
-        final bytes = await doc.save();
-        await Printing.sharePdf(bytes: bytes, filename: 'timetable_${className.replaceAll('', '_')}.pdf');
-       
-    }
-    catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('could not generate PDF: $e')));
-      
-    }
-    finally {
-      if (mounted)  setState(() => _downloading = false);
-    }
-  }
-
-  Future<void> _downloadMultipleClasses(String label, Map<String , String> classIdToName, Map< String, List<TimetableSlot>> byClass) async {
     setState(() => _downloading = true);
-
     try {
       final assets = await ref.read(officialBrandingProvider(widget.schoolId).future);
       final branding = await OfficialBranding.fetch(assets);
+      final settings = await ref.read(timetableSettingsProvider(widget.schoolId).future);
+
+      final doc = pw.Document();
+      doc.addPage(pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.all(24),
+        build: (context) => [
+          buildDocumentHeader(branding: branding, schoolName: widget.landing.schoolName, motto: widget.landing.motto),
+          pw.SizedBox(height: 10),
+          _buildClassSection(className, slots, settings),
+        ],
+      ));
+
+      final bytes = await doc.save();
+      await Printing.sharePdf(bytes: bytes, filename: 'timetable_${className.replaceAll(' ', '_')}.pdf');
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not generate PDF: $e')));
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  Future<void> _downloadMultipleClasses(String label, Map<String, String> classIdToName, Map<String, List<TimetableSlot>> byClass) async {
+    setState(() => _downloading = true);
+    try {
+      final assets = await ref.read(officialBrandingProvider(widget.schoolId).future);
+      final branding = await OfficialBranding.fetch(assets);
+      final settings = await ref.read(timetableSettingsProvider(widget.schoolId).future);
 
       final doc = pw.Document();
       var addedAny = false;
 
-      for ( final entry in classIdToName.entries) {
+      for (final entry in classIdToName.entries) {
         final slots = byClass[entry.key] ?? [];
         if (slots.isEmpty) continue;
         addedAny = true;
         doc.addPage(pw.MultiPage(
           pageFormat: PdfPageFormat.a4.landscape,
           margin: const pw.EdgeInsets.all(24),
-          build: (context)=> [
+          build: (context) => [
             buildDocumentHeader(branding: branding, schoolName: widget.landing.schoolName, motto: widget.landing.motto),
             pw.SizedBox(height: 10),
-            _buildClassSection(entry.value, slots),
-          ]));
+            _buildClassSection(entry.value, slots, settings),
+          ],
+        ));
       }
+
       if (!addedAny) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar( const SnackBar(content: Text('no generated timetables for found for to download.')));
-       return;
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No generated timetables found to download.')));
+        return;
       }
+
       final bytes = await doc.save();
-      await Printing.sharePdf(bytes: bytes, filename: 'timetable_${label.replaceAll('', '_')}.pdf');
-    }
-    catch (e){
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar( SnackBar(content: Text('could not generate PDF: $e')));
-      
-    }
-    finally {
-      if (mounted) setState(() => _downloading = false );
+      await Printing.sharePdf(bytes: bytes, filename: 'timetable_${label.replaceAll(' ', '_')}.pdf');
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not generate PDF: $e')));
+    } finally {
+      if (mounted) setState(() => _downloading = false);
     }
   }
+
+  // ---------------- UI ----------------
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -573,7 +666,10 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
               ButtonSegment(value: _ViewScope.school, label: Text('Whole School')),
             ],
             selected: {_scope},
-            onSelectionChanged: (s) { setState(() => _scope = s.first); _resetSelection(); },
+            onSelectionChanged: (s) {
+              setState(() => _scope = s.first);
+              _resetSelection();
+            },
           ),
           const SizedBox(height: 16),
           Expanded(child: _buildBody(theme)),
@@ -617,9 +713,11 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
                     Text('$generatedCount of ${classes.length} classes have a generated timetable.', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
                     const SizedBox(height: 10),
                     OutlinedButton.icon(
-                      onPressed: () => _downloadMultipleClasses('Whole School', idToName, byClass),
-                      icon: const Icon(Icons.download_rounded),
-                      label: const Text('Download All (Whole School)'),
+                      onPressed: _downloading ? null : () => _downloadMultipleClasses('Whole School', idToName, byClass),
+                      icon: _downloading
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.download_rounded),
+                      label: Text(_downloading ? 'Generating...' : 'Download All (Whole School)'),
                     ),
                     const SizedBox(height: 12),
                     Expanded(
@@ -636,7 +734,10 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
                               Expanded(child: Text(c.className, style: const TextStyle(fontWeight: FontWeight.w700))),
                               Text(slots.isEmpty ? 'Not generated' : '${slots.length} slots', style: TextStyle(color: slots.isEmpty ? theme.colorScheme.outline : Colors.green)),
                               if (slots.isNotEmpty)
-                                IconButton(icon: const Icon(Icons.download_outlined), onPressed: () => _downloadSingleClass(c.className, slots)),
+                                IconButton(
+                                  icon: const Icon(Icons.download_outlined),
+                                  onPressed: _downloading ? null : () => _downloadSingleClass(c.className, slots),
+                                ),
                             ]),
                           );
                         },
@@ -705,9 +806,11 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
                     _Breadcrumb(label: _department!.departmentName, onTap: () => setState(() => _department = null)),
                     const SizedBox(height: 10),
                     OutlinedButton.icon(
-                      onPressed: () => _downloadMultipleClasses(_department!.departmentName, idToName, byClass),
-                      icon: const Icon(Icons.download_rounded),
-                      label: const Text('Download All (Department)'),
+                      onPressed: _downloading ? null : () => _downloadMultipleClasses(_department!.departmentName, idToName, byClass),
+                      icon: _downloading
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.download_rounded),
+                      label: Text(_downloading ? 'Generating...' : 'Download All (Department)'),
                     ),
                     const SizedBox(height: 12),
                     Expanded(
@@ -724,7 +827,10 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
                               Expanded(child: Text(c.className, style: const TextStyle(fontWeight: FontWeight.w700))),
                               Text(slots.isEmpty ? 'Not generated' : '${slots.length} slots', style: TextStyle(color: slots.isEmpty ? theme.colorScheme.outline : Colors.green)),
                               if (slots.isNotEmpty)
-                                IconButton(icon: const Icon(Icons.download_outlined), onPressed: () => _downloadSingleClass(c.className, slots)),
+                                IconButton(
+                                  icon: const Icon(Icons.download_outlined),
+                                  onPressed: _downloading ? null : () => _downloadSingleClass(c.className, slots),
+                                ),
                             ]),
                           );
                         },
@@ -740,7 +846,7 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
     );
   }
 
-  // ---------- SINGLE CLASS (original detailed day-by-day view) ----------
+  // ---------- SINGLE CLASS ----------
 
   Widget _buildClassPicker(ThemeData theme) {
     if (_class != null) return _buildClassView(theme);
@@ -814,11 +920,13 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                     OutlinedButton.icon(
-                      onPressed: _downloading ? null : () => _downloadSingleClass(_class!.className , slots), 
-                      icon: _downloading ? const SizedBox(width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2,)): const Icon(Icons.download_rounded),
-                      label: Text(_downloading ? 'Generating...' : 'Download PDF'),),
+                      OutlinedButton.icon(
+                        onPressed: _downloading ? null : () => _downloadSingleClass(_class!.className, slots),
+                        icon: _downloading
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.download_rounded),
+                        label: Text(_downloading ? 'Generating...' : 'Download PDF'),
+                      ),
                       const SizedBox(height: 12),
                       Expanded(
                         child: ListView(
@@ -843,7 +951,10 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
                                           Text('${s.startTime} - ${s.endTime}', style: const TextStyle(fontWeight: FontWeight.w700)),
                                           const SizedBox(width: 12),
                                           Expanded(child: Text(s.subjectName)),
-                                          Text(s.needsTeacher ? 'No teacher yet' : (s.teacherName ?? ''), style: TextStyle(color: s.needsTeacher ? Colors.orange.shade800 : theme.colorScheme.outline, fontWeight: s.needsTeacher ? FontWeight.w700 : FontWeight.normal)),
+                                          Text(
+                                            s.needsTeacher ? 'No teacher yet' : (s.teacherName ?? ''),
+                                            style: TextStyle(color: s.needsTeacher ? Colors.orange.shade800 : theme.colorScheme.outline, fontWeight: s.needsTeacher ? FontWeight.w700 : FontWeight.normal),
+                                          ),
                                         ]),
                                       )),
                                 ],
@@ -868,7 +979,11 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
     return Material(
       color: theme.colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(12),
-      child: InkWell(borderRadius: BorderRadius.circular(12), onTap: onTap, child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w700))), const Icon(Icons.chevron_right_rounded)]))),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w700))), const Icon(Icons.chevron_right_rounded)])),
+      ),
     );
   }
 }
@@ -877,6 +992,7 @@ class _Breadcrumb extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
   const _Breadcrumb({required this.label, required this.onTap});
+
   @override
   Widget build(BuildContext context) => Row(children: [
         IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: onTap),
