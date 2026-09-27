@@ -5,6 +5,7 @@ import '../../core/l10n/app_strings.dart';
 import '../../core/responsive.dart';
 import '../landing/landing_providers.dart';
 import 'parent_models.dart';
+import 'parent_navigation.dart';
 import 'parent_providers.dart';
 
 /// For a child already admitted (and possibly already paid for) by
@@ -92,7 +93,7 @@ class _LinkChildPageState extends ConsumerState<LinkChildPage> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
         strings.isFrench ? 'Enfant ajouté à votre compte.' : 'Child added to your account.',
       )));
-      Navigator.pop(context);
+      popParentContent(ref);
     } catch (_) {
       if (mounted) {
         setState(() => _error = strings.isFrench
@@ -110,22 +111,36 @@ class _LinkChildPageState extends ConsumerState<LinkChildPage> {
     final strings = AppStrings(ref.watch(activeLocaleProvider));
     final landing = ref.watch(landingProvider).value;
 
-    return Scaffold(
-      appBar: AppBar(title: Text(strings.isFrench ? 'Retrouver mon enfant' : 'Find My Child')),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: SingleChildScrollView(
-              padding: EdgeInsets.all(Responsive.pagePadding(context)),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (landing != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: brandedSubpageHeader(context, schoolName: landing.schoolName, logoUrl: landing.logoUrl),
+    // No own Scaffold/AppBar - in-shell content now, pushed onto
+    // ParentShell's own content stack.
+    return SafeArea(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(Responsive.pagePadding(context)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (landing != null)
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: brandedSubpageHeader(context, schoolName: landing.schoolName, logoUrl: landing.logoUrl),
+                        ),
+                      )
+                    else
+                      const Spacer(),
+                    IconButton(
+                      onPressed: () => popParentContent(ref),
+                      icon: const Icon(Icons.close_rounded),
+                      tooltip: strings.isFrench ? 'Fermer' : 'Close',
                     ),
+                  ],
+                ),
                   Text(
                     strings.isFrench
                         ? 'Si l\'école a déjà inscrit votre enfant pour vous, entrez son numéro d\'admission et sa date de naissance ci-dessous pour l\'ajouter à votre compte.'
@@ -252,7 +267,6 @@ class _LinkChildPageState extends ConsumerState<LinkChildPage> {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 }

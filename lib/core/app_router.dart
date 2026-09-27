@@ -10,7 +10,6 @@ import '../features/auth/teacher_sign_up_page.dart';
 import '../features/auth/auth_gate.dart';
 import '../features/teacher/teacher_home.dart';
 import '../features/parent/parent_home.dart';
-import '../features/parent/parent_add_child_entry.dart';
 import '../features/parent/parent_fees.dart';
 import '../features/parent/parent_models.dart';
 import '../features/principal/principal_home.dart';
@@ -63,13 +62,10 @@ final appRouter = GoRouter(
       path: '/parent',
       pageBuilder: (c, s) => _page(const ParentHome(), s),
       routes: [
-        GoRoute(
-          path: 'enroll',
-          pageBuilder: (c, s) => _page(AddChildEntryPage(schoolId: s.extra as String), s),
-        ),
-        // 'fees', 'report-card', 'review' and 'profile' routes removed -
-        // all four are now reached in-shell (ParentShell's own nav
-        // items), which is where the app actually navigates to them.
+        // 'enroll', 'fees', 'report-card', 'review' and 'profile' routes
+        // removed - all five are now reached in-shell (ParentShell's own
+        // nav items / dashboard button), which is where the app
+        // actually navigates to them.
         // The pages they used to point to either had their own
         // duplicate Scaffold/Theme (escaping the shell's sidebar) or,
         // for report-card and review, were plain unreachable dead code.

@@ -10,6 +10,7 @@ import '../../core/responsive.dart';
 import '../landing/landing_providers.dart';
 import 'parent_fees.dart';
 import 'parent_models.dart';
+import 'parent_navigation.dart';
 import 'parent_providers.dart';
 
 /// Relationship a guardian can have to the child - mirrors the
@@ -321,7 +322,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
               ? 'Inscription soumise. L\'école n\'a pas encore défini de frais d\'inscription pour cette classe.'
               : 'Enrollment submitted. The school has not set a registration fee for this class yet.',
         )));
-        Navigator.pop(context);
+        popParentContent(ref);
         return;
       }
 
@@ -353,7 +354,8 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
       if (!mounted) return;
 
       if (wantsToPayNow == true) {
-        Navigator.pushReplacement(
+        popParentContent(ref);
+        Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => MobileMoneyPaymentPage(
@@ -370,7 +372,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
               ? 'Vous pouvez régler les frais d\'inscription à tout moment depuis votre tableau de bord.'
               : 'You can complete the registration fee anytime from your dashboard.',
         )));
-        Navigator.pop(context);
+        popParentContent(ref);
       }
     } catch (e) {
       if (mounted) {
@@ -417,20 +419,36 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
       }
     }
 
-    return Scaffold(
-      appBar: AppBar(title: Text(strings.enrollMyChild)),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 640),
-            child: Column(
-              children: [
-                if (landing != null)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                    child: brandedSubpageHeader(context, schoolName: landing.schoolName, logoUrl: landing.logoUrl),
-                  ),
-                _StepProgress(currentStep: _step, titles: titles),
+    // No own Scaffold/AppBar - this is in-shell content now (pushed
+    // onto ParentShell's own content stack), so ParentShell provides
+    // the surrounding chrome. A close button replaces the AppBar's
+    // back arrow.
+    return SafeArea(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (landing != null)
+                      Expanded(
+                        child: brandedSubpageHeader(context, schoolName: landing.schoolName, logoUrl: landing.logoUrl),
+                      )
+                    else
+                      const Spacer(),
+                    IconButton(
+                      onPressed: () => popParentContent(ref),
+                      icon: const Icon(Icons.close_rounded),
+                      tooltip: strings.isFrench ? 'Fermer' : 'Close',
+                    ),
+                  ],
+                ),
+              ),
+              _StepProgress(currentStep: _step, titles: titles),
                 Expanded(
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 300),
@@ -462,8 +480,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildStepContent(BuildContext context, ThemeData theme, AppStrings strings, AsyncValue<List<ClassOption>> classesAsync) {

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/app_strings.dart';
 import '../../core/responsive.dart';
 import '../../shared/sign_out_button.dart';
 import '../landing/landing_model.dart';
+import 'parent_admissions_tab.dart';
 import 'parent_children_tab.dart';
 import 'parent_dashboard_tab.dart';
 import 'parent_fees_tab.dart';
@@ -31,15 +31,14 @@ import 'parent_review_child_tab.dart';
 /// color, plus hamburger+drawer on mobile instead of the mockup's
 /// bottom nav bar.
 ///
-/// Nav items below are a mix of three things, marked clearly:
-/// - REAL, in-shell content (Home) - fully working now.
-/// - LEGACY - existing real pages, still reached via context.push
-///   for this pass (Fees, Admissions/Enroll, Report Cards, Review,
-///   Payment History, Profile) - to be migrated in-shell next.
-/// - STUB - placeholders for mockup items with no built page yet
-///   (My Children list, Messages, Settings) - shows a plain "coming
-///   soon" screen, same spirit as RoleGate's placeholder pattern
-///   already used elsewhere in this app.
+/// Every real nav item below is in-shell content now (Home, Children,
+/// Fees, Admissions, Report Cards, Review, Payment History, Profile) -
+/// none of them escape the shell into their own Scaffold/route
+/// anymore. A pushed full-screen flow (Mobile Money payment) can still
+/// layer on top of the shell via a plain Navigator.push from within an
+/// in-shell page - that's expected, not a leftover legacy pattern.
+/// Messages and Settings remain STUBs - placeholders for mockup items
+/// with no built page yet, showing a plain "coming soon" screen.
 class ParentShell extends ConsumerWidget {
   final String schoolId;
   final LandingModel landing;
@@ -74,7 +73,7 @@ class ParentShell extends ConsumerWidget {
         icon: Icons.assignment_outlined,
         activeIcon: Icons.assignment_rounded,
         title: strings.admissions,
-        legacy: () => context.push('/parent/enroll', extra: schoolId),
+        content: (context) => ParentAdmissionsTab(schoolId: schoolId, landing: landing, strings: strings),
       ),
       _ParentNavItem(
         key: 'report_cards',

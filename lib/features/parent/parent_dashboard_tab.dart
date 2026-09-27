@@ -7,6 +7,7 @@ import '../../core/l10n/app_strings.dart';
 import '../../core/motion.dart';
 import '../../core/responsive.dart';
 import '../landing/landing_model.dart';
+import 'parent_admissions_tab.dart';
 import 'parent_fees_tab.dart';
 import 'parent_models.dart';
 import 'parent_navigation.dart';
@@ -40,7 +41,19 @@ class ParentDashboardTab extends ConsumerWidget {
           if (isMobile) ...[
             RevealOnScroll(
               child: HoverLift(
-                onTap: () => context.push('/parent/enroll', extra: schoolId),
+                onTap: () {
+                  // Same in-shell destination as the sidebar's
+                  // Admissions item - keep the sidebar highlight in
+                  // sync so it doesn't look like it's still on Home.
+                  ref.read(parentActiveNavKeyProvider.notifier).state = 'admissions';
+                  pushParentContent(
+                    ref,
+                    ParentContentPage(
+                      title: strings.enrollMyChild,
+                      builder: (ctx) => ParentAdmissionsTab(schoolId: schoolId, landing: landing, strings: strings),
+                    ),
+                  );
+                },
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(20),
