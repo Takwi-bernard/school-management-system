@@ -37,8 +37,10 @@ import 'parent_review_child_tab.dart';
 /// anymore. A pushed full-screen flow (Mobile Money payment) can still
 /// layer on top of the shell via a plain Navigator.push from within an
 /// in-shell page - that's expected, not a leftover legacy pattern.
-/// Messages and Settings remain STUBs - placeholders for mockup items
-/// with no built page yet, showing a plain "coming soon" screen.
+/// Messages remains a STUB - a placeholder for a mockup item with no
+/// built page yet, showing a plain "coming soon" screen. Settings was
+/// removed outright (not stubbed) - it duplicated Profile with nothing
+/// distinct to offer.
 class ParentShell extends ConsumerWidget {
   final String schoolId;
   final LandingModel landing;
@@ -109,13 +111,6 @@ class ParentShell extends ConsumerWidget {
         activeIcon: Icons.person_rounded,
         title: strings.myProfile,
         content: (context) => const ParentProfileTab(),
-      ),
-      _ParentNavItem(
-        key: 'settings',
-        icon: Icons.settings_outlined,
-        activeIcon: Icons.settings_rounded,
-        title: strings.settings,
-        content: (context) => _ComingSoon(strings: strings),
       ),
     ];
   }
