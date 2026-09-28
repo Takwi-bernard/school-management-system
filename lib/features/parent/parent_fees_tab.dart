@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/error_state.dart';
 import '../../core/l10n/app_strings.dart';
+import '../../core/status_colors.dart';
 import '../landing/landing_model.dart';
 import 'parent_models.dart';
 import 'parent_providers.dart';
@@ -57,30 +58,37 @@ class ParentFeesTab extends ConsumerWidget {
             if (fees.isEmpty) {
               return _FeesInfoState(icon: Icons.receipt_long_outlined, message: strings.noFeesConfigured);
             }
+            final theme = Theme.of(context);
             return ListView(
               padding: const EdgeInsets.all(20),
               children: [
-                Text(strings.schoolFees, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-                Text(child.fullName, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.outline)),
+                Text(strings.schoolFees, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 4),
+                Text(
+                  strings.isFrench
+                      ? 'Frais et échéances de ${child.firstName}, avec l\'historique de paiement.'
+                      : '${child.firstName}\'s fees and due dates, with payment progress for each.',
+                  style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
                 const SizedBox(height: 16),
                 Container(
                   margin: const EdgeInsets.only(bottom: 16),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.08),
+                    color: kSettled.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                    border: Border.all(color: kSettled.withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.check_circle_rounded, color: Colors.green, size: 22),
+                      const Icon(Icons.check_circle_rounded, color: kSettled, size: 22),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           strings.isFrench
                               ? 'Frais d\'inscription payés. ${child.firstName} est officiellement inscrit(e) à ${landing.schoolName}.'
                               : 'Registration fee paid. ${child.firstName} is officially enrolled at ${landing.schoolName}.',
-                          style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.w600, fontSize: 13),
+                          style: const TextStyle(color: kSettled, fontWeight: FontWeight.w600, fontSize: 13),
                         ),
                       ),
                     ],
@@ -103,15 +111,22 @@ class _FeesInfoState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 48, color: Theme.of(context).colorScheme.outline),
-            const SizedBox(height: 12),
-            Text(message, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(color: scheme.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
+              child: Icon(icon, size: 30, color: scheme.primary),
+            ),
+            const SizedBox(height: 16),
+            Text(message, textAlign: TextAlign.center, style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
           ],
         ),
       ),
@@ -176,7 +191,7 @@ class _FeeCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '${fee.amountPaid.toStringAsFixed(0)} / ${fee.totalAmount.toStringAsFixed(0)} FCFA  ·  '
+            '${fee.amountPaid.toStringAsFixed(0)} / ${fee.totalAmount.toStringAsFixed(0)} FCFA  \u00b7  '
             '${(progress * 100).toStringAsFixed(0)}% ${strings.isFrench ? 'payé' : 'paid'}',
             style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
           ),
@@ -184,11 +199,11 @@ class _FeeCard extends StatelessWidget {
           if (fee.fullyPaid)
             Row(
               children: [
-                const Icon(Icons.celebration_rounded, color: Colors.green, size: 20),
+                const Icon(Icons.celebration_rounded, color: kSettled, size: 20),
                 const SizedBox(width: 8),
                 Text(
                   strings.isFrench ? 'Rien d\'autre à payer pour le moment.' : 'Nothing else to pay right now.',
-                  style: theme.textTheme.bodyMedium?.copyWith(color: Colors.green.shade700, fontWeight: FontWeight.w600),
+                  style: const TextStyle(color: kSettled, fontWeight: FontWeight.w600),
                 ),
               ],
             )
@@ -218,9 +233,9 @@ class _InstallmentRow extends StatelessWidget {
     final urgency = _urgencyOf(installment);
 
     final (Color badgeColor, String badgeText, IconData badgeIcon) = switch (urgency) {
-      _InstallmentUrgency.paid => (Colors.green, strings.isFrench ? 'Payé' : 'Paid', Icons.check_circle_rounded),
-      _InstallmentUrgency.overdue => (Colors.red, strings.isFrench ? 'En retard' : 'Overdue', Icons.error_rounded),
-      _InstallmentUrgency.dueSoon => (Colors.orange, strings.isFrench ? 'Échéance proche' : 'Due soon', Icons.schedule_rounded),
+      _InstallmentUrgency.paid => (kSettled, strings.isFrench ? 'Payé' : 'Paid', Icons.check_circle_rounded),
+      _InstallmentUrgency.overdue => (kOverdue, strings.isFrench ? 'En retard' : 'Overdue', Icons.error_rounded),
+      _InstallmentUrgency.dueSoon => (kPending, strings.isFrench ? 'Échéance proche' : 'Due soon', Icons.schedule_rounded),
       _InstallmentUrgency.upcoming => (theme.colorScheme.primary, strings.isFrench ? 'À venir' : 'Upcoming', Icons.event_rounded),
       _InstallmentUrgency.noDueDate => (theme.colorScheme.outline, strings.isFrench ? 'Non payé' : 'Unpaid', Icons.radio_button_unchecked_rounded),
     };
@@ -242,10 +257,10 @@ class _InstallmentRow extends StatelessWidget {
       margin: const EdgeInsets.only(top: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: urgency == _InstallmentUrgency.overdue ? Colors.red.withValues(alpha: 0.05) : theme.colorScheme.surface,
+        color: urgency == _InstallmentUrgency.overdue ? kOverdue.withValues(alpha: 0.05) : theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: urgency == _InstallmentUrgency.overdue ? Colors.red.withValues(alpha: 0.3) : theme.colorScheme.outlineVariant,
+          color: urgency == _InstallmentUrgency.overdue ? kOverdue.withValues(alpha: 0.3) : theme.colorScheme.outlineVariant,
         ),
       ),
       child: Column(
@@ -292,7 +307,7 @@ class _InstallmentRow extends StatelessWidget {
                 }),
                 icon: const Icon(Icons.payments_outlined, size: 16),
                 label: Text(strings.payNow),
-                style: urgency == _InstallmentUrgency.overdue ? FilledButton.styleFrom(backgroundColor: Colors.red.shade600) : null,
+                style: urgency == _InstallmentUrgency.overdue ? FilledButton.styleFrom(backgroundColor: kOverdue) : null,
               ),
             ],
           ),

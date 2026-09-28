@@ -31,10 +31,17 @@ class ParentAdmissionsTab extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              strings.isFrench ? 'Comment souhaitez-vous continuer ?' : 'How would you like to continue?',
+              strings.isFrench ? 'Ajouter un enfant' : 'Add a Child',
               style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 4),
+            Text(
+              strings.isFrench
+                  ? 'Choisissez l\'option qui correspond à votre situation.'
+                  : 'Choose the option that matches your situation.',
+              style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 22),
             _OptionCard(
               icon: Icons.person_add_alt_1_rounded,
               title: strings.isFrench ? 'Inscrire un nouvel enfant' : 'Enroll a New Child',

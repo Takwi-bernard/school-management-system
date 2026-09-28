@@ -6,20 +6,13 @@ import '../../core/error_state.dart';
 import '../../core/l10n/app_strings.dart';
 import '../../core/motion.dart';
 import '../../core/responsive.dart';
+import '../../core/status_colors.dart';
 import '../landing/landing_model.dart';
 import 'parent_admissions_tab.dart';
 import 'parent_fees_tab.dart';
 import 'parent_models.dart';
 import 'parent_navigation.dart';
 import 'parent_providers.dart';
-
-/// Color rule for this whole module, not just this file: decoration
-/// (stat tiles, icons, section accents) draws ONLY from the school's
-/// own theme.colorScheme.primary/secondary - no invented hues per
-/// section. Amber/green/red are reserved strictly for status meaning
-/// (pending / approved / rejected) - the one exception, since those
-/// three read the same to everyone regardless of a school's branding.
-const Color kPendingColor = Color(0xFFB07A00); // amber - "needs your attention"
 
 /// Home, inside ParentShell.
 class ParentDashboardTab extends ConsumerWidget {
@@ -224,39 +217,53 @@ class ParentDashboardTab extends ConsumerWidget {
                   ),
                 );
               }
-              return GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: children.length,
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: isMobile ? 1 : 2,
-                  crossAxisSpacing: 14,
-                  mainAxisSpacing: 14,
-                  childAspectRatio: isMobile ? 3.0 : 2.6,
-                ),
-                itemBuilder: (context, i) => RevealOnScroll(
-                  child: _ChildCard(
-                    child: children[i],
-                    strings: strings,
-                    color: scheme.primary,
-                    onTap: () {
-                      ref.read(parentActiveNavKeyProvider.notifier).state = 'fees';
-                      showParentContent(
-                        ref,
-                        ParentContentPage(
-                          title: '${strings.schoolFees} \u00b7 ${children[i].fullName}',
-                          builder: (ctx) => ParentFeesTab(child: children[i], landing: landing, strings: strings),
+              // A fixed-aspect-ratio GridView forces every card to the
+              // same tall box regardless of how little it has to show -
+              // with only 1 or 2 children that reads as a lot of empty
+              // space for no reason. A Wrap of fixed-WIDTH, natural-
+              // HEIGHT cards fixes that: each card is exactly as tall
+              // as its own content, on mobile or desktop alike.
+              return LayoutBuilder(
+                builder: (context, constraints) {
+                  const spacing = 12.0;
+                  final columns = isMobile ? 1 : 2;
+                  final cardWidth = columns == 1
+                      ? constraints.maxWidth
+                      : (constraints.maxWidth - spacing * (columns - 1)) / columns;
+                  return Wrap(
+                    spacing: spacing,
+                    runSpacing: spacing,
+                    children: [
+                      for (final child in children)
+                        SizedBox(
+                          width: cardWidth,
+                          child: RevealOnScroll(
+                            child: _ChildCard(
+                              child: child,
+                              strings: strings,
+                              color: scheme.primary,
+                              onTap: () {
+                                ref.read(parentActiveNavKeyProvider.notifier).state = 'fees';
+                                showParentContent(
+                                  ref,
+                                  ParentContentPage(
+                                    title: '${strings.schoolFees} \u00b7 ${child.fullName}',
+                                    builder: (ctx) => ParentFeesTab(child: child, landing: landing, strings: strings),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
                         ),
-                      );
-                    },
-                  ),
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    );
+                      ],
+                    );
+                  },
+                );
+              },
+            ),
+          ],
+        ),
+      );
   }
 }
 
@@ -314,9 +321,9 @@ class PendingAdmissionCard extends ConsumerWidget {
     // brand color, so it reads correctly no matter which school this
     // is.
     final statusColor = admission.isRejected
-        ? scheme.error
+        ? kOverdue
         : admission.needsPayment
-            ? kPendingColor
+            ? kPending
             : scheme.onSurfaceVariant;
 
     final statusLabel = admission.isRejected
