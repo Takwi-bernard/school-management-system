@@ -29,9 +29,19 @@ class ParentProfileTab extends ConsumerWidget {
       error: (e, _) => ErrorStateView(error: e, onRetry: () => ref.invalidate(parentProfileProvider)),
       data: (profile) {
         if (profile == null) return Center(child: Text(strings.profileNotFound));
+        final theme = Theme.of(context);
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
+            Text(strings.myProfile, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Text(
+              strings.isFrench
+                  ? 'Vos informations personnelles et la sécurité de votre compte.'
+                  : 'Your personal information and account security.',
+              style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 18),
             _ProfileHeader(profile: profile),
             const SizedBox(height: 20),
             _EditableInfoCard(profile: profile, strings: strings),
@@ -202,9 +212,9 @@ class _ActionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = theme.colorScheme.onSurface;
+    final scheme = theme.colorScheme;
     return Material(
-      color: theme.colorScheme.surfaceContainerHighest,
+      color: scheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         onTap: onTap,
@@ -213,19 +223,24 @@ class _ActionTile extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Icon(icon, color: color),
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(color: scheme.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
+                child: Icon(icon, color: scheme.primary, size: 19),
+              ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: TextStyle(fontWeight: FontWeight.w700, color: color)),
+                    Text(title, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
                     const SizedBox(height: 3),
-                    Text(subtitle, style: TextStyle(fontSize: 12, color: color.withValues(alpha: 0.7))),
+                    Text(subtitle, style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right_rounded, color: color),
+              Icon(Icons.chevron_right_rounded, color: scheme.outline),
             ],
           ),
         ),

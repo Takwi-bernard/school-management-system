@@ -300,26 +300,57 @@ class ParentRepository {
     return rows.map((r) => AcademicTermOption.fromMap(r)).toList();
   }
 
+  /// Every sequence (exam period) across the whole academic year, each
+  /// tagged with the term it belongs to - a term can map several
+  /// sequences under it (Sequence 1/2/3 under Term 1, say), and the
+  /// Principal can publish a report card scoped to either a single
+  /// sequence OR the whole term. Fetching all of them up front (rather
+  /// than per-term) keeps this to one query regardless of how many
+  /// terms the year has.
+  Future<List<ExamPeriodOption>> getExamPeriodsForYear(String academicYearId) async {
+    final rows = await _client
+        .from('exam_periods')
+        .select('id, period_name, sequence_order, academic_term_id, academic_terms!inner(academic_year_id)')
+        .eq('academic_terms.academic_year_id', academicYearId)
+        .order('sequence_order');
+    return rows.map((r) => ExamPeriodOption.fromMap(r)).toList();
+  }
+
   // --------------------------------------------------
   // REPORT CARD
   // --------------------------------------------------
 
+  /// [scope] must be 'term' (pass termId) or 'sequence' (pass
+  /// examPeriodId) - matching report_cards.report_scope exactly.
+  /// term_id is populated on EVERY report_cards row regardless of
+  /// scope (a sequence-scoped report still belongs to a term), so
+  /// filtering by term_id alone - without also checking report_scope
+  /// and, for a sequence, exam_period_id - can match more than one row
+  /// under the same term (e.g. three sequence reports plus one
+  /// end-of-term report) and make .maybeSingle() throw, or silently
+  /// return the wrong scope's data.
   Future<ReportCardSummary?> getReportCard({
     required String studentId,
-    required String termId,
+    required String scope,
+    String? termId,
+    String? examPeriodId,
   }) async {
-    final reportRow = await _client
+    var query = _client
         .from('report_cards')
         .select('''
           id, overall_average, class_rank, total_students, principal_comment, generated_at,
           students ( first_name, last_name ),
           classes ( class_name ),
-          academic_terms ( term_name )
+          academic_terms ( term_name ),
+          exam_periods ( period_name )
         ''')
         .eq('student_id', studentId)
-        .eq('term_id', termId)
-        .eq('is_published', true)
-        .maybeSingle();
+        .eq('report_scope', scope)
+        .eq('is_published', true);
+
+    query = scope == 'sequence' ? query.eq('exam_period_id', examPeriodId!) : query.eq('term_id', termId!);
+
+    final reportRow = await query.maybeSingle();
 
     if (reportRow == null) return null;
 

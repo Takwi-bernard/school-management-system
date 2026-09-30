@@ -80,8 +80,52 @@ final termsForYearProvider = FutureProvider.family<List<AcademicTermOption>, Str
   return ref.watch(parentRepositoryProvider).getTermsForYear(academicYearId);
 });
 
-final reportCardProvider = FutureProvider.family<ReportCardSummary?, ({String studentId, String termId})>((ref, params) {
-  return ref.watch(parentRepositoryProvider).getReportCard(studentId: params.studentId, termId: params.termId);
+final examPeriodsForYearProvider = FutureProvider.family<List<ExamPeriodOption>, String>((ref, academicYearId) {
+  return ref.watch(parentRepositoryProvider).getExamPeriodsForYear(academicYearId);
+});
+
+/// Every selectable reporting period for the year, in order: each
+/// term's sequences first (by sequence_order), then the term itself
+/// as a whole - a school can publish either kind independently, so
+/// both need to be real, separately-queryable options.
+final reportPeriodsForYearProvider = FutureProvider.family<List<ReportPeriodOption>, String>((ref, academicYearId) async {
+  final terms = await ref.watch(termsForYearProvider(academicYearId).future);
+  final periods = await ref.watch(examPeriodsForYearProvider(academicYearId).future);
+
+  final options = <ReportPeriodOption>[];
+  for (final term in terms) {
+    final sequences = periods.where((p) => p.academicTermId == term.id).toList()
+      ..sort((a, b) => a.sequenceOrder.compareTo(b.sequenceOrder));
+    for (final s in sequences) {
+      options.add(ReportPeriodOption(
+        scope: 'sequence',
+        termId: term.id,
+        examPeriodId: s.id,
+        label: '${term.termName} \u00b7 ${s.periodName}',
+        sortKey: term.termOrder * 100 + s.sequenceOrder,
+        isCurrentTerm: term.isCurrent,
+      ));
+    }
+    options.add(ReportPeriodOption(
+      scope: 'term',
+      termId: term.id,
+      label: '${term.termName} \u00b7 Full Term',
+      sortKey: term.termOrder * 100 + 99,
+      isCurrentTerm: term.isCurrent,
+    ));
+  }
+  options.sort((a, b) => a.sortKey.compareTo(b.sortKey));
+  return options;
+});
+
+final reportCardProvider =
+    FutureProvider.family<ReportCardSummary?, ({String studentId, String scope, String termId, String? examPeriodId})>((ref, params) {
+  return ref.watch(parentRepositoryProvider).getReportCard(
+        studentId: params.studentId,
+        scope: params.scope,
+        termId: params.termId,
+        examPeriodId: params.examPeriodId,
+      );
 });
 
 final attendanceSummaryProvider =

@@ -33,7 +33,7 @@ class ParentReportCardTab extends ConsumerStatefulWidget {
 }
 
 class _ParentReportCardTabState extends ConsumerState<ParentReportCardTab> {
-  String? _selectedTermId;
+  String? _selectedPeriodId; // matches ReportPeriodOption.id
   bool _downloading = false;
 
   Future<void> _download(ReportCardSummary report) async {
@@ -91,8 +91,8 @@ class _ParentReportCardTabState extends ConsumerState<ParentReportCardTab> {
               const SizedBox(height: 4),
               Text(
                 strings.isFrench
-                    ? 'Les résultats publiés de ${child.firstName}, trimestre par trimestre. Choisissez un trimestre ci-dessous.'
-                    : '${child.firstName}\'s published results, term by term. Choose a term below.',
+                    ? 'Les résultats publiés de ${child.firstName}. L\'école peut publier par séquence ou pour tout le trimestre - choisissez une période ci-dessous.'
+                    : '${child.firstName}\'s published results. The school can publish per sequence or for the whole term - choose a period below.',
                 style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
               ),
               const SizedBox(height: 18),
@@ -106,37 +106,47 @@ class _ParentReportCardTabState extends ConsumerState<ParentReportCardTab> {
                   if (yearId == null) {
                     return _InfoState(icon: Icons.event_busy_rounded, message: strings.academicYearNotSet);
                   }
-                  final termsAsync = ref.watch(termsForYearProvider(yearId));
-                  return termsAsync.when(
+                  final periodsAsync = ref.watch(reportPeriodsForYearProvider(yearId));
+                  return periodsAsync.when(
                     loading: () => const _Loading(),
                     error: (e, _) => ErrorStateView(
                       error: e,
-                      onRetry: () => ref.invalidate(termsForYearProvider(yearId)),
+                      onRetry: () => ref.invalidate(reportPeriodsForYearProvider(yearId)),
                     ),
-                    data: (terms) {
-                      if (terms.isEmpty) {
+                    data: (periods) {
+                      if (periods.isEmpty) {
                         return _InfoState(icon: Icons.event_busy_rounded, message: strings.academicYearNotSet);
                       }
-                      _selectedTermId ??= terms.firstWhere((t) => t.isCurrent, orElse: () => terms.first).id;
+                      // Default to the current term's own "Full Term"
+                      // entry (highest sortKey within that term); fall
+                      // back to whichever entry sorts last overall if
+                      // no term is marked current yet.
+                      _selectedPeriodId ??= periods.lastWhere((p) => p.isCurrentTerm, orElse: () => periods.last).id;
 
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           DropdownButtonFormField<String>(
-                            initialValue: _selectedTermId,
+                            initialValue: _selectedPeriodId,
                             decoration: InputDecoration(
                               filled: true,
                               fillColor: theme.colorScheme.surfaceContainerHighest,
                               prefixIcon: Icon(Icons.event_note_rounded, size: 20, color: theme.colorScheme.primary),
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
                             ),
-                            items: terms.map((t) => DropdownMenuItem(value: t.id, child: Text(t.termName))).toList(),
-                            onChanged: (value) => setState(() => _selectedTermId = value),
+                            items: periods.map((p) => DropdownMenuItem(value: p.id, child: Text(p.label))).toList(),
+                            onChanged: (value) => setState(() => _selectedPeriodId = value),
                           ),
                           const SizedBox(height: 18),
                           Consumer(
                             builder: (context, ref, _) {
-                              final key = (studentId: child.studentId, termId: _selectedTermId!);
+                              final selected = periods.firstWhere((p) => p.id == _selectedPeriodId);
+                              final key = (
+                                studentId: child.studentId,
+                                scope: selected.scope,
+                                termId: selected.termId,
+                                examPeriodId: selected.examPeriodId,
+                              );
                               final reportAsync = ref.watch(reportCardProvider(key));
                               return reportAsync.when(
                                 loading: () => const _Loading(),

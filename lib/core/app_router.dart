@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-
+import '../features/secretary/secretary_home.dart';
 import '../features/landing/landing_page.dart';
 import '../features/auth/sign_in_page.dart';
 import '../features/auth/sign_up_page.dart';
@@ -114,6 +114,10 @@ final appRouter = GoRouter(
       pageBuilder: (c, s) =>
           _page(const PrincipalHome(), s),
     ),
+    GoRoute(
+  path: '/secretary',
+  pageBuilder: (c, s) => _page(const SecretaryHome(), s),
+),
     GoRoute(
       path: '/secretary',
       pageBuilder: (c, s) =>

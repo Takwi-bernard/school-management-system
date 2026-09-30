@@ -4,16 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/error_state.dart';
 import '../../core/l10n/app_strings.dart';
 import '../../core/responsive.dart';
+import '../../core/status_colors.dart';
 import '../landing/landing_model.dart';
-import '../landing/landing_providers.dart';
 import '../parent/parent_models.dart';
 import 'parent_fees.dart' show generateReceiptPdf;
 import 'parent_providers.dart';
 
 /// Migrated from PaymentHistoryPage/_PaymentHistoryTile - no own
 /// Scaffold/AppBar/Theme wrap anymore, ParentShell provides all
-/// three. generateReceiptPdf itself is unchanged in behavior here,
-/// just reformatted inside (see parent_fees.dart).
+/// three. generateReceiptPdf itself is unchanged in behavior here.
 class ParentPaymentHistoryTab extends ConsumerWidget {
   final LandingModel landing;
   final AppStrings strings;
@@ -22,46 +21,57 @@ class ParentPaymentHistoryTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final historyAsync = ref.watch(paymentHistoryProvider);
 
     return SingleChildScrollView(
       padding: EdgeInsets.all(Responsive.pagePadding(context)),
-      child: historyAsync.when(
-        loading: () => const Padding(
-          padding: EdgeInsets.symmetric(vertical: 60),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-        error: (e, _) => ErrorStateView(error: e, onRetry: () => ref.invalidate(paymentHistoryProvider)),
-        data: (transactions) {
-          if (transactions.isEmpty) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 40),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(strings.paymentHistory, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 4),
+          Text(
+            strings.isFrench
+                ? 'Toutes vos transactions, pour tous vos enfants, les plus récentes en premier.'
+                : 'All your transactions, across all your children, most recent first.',
+            style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 18),
+          historyAsync.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(vertical: 60),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+            error: (e, _) => ErrorStateView(error: e, onRetry: () => ref.invalidate(paymentHistoryProvider)),
+            data: (transactions) {
+              if (transactions.isEmpty) {
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 44, horizontal: 24),
+                  decoration: BoxDecoration(color: scheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(20)),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 64,
+                        height: 64,
+                        decoration: BoxDecoration(color: scheme.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
+                        child: Icon(Icons.receipt_long_rounded, size: 30, color: scheme.primary),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(strings.noPaymentsYet, textAlign: TextAlign.center, style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
+                    ],
+                  ),
+                );
+              }
+              return Column(
                 children: [
-                  Icon(Icons.history_rounded, size: 48, color: theme.colorScheme.outline),
-                  const SizedBox(height: 12),
-                  Text(strings.noPaymentsYet, textAlign: TextAlign.center, style: theme.textTheme.bodyMedium),
+                  for (final t in transactions) _PaymentHistoryTile(transaction: t, landing: landing, strings: strings),
                 ],
-              ),
-            );
-          }
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(strings.paymentHistory, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 4),
-              Text(
-                strings.isFrench
-                    ? 'Toutes vos transactions, pour tous vos enfants, les plus récentes en premier.'
-                    : 'All your transactions, across all your children, most recent first.',
-                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
-              ),
-              const SizedBox(height: 16),
-              ...transactions.map((t) => _PaymentHistoryTile(transaction: t, landing: landing, strings: strings)),
-            ],
-          );
-        },
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -83,7 +93,7 @@ class _PaymentHistoryTileState extends ConsumerState<_PaymentHistoryTile> {
   Future<void> _download() async {
     setState(() => _downloading = true);
     try {
-      await generateReceiptPdf(ref: ref, transaction: widget.transaction, landing: widget.landing);
+      await generateReceiptPdf(ref: ref, transaction: widget.transaction, landing: widget.landing, isFrench: widget.strings.isFrench);
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
@@ -102,12 +112,12 @@ class _PaymentHistoryTileState extends ConsumerState<_PaymentHistoryTile> {
     final strings = widget.strings;
 
     final (Color color, String label, IconData icon) = t.isSuccessful
-        ? (theme.colorScheme.tertiary, strings.isFrench ? 'Payé' : 'Paid', Icons.check_circle_rounded)
+        ? (kSettled, strings.isFrench ? 'Payé' : 'Paid', Icons.check_circle_rounded)
         : t.isFailed
-            ? (theme.colorScheme.error, strings.isFrench ? 'Échoué' : 'Failed', Icons.cancel_rounded)
+            ? (kOverdue, strings.isFrench ? 'Échoué' : 'Failed', Icons.cancel_rounded)
             : t.isCancelled
-                ? (theme.colorScheme.error, strings.isFrench ? 'Annulé' : 'Cancelled', Icons.block_rounded)
-                : (theme.colorScheme.primary, strings.isFrench ? 'En attente' : 'Pending', Icons.hourglass_top_rounded);
+                ? (kOverdue, strings.isFrench ? 'Annulé' : 'Cancelled', Icons.block_rounded)
+                : (kPending, strings.isFrench ? 'En attente' : 'Pending', Icons.hourglass_top_rounded);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -118,8 +128,13 @@ class _PaymentHistoryTileState extends ConsumerState<_PaymentHistoryTile> {
         children: [
           Row(
             children: [
-              Icon(icon, color: color, size: 20),
-              const SizedBox(width: 10),
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.12), shape: BoxShape.circle),
+                child: Icon(icon, color: color, size: 17),
+              ),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -133,7 +148,7 @@ class _PaymentHistoryTileState extends ConsumerState<_PaymentHistoryTile> {
               Text('${t.amount.toStringAsFixed(0)} FCFA', style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800)),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Row(
             children: [
               Container(

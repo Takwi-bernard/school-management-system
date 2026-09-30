@@ -300,14 +300,62 @@ class InstallmentSummary {
 class AcademicTermOption {
   final String id;
   final String termName;
+  final int termOrder;
   final bool isCurrent;
-  const AcademicTermOption({required this.id, required this.termName, required this.isCurrent});
+  const AcademicTermOption({required this.id, required this.termName, required this.termOrder, required this.isCurrent});
 
   factory AcademicTermOption.fromMap(Map<String, dynamic> map) => AcademicTermOption(
         id: map['id'] as String,
         termName: map['term_name'] as String? ?? '',
+        termOrder: map['term_order'] as int? ?? 0,
         isCurrent: map['is_current'] as bool? ?? false,
       );
+}
+
+class ExamPeriodOption {
+  final String id;
+  final String periodName;
+  final int sequenceOrder;
+  final String academicTermId;
+  const ExamPeriodOption({
+    required this.id,
+    required this.periodName,
+    required this.sequenceOrder,
+    required this.academicTermId,
+  });
+
+  factory ExamPeriodOption.fromMap(Map<String, dynamic> map) => ExamPeriodOption(
+        id: map['id'] as String,
+        periodName: map['period_name'] as String? ?? '',
+        sequenceOrder: map['sequence_order'] as int? ?? 0,
+        academicTermId: map['academic_term_id'] as String,
+      );
+}
+
+/// One selectable entry in the report-card picker - either a single
+/// sequence (exam period), or the term as a whole. A school can
+/// publish either kind, independently, via the Principal side - the
+/// picker has to offer both, not assume every report card is scoped
+/// to a full term.
+class ReportPeriodOption {
+  final String scope; // 'term' or 'sequence'
+  final String termId;
+  final String? examPeriodId;
+  final String label;
+  final int sortKey;
+  final bool isCurrentTerm;
+  const ReportPeriodOption({
+    required this.scope,
+    required this.termId,
+    required this.label,
+    required this.sortKey,
+    required this.isCurrentTerm,
+    this.examPeriodId,
+  });
+
+  /// Stable key for providers/dropdowns - a term entry and a sequence
+  /// entry never collide even if ids were somehow reused.
+  String get id => scope == 'term' ? 'term:$termId' : 'sequence:$examPeriodId';
 }
 
 class SubjectResult {
@@ -365,10 +413,17 @@ class ReportCardSummary {
     final student = report['students'] as Map?;
     final classData = report['classes'] as Map?;
     final term = report['academic_terms'] as Map?;
+    final period = report['exam_periods'] as Map?;
+    final termName = term?['term_name'] as String? ?? '';
+    final periodName = period?['period_name'] as String?;
+    // A sequence-scoped report belongs to a term too (term_id is
+    // always set), so showing both together - "Term 1 - Sequence 2" -
+    // is more useful than just one or the other.
+    final combinedLabel = (periodName != null && periodName.isNotEmpty) ? '$termName \u00b7 $periodName' : termName;
     return ReportCardSummary(
       studentName: '${student?['first_name'] ?? ''} ${student?['last_name'] ?? ''}'.trim(),
       className: classData?['class_name'] as String? ?? '',
-      termName: term?['term_name'] as String? ?? '',
+      termName: combinedLabel,
       overallAverage: (report['overall_average'] as num?)?.toDouble(),
       classRank: report['class_rank'] as int?,
       totalStudents: report['total_students'] as int?,
