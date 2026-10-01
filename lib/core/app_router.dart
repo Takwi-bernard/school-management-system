@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-
+import '../features/proprietor/proprietor_home.dart';
 import '../features/secretary/secretary_home.dart';
 import '../features/landing/landing_page.dart';
 import '../features/auth/sign_in_page.dart';
@@ -123,10 +123,9 @@ final appRouter = GoRouter(
       pageBuilder: (c, s) =>
           _page(const RoleGate(requiredRole: 'secretary', label: 'Secretary'), s),
     ),
-    GoRoute(
-      path: '/proprietor',
-      pageBuilder: (c, s) =>
-          _page(const RoleGate(requiredRole: 'proprietor', label: 'Proprietor'), s),
-    ),
+   GoRoute(
+  path: '/proprietor',
+  pageBuilder: (c, s) => _page(const ProprietorHome(), s),
+),
   ],
 );
