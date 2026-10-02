@@ -8,8 +8,8 @@ import '../auth/auth_providers.dart';
 import '../landing/landing_model.dart';
 import '../landing/landing_providers.dart';
 import '../parent/parent_models.dart' show buildSchoolTheme;
-import 'proprietor_models.dart';
 import 'proprietor_providers.dart';
+import 'proprietor_sections.dart';
 
 class ProprietorHome extends ConsumerWidget {
   const ProprietorHome({super.key});
@@ -45,209 +45,172 @@ class ProprietorHome extends ConsumerWidget {
   }
 }
 
-class _ProprietorShell extends ConsumerWidget {
+class _NavItem {
+  final IconData icon;
+  final String title;
+  final String description;
+  final int index;
+  const _NavItem({required this.icon, required this.title, required this.description, required this.index});
+}
+
+class _ProprietorShell extends ConsumerStatefulWidget {
   final LandingModel landing;
   const _ProprietorShell({required this.landing});
 
   @override
+  ConsumerState<_ProprietorShell> createState() => _ProprietorShellState();
+}
+
+class _ProprietorShellState extends ConsumerState<_ProprietorShell> {
+  int _selected = 0;
+
+  List<_NavItem> get _items => const [
+        _NavItem(icon: Icons.dashboard_outlined, title: 'Overview', description: 'Snapshot of the whole school', index: 0),
+        _NavItem(icon: Icons.account_balance_wallet_outlined, title: 'Financial Overview', description: 'Income, expenditure, net position', index: 1),
+        _NavItem(icon: Icons.trending_up_rounded, title: 'Income History', description: 'Every payment received', index: 2),
+        _NavItem(icon: Icons.receipt_long_outlined, title: 'Expenditure', description: 'Record and review school expenses', index: 3),
+        _NavItem(icon: Icons.insights_rounded, title: 'Growth & Statistics', description: 'Students over time, by class', index: 4),
+        _NavItem(icon: Icons.groups_outlined, title: 'School Actors', description: 'Staff and parents currently active', index: 5),
+      ];
+
+  Widget _bodyFor(int index) {
+    switch (index) {
+      case 0:
+        return OverviewSection(schoolId: widget.landing.schoolId);
+      case 1:
+        return FinancialOverviewSection(schoolId: widget.landing.schoolId);
+      case 2:
+        return IncomeHistorySection(schoolId: widget.landing.schoolId);
+      case 3:
+        return ExpenditureSection(schoolId: widget.landing.schoolId, landing: widget.landing);
+      case 4:
+        return GrowthStatisticsSection(schoolId: widget.landing.schoolId);
+      default:
+        return ActiveActorsSection(schoolId: widget.landing.schoolId);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isMobile = Responsive.isMobile(context);
+    final body = _bodyFor(_selected);
+
+    if (isMobile) {
+      return Scaffold(
+        appBar: _AppBar(landing: widget.landing),
+        drawer: Drawer(child: _Sidebar(items: _items, selected: _selected, isDrawer: true, onPick: (i) => setState(() => _selected = i))),
+        body: body,
+      );
+    }
+    return Scaffold(
+      appBar: _AppBar(landing: widget.landing, showMenuIcon: false),
+      body: Row(children: [
+        SizedBox(width: 290, child: _Sidebar(items: _items, selected: _selected, isDrawer: false, onPick: (i) => setState(() => _selected = i))),
+        const VerticalDivider(width: 1),
+        Expanded(child: body),
+      ]),
+    );
+  }
+}
+
+class _AppBar extends StatelessWidget implements PreferredSizeWidget {
+  final LandingModel landing;
+  final bool showMenuIcon;
+  const _AppBar({required this.landing, this.showMenuIcon = true});
+
+  @override
+  Size get preferredSize => const Size.fromHeight(64);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AppBar(
+      backgroundColor: theme.colorScheme.primary,
+      automaticallyImplyLeading: showMenuIcon,
+      iconTheme: const IconThemeData(color: Colors.white),
+      titleSpacing: 12,
+      title: Row(children: [
+        if (landing.logoUrl.isNotEmpty)
+          Container(
+            width: 34, height: 34, padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(9)),
+            child: Image.network(landing.logoUrl, fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => Icon(Icons.school_rounded, color: theme.colorScheme.primary, size: 18)),
+          ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(landing.schoolName, overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
+        ),
+      ]),
+    );
+  }
+}
+
+class _Sidebar extends ConsumerWidget {
+  final List<_NavItem> items;
+  final int selected;
+  final bool isDrawer;
+  final void Function(int) onPick;
+  const _Sidebar({required this.items, required this.selected, required this.isDrawer, required this.onPick});
+
+  @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final overviewAsync = ref.watch(schoolOverviewProvider(landing.schoolId));
-    final enrollmentAsync = ref.watch(enrollmentByClassProvider(landing.schoolId));
-    final paymentsAsync = ref.watch(recentPaymentsProvider(landing.schoolId));
-    final profileAsync = ref.watch(proprietorProfileProvider);
+    final profile = ref.watch(proprietorProfileProvider).valueOrNull;
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: theme.colorScheme.primary,
-        iconTheme: const IconThemeData(color: Colors.white),
-        title: Row(children: [
-          if (landing.logoUrl.isNotEmpty)
-            Container(
-              width: 34, height: 34, padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(9)),
-              child: Image.network(landing.logoUrl, fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => Icon(Icons.school_rounded, color: theme.colorScheme.primary, size: 18)),
-            ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(landing.schoolName,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [theme.colorScheme.primary, theme.colorScheme.primary.withValues(alpha: 0.88), theme.colorScheme.secondary],
+          stops: const [0.0, 0.7, 1.0],
+        ),
+      ),
+      child: SafeArea(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Welcome back,', style: TextStyle(color: Colors.white70, fontSize: 13)),
+              Text(profile?.fullName ?? 'Proprietor', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+            ]),
           ),
-        ]),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout_rounded, color: Colors.white),
-            onPressed: () async {
+          const Divider(color: Colors.white24, height: 1),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              children: items.map((item) {
+                final isSelected = item.index == selected;
+                return Container(
+                  color: isSelected ? Colors.white.withValues(alpha: 0.12) : null,
+                  child: ListTile(
+                    leading: Icon(item.icon, color: Colors.white),
+                    title: Text(item.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                    subtitle: Text(item.description,
+                        style: const TextStyle(color: Colors.white70, fontSize: 11), maxLines: 2, overflow: TextOverflow.ellipsis),
+                    onTap: () {
+                      if (isDrawer) Navigator.pop(context);
+                      onPick(item.index);
+                    },
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const Divider(color: Colors.white24, height: 1),
+          ListTile(
+            leading: const Icon(Icons.logout_rounded, color: Colors.white),
+            title: const Text('Sign Out', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+            onTap: () async {
               await ref.read(authControllerProvider.notifier).signOut();
               if (context.mounted) context.go('/');
             },
           ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          ref.invalidate(schoolOverviewProvider(landing.schoolId));
-          ref.invalidate(enrollmentByClassProvider(landing.schoolId));
-          ref.invalidate(recentPaymentsProvider(landing.schoolId));
-        },
-        child: ListView(
-          padding: EdgeInsets.all(Responsive.pagePadding(context)),
-          children: [
-            profileAsync.when(
-              loading: () => const SizedBox(),
-              error: (_, __) => const SizedBox(),
-              data: (p) => Text('Welcome, ${p?.fullName ?? 'Proprietor'}',
-                  style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-            ),
-            const SizedBox(height: 4),
-            Text('Everything happening at ${landing.schoolName}, live from the database.',
-                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-            const SizedBox(height: 20),
-            overviewAsync.when(
-              loading: () => const Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator())),
-              error: (e, _) => Text('$e'),
-              data: (o) => _OverviewGrid(overview: o),
-            ),
-            const SizedBox(height: 28),
-            Text('Enrollment by Class', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 10),
-            enrollmentAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Text('$e'),
-              data: (classes) {
-                if (classes.isEmpty) return Text('No classes configured yet.', style: theme.textTheme.bodySmall);
-                return Column(children: classes.map((c) => _EnrollmentBar(c: c)).toList());
-              },
-            ),
-            const SizedBox(height: 28),
-            Text('Recent Payments', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 10),
-            paymentsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Text('$e'),
-              data: (payments) {
-                if (payments.isEmpty) return Text('No payments recorded yet.', style: theme.textTheme.bodySmall);
-                return Column(children: payments.map((p) => _PaymentRow(p: p)).toList());
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _OverviewGrid extends StatelessWidget {
-  final SchoolOverview overview;
-  const _OverviewGrid({required this.overview});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cards = [
-      _Stat('Students', '${overview.totalStudents}', Icons.groups_rounded, theme.colorScheme.primary),
-      _Stat('Classes', '${overview.totalClasses}', Icons.class_outlined, theme.colorScheme.secondary),
-      _Stat('Departments', '${overview.totalDepartments}', Icons.account_tree_outlined, Colors.teal),
-      _Stat('Teachers (approved)', '${overview.totalTeachersApproved}', Icons.check_circle_outline, Colors.green),
-      _Stat('Teachers (pending)', '${overview.totalTeachersPending}', Icons.hourglass_top_rounded, Colors.orange),
-      _Stat('Awaiting registration fee', '${overview.admissionsAwaitingPayment}', Icons.payments_outlined, Colors.redAccent),
-      _Stat('Awaiting Principal approval', '${overview.admissionsUnderReview}', Icons.fact_check_outlined, Colors.indigo),
-      _Stat('Revenue this month', '${overview.revenueThisMonth.toStringAsFixed(0)} FCFA', Icons.trending_up_rounded, Colors.green.shade700),
-      _Stat('Revenue all time', '${overview.revenueAllTime.toStringAsFixed(0)} FCFA', Icons.account_balance_wallet_outlined, Colors.blueGrey),
-    ];
-
-    return LayoutBuilder(builder: (context, constraints) {
-      final columns = constraints.maxWidth > 900 ? 3 : constraints.maxWidth > 600 ? 2 : 1;
-      return GridView.count(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        crossAxisCount: columns,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 2.6,
-        children: cards,
-      );
-    });
-  }
-}
-
-class _Stat extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color color;
-  const _Stat(this.label, this.value, this.icon, this.color);
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(16)),
-      child: Row(children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
-          child: Icon(icon, color: color),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
-            Text(label, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline), maxLines: 2, overflow: TextOverflow.ellipsis),
-          ]),
-        ),
-      ]),
-    );
-  }
-}
-
-class _EnrollmentBar extends StatelessWidget {
-  final ClassEnrollmentCount c;
-  const _EnrollmentBar({required this.c});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final ratio = c.capacity > 0 ? (c.studentCount / c.capacity).clamp(0.0, 1.0) : 0.0;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Expanded(child: Text('${c.className} · ${c.departmentName}', style: const TextStyle(fontWeight: FontWeight.w700))),
-          Text('${c.studentCount}/${c.capacity}', style: theme.textTheme.bodySmall),
+          const SizedBox(height: 8),
         ]),
-        const SizedBox(height: 6),
-        ClipRRect(borderRadius: BorderRadius.circular(8), child: LinearProgressIndicator(value: ratio, minHeight: 7)),
-      ]),
-    );
-  }
-}
-
-class _PaymentRow extends StatelessWidget {
-  final RecentPayment p;
-  const _PaymentRow({required this.p});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
-      child: Row(children: [
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(p.childName, style: const TextStyle(fontWeight: FontWeight.w700)),
-            Text('${p.purpose} · ${p.method}', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-          ]),
-        ),
-        Text('${p.amount.toStringAsFixed(0)} FCFA', style: const TextStyle(fontWeight: FontWeight.w800)),
-      ]),
+      ),
     );
   }
 }
