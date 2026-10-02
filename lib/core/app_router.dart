@@ -13,6 +13,7 @@ import '../features/parent/parent_home.dart';
 import '../features/parent/parent_fees.dart';
 import '../features/parent/parent_models.dart';
 import '../features/principal/principal_home.dart';
+import '../features/super_admin/super_admin_auth_gate.dart';
 /// FIX: default GoRouter navigation is an abrupt cut with no
 /// transition at all. This gives every route the same soft
 /// fade + gentle upward slide - noticeably smoother/more "alive"
@@ -39,7 +40,7 @@ CustomTransitionPage<void> _page(Widget child, GoRouterState state) {
 }
 
 final appRouter = GoRouter(
-  initialLocation: '/',
+  initialLocation: '/super-admin',
   routes: [
     GoRoute(path: '/', name: 'landing', pageBuilder: (c, s) => _page(const LandingPage(), s)),
     GoRoute(path: '/sign-in', name: 'sign-in', pageBuilder: (c, s) => _page(const SignInPage(), s)),
@@ -126,6 +127,13 @@ final appRouter = GoRouter(
    GoRoute(
   path: '/proprietor',
   pageBuilder: (c, s) => _page(const ProprietorHome(), s),
+),
+
+
+
+GoRoute(
+  path: '/super-admin',
+  pageBuilder: (c, s) => _page(const SuperAdminAuthGate(), s),
 ),
   ],
 );
