@@ -119,11 +119,7 @@ final appRouter = GoRouter(
   path: '/secretary',
   pageBuilder: (c, s) => _page(const SecretaryHome(), s),
 ),
-    GoRoute(
-      path: '/secretary',
-      pageBuilder: (c, s) =>
-          _page(const RoleGate(requiredRole: 'secretary', label: 'Secretary'), s),
-    ),
+   
    GoRoute(
   path: '/proprietor',
   pageBuilder: (c, s) => _page(const ProprietorHome(), s),
