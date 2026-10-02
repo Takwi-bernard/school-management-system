@@ -86,7 +86,7 @@ class _ProprietorShellState extends ConsumerState<_ProprietorShell> {
         return ExpenditureSection(schoolId: widget.landing.schoolId, landing: widget.landing);
       case 4:
         return GrowthStatisticsSection(schoolId: widget.landing.schoolId);
-      case 5:
+      case 6:
         return AiInsightsSection(schoolId: widget.landing.schoolId);
       default:
         return ActiveActorsSection(schoolId: widget.landing.schoolId);
