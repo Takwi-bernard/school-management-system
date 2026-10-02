@@ -71,6 +71,7 @@ class _ProprietorShellState extends ConsumerState<_ProprietorShell> {
         _NavItem(icon: Icons.receipt_long_outlined, title: 'Expenditure', description: 'Record and review school expenses', index: 3),
         _NavItem(icon: Icons.insights_rounded, title: 'Growth & Statistics', description: 'Students over time, by class', index: 4),
         _NavItem(icon: Icons.groups_outlined, title: 'School Actors', description: 'Staff and parents currently active', index: 5),
+             _NavItem(icon: Icons.auto_awesome_rounded, title: 'AI Insights', description: 'AI-generated feedback and suggestions', index: 6),
       ];
 
   Widget _bodyFor(int index) {
@@ -85,13 +86,17 @@ class _ProprietorShellState extends ConsumerState<_ProprietorShell> {
         return ExpenditureSection(schoolId: widget.landing.schoolId, landing: widget.landing);
       case 4:
         return GrowthStatisticsSection(schoolId: widget.landing.schoolId);
+      case 5:
+        return AiInsightsSection(schoolId: widget.landing.schoolId);
       default:
         return ActiveActorsSection(schoolId: widget.landing.schoolId);
+        
     }
   }
 
   @override
   Widget build(BuildContext context) {
+        ref.watch(proprietorRealtimeProvider(widget.landing.schoolId)); // keeps the channel alive for this shell's lifetime
     final isMobile = Responsive.isMobile(context);
     final body = _bodyFor(_selected);
 

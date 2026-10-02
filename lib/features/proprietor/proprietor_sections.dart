@@ -25,15 +25,66 @@ Widget _sectionHeader(BuildContext context, String title, String subtitle) {
   );
 }
 
-Widget _card(BuildContext context, {required Widget child}) {
+Widget _card(BuildContext context, {required Widget child, IconData? icon}) {
   final theme = Theme.of(context);
   return Container(
     width: double.infinity,
-    padding: const EdgeInsets.all(18),
+    padding: const EdgeInsets.all(20),
     margin: const EdgeInsets.only(bottom: 16),
-    decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(18)),
+    decoration: BoxDecoration(
+      color: theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4)),
+      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 16, offset: const Offset(0, 4))],
+    ),
     child: child,
   );
+}
+
+class _StatCard extends StatelessWidget {
+  final _Stat stat;
+  const _StatCard(this.stat);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4)),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 12, offset: const Offset(0, 3))],
+      ),
+      child: Row(children: [
+        Container(
+          width: 46, height: 46,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(colors: [stat.color.withValues(alpha: 0.18), stat.color.withValues(alpha: 0.06)]),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(stat.icon, color: stat.color, size: 22),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(stat.value, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900, letterSpacing: -0.5)),
+            const SizedBox(height: 2),
+            Text(stat.label, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline, fontWeight: FontWeight.w500), maxLines: 2, overflow: TextOverflow.ellipsis),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
+Widget _chartCardHeader(BuildContext context, IconData icon, String title) {
+  final theme = Theme.of(context);
+  return Row(children: [
+    Icon(icon, size: 18, color: theme.colorScheme.primary),
+    const SizedBox(width: 8),
+    Text(title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+  ]);
 }
 
 // ============================================================
@@ -60,6 +111,35 @@ class OverviewSection extends ConsumerWidget {
       child: ListView(
         padding: EdgeInsets.all(Responsive.pagePadding(context)),
         children: [
+                    financeAsync.when(
+            loading: () => const SizedBox(),
+            error: (_, __) => const SizedBox(),
+            data: (f) => Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 20),
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [theme.colorScheme.primary, theme.colorScheme.secondary], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('NET POSITION · ALL TIME', style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1)),
+                const SizedBox(height: 6),
+                Text(_money(f.netPosition), style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w900, letterSpacing: -1)),
+                const SizedBox(height: 14),
+                Row(children: [
+                  Icon(Icons.south_west_rounded, color: Colors.white.withValues(alpha: 0.9), size: 16),
+                  const SizedBox(width: 4),
+                  Text('${_money(f.incomeThisMonth)} in', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                  const SizedBox(width: 18),
+                  Icon(Icons.north_east_rounded, color: Colors.white.withValues(alpha: 0.9), size: 16),
+                  const SizedBox(width: 4),
+                  Text('${_money(f.expenditureThisMonth)} out', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                ]),
+                Text('this month', style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 11)),
+              ]),
+            ),
+          ),
           _sectionHeader(context, 'Overview', 'A snapshot of everything happening right now, live from the database.'),
           snapshotAsync.when(
             loading: () => const Padding(padding: EdgeInsets.all(30), child: Center(child: CircularProgressIndicator())),
@@ -125,32 +205,104 @@ class _StatGrid extends StatelessWidget {
   }
 }
 
-class _StatCard extends StatelessWidget {
-  final _Stat stat;
-  const _StatCard(this.stat);
+// ============================================================
+// 7. AI INSIGHTS
+// ============================================================
+
+class AiInsightsSection extends ConsumerStatefulWidget {
+  final String schoolId;
+  const AiInsightsSection({super.key, required this.schoolId});
+
+  @override
+  ConsumerState<AiInsightsSection> createState() => _AiInsightsSectionState();
+}
+
+class _AiInsightsSectionState extends ConsumerState<AiInsightsSection> {
+  bool _generating = false;
+
+  Future<void> _generate() async {
+    setState(() => _generating = true);
+    try {
+      await ref.read(proprietorRepositoryProvider).generateReport(widget.schoolId);
+      ref.invalidate(latestAiReportProvider(widget.schoolId));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'.replaceFirst('Exception: ', ''))));
+    } finally {
+      if (mounted) setState(() => _generating = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(16)),
-      child: Row(children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(color: stat.color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
-          child: Icon(stat.icon, color: stat.color),
+    final async = ref.watch(latestAiReportProvider(widget.schoolId));
+
+    return ListView(
+      padding: EdgeInsets.all(Responsive.pagePadding(context)),
+      children: [
+        Row(children: [
+          Expanded(child: _sectionHeader(context, 'AI Insights', 'A plain-language read of how the school is doing, generated from the real numbers above.')),
+          FilledButton.icon(
+            onPressed: _generating ? null : _generate,
+            icon: _generating
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.auto_awesome_rounded),
+            label: Text(_generating ? 'Analyzing...' : 'Generate New Analysis'),
+          ),
+        ]),
+        async.when(
+          loading: () => const Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator())),
+          error: (e, _) => Text('$e'),
+          data: (report) {
+            if (report == null) {
+              return _card(context, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Icon(Icons.insights_rounded, color: theme.colorScheme.outline, size: 32),
+                const SizedBox(height: 10),
+                const Text('No analysis has been generated yet. Tap "Generate New Analysis" above.'),
+              ]));
+            }
+            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Last generated ${report.generatedAt.day}/${report.generatedAt.month}/${report.generatedAt.year} at ${report.generatedAt.hour.toString().padLeft(2, '0')}:${report.generatedAt.minute.toString().padLeft(2, '0')}',
+                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+              const SizedBox(height: 14),
+              _card(context, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _chartCardHeader(context, Icons.summarize_rounded, 'Summary'),
+                const SizedBox(height: 10),
+                Text(report.summary, style: theme.textTheme.bodyMedium),
+              ])),
+              if (report.strengths.isNotEmpty)
+                _card(context, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  _chartCardHeader(context, Icons.thumb_up_alt_outlined, 'Strengths'),
+                  const SizedBox(height: 10),
+                  ...report.strengths.map((s) => _bullet(s, Colors.green.shade700)),
+                ])),
+              if (report.concerns.isNotEmpty)
+                _card(context, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  _chartCardHeader(context, Icons.warning_amber_rounded, 'Concerns'),
+                  const SizedBox(height: 10),
+                  ...report.concerns.map((s) => _bullet(s, Colors.orange.shade800)),
+                ])),
+              if (report.recommendations.isNotEmpty)
+                _card(context, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  _chartCardHeader(context, Icons.lightbulb_outline_rounded, 'Recommendations'),
+                  const SizedBox(height: 10),
+                  ...report.recommendations.map((s) => _bullet(s, Theme.of(context).colorScheme.primary)),
+                ])),
+            ]);
+          },
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(stat.value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
-            Text(stat.label, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline), maxLines: 2, overflow: TextOverflow.ellipsis),
-          ]),
-        ),
-      ]),
+      ],
     );
   }
+
+  Widget _bullet(String text, Color color) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(margin: const EdgeInsets.only(top: 6), width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 10),
+          Expanded(child: Text(text)),
+        ]),
+      );
 }
 
 // ============================================================
@@ -394,7 +546,7 @@ class _ExpenditureSectionState extends ConsumerState<ExpenditureSection> {
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
-                child: Row(children: [
+                child: Row(children: [ const
                   Icon(Icons.north_east_rounded, color: Colors.red, size: 20),
                   const SizedBox(width: 10),
                   Expanded(

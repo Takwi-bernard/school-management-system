@@ -266,4 +266,17 @@ class ProprietorRepository {
       parents: parents.count,
     );
   }
+
+    Future<AiSchoolReport?> getLatestReport(String schoolId) async {
+    final row = await _client.from('ai_school_reports').select().eq('school_id', schoolId).order('generated_at', ascending: false).limit(1).maybeSingle();
+    if (row == null) return null;
+    return AiSchoolReport.fromMap(row);
+  }
+
+  Future<AiSchoolReport> generateReport(String schoolId) async {
+    final res = await _client.functions.invoke('analyze-school-performance', body: {'school_id': schoolId});
+    final data = Map<String, dynamic>.from(res.data as Map);
+    if (data['success'] != true) throw Exception(data['message'] ?? 'Could not generate the analysis.');
+    return AiSchoolReport.fromMap(Map<String, dynamic>.from(data['report'] as Map));
+  }
 }

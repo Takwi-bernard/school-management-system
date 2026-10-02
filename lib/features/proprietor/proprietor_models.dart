@@ -139,4 +139,33 @@ class SchoolSnapshot {
     required this.admissionsAwaitingPayment,
     required this.admissionsUnderReview,
   });
+
+  
 }
+class AiSchoolReport {
+  final String id;
+  final String summary;
+  final List<String> strengths;
+  final List<String> concerns;
+  final List<String> recommendations;
+  final DateTime generatedAt;
+
+  const AiSchoolReport({
+    required this.id,
+    required this.summary,
+    required this.strengths,
+    required this.concerns,
+    required this.recommendations,
+    required this.generatedAt,
+  });
+
+  factory AiSchoolReport.fromMap(Map<String, dynamic> m) => AiSchoolReport(
+        id: m['id'] as String,
+        summary: m['summary'] as String? ?? '',
+        strengths: List<String>.from(m['strengths'] as List? ?? []),
+        concerns: List<String>.from(m['concerns'] as List? ?? []),
+        recommendations: List<String>.from(m['recommendations'] as List? ?? []),
+        generatedAt: DateTime.tryParse(m['generated_at'] as String? ?? '') ?? DateTime.now(),
+      );
+}
+
