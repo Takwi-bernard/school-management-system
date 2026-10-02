@@ -10,3 +10,11 @@ final superAdminRepositoryProvider = Provider<SuperAdminRepository>((ref) {
 final superAdminProfileProvider = FutureProvider<SuperAdminProfile?>((ref) {
   return ref.watch(superAdminRepositoryProvider).getProfile();
 });
+
+final schoolsListProvider = FutureProvider<List<SchoolSummary>>((ref) {
+  return ref.watch(superAdminRepositoryProvider).listSchools();
+});
+
+final schoolAdminsProvider = FutureProvider.family<List<SchoolAdminAccount>, String>((ref, schoolId) {
+  return ref.watch(superAdminRepositoryProvider).listSchoolAdmins(schoolId);
+});

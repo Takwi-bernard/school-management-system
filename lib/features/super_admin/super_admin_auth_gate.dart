@@ -6,8 +6,6 @@ import 'super_admin_home.dart';
 import 'super_admin_providers.dart';
 import 'super_admin_theme.dart';
 
-/// The ONLY entry point into this whole module. No sign-up, no
-/// school-domain resolution, no branding fetch of any kind.
 class SuperAdminAuthGate extends ConsumerStatefulWidget {
   const SuperAdminAuthGate({super.key});
 
@@ -19,6 +17,7 @@ class _SuperAdminAuthGateState extends ConsumerState<SuperAdminAuthGate> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _loading = false;
+  bool _obscure = true;
   String? _error;
 
   @override
@@ -29,15 +28,12 @@ class _SuperAdminAuthGateState extends ConsumerState<SuperAdminAuthGate> {
   }
 
   Future<void> _signIn() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      await Supabase.instance.client.auth.signInWithPassword(
-        email: _email.text.trim(),
-        password: _password.text,
-      );
-      // Force a re-check of super_admins immediately after sign-in -
-      // identity alone is not enough, membership in super_admins is
-      // the real gate.
+      await Supabase.instance.client.auth.signInWithPassword(email: _email.text.trim(), password: _password.text);
       ref.invalidate(superAdminProfileProvider);
       final profile = await ref.read(superAdminProfileProvider.future);
       if (profile == null) {
@@ -76,51 +72,162 @@ class _SuperAdminAuthGateState extends ConsumerState<SuperAdminAuthGate> {
   }
 
   Widget _loginScreen({String? error}) {
+    final theme = Theme.of(context);
+    final displayedError = error ?? _error;
+
+    final form = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 420),
+      child: Container(
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E293B),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 40, offset: const Offset(0, 20))],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [theme.colorScheme.primary, theme.colorScheme.primary.withValues(alpha: 0.6)]),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(Icons.admin_panel_settings_rounded, color: Colors.white, size: 28),
+            ),
+            const SizedBox(height: 24),
+            const Text('Platform Administration', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 6),
+            Text('Sign in to manage schools on the platform.', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
+            const SizedBox(height: 32),
+            _field(
+              controller: _email,
+              label: 'Email',
+              icon: Icons.mail_outline_rounded,
+              keyboardType: TextInputType.emailAddress,
+            ),
+            const SizedBox(height: 16),
+            _field(
+              controller: _password,
+              label: 'Password',
+              icon: Icons.lock_outline_rounded,
+              obscure: _obscure,
+              onSubmit: (_) => _signIn(),
+              suffix: IconButton(
+                icon: Icon(_obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: Colors.white38, size: 20),
+                onPressed: () => setState(() => _obscure = !_obscure),
+              ),
+            ),
+            if (displayedError != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+                child: Row(children: [
+                  const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(displayedError, style: const TextStyle(color: Colors.redAccent, fontSize: 13))),
+                ]),
+              ),
+            ],
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: theme.colorScheme.primary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                onPressed: _loading ? null : _signIn,
+                child: _loading
+                    ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
+                    : const Text('Sign In', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
     return Scaffold(
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 380),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.admin_panel_settings_rounded, size: 56, color: Colors.white70),
-                const SizedBox(height: 16),
-                const Text('Platform Administration', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 32),
-                TextField(
-                  controller: _email,
-                  keyboardType: TextInputType.emailAddress,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(labelText: 'Email', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: _password,
-                  obscureText: true,
-                  style: const TextStyle(color: Colors.white),
-                  onSubmitted: (_) => _signIn(),
-                  decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()),
-                ),
-                if (error != null || _error != null) ...[
-                  const SizedBox(height: 14),
-                  Text(error ?? _error!, style: const TextStyle(color: Colors.redAccent, fontSize: 13), textAlign: TextAlign.center),
-                ],
-                const SizedBox(height: 22),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: FilledButton(
-                    onPressed: _loading ? null : _signIn,
-                    child: _loading
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Text('Sign In'),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth > 900;
+          if (!isWide) {
+            return Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(colors: [Color(0xFF0F172A), Color(0xFF1E1B4B)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+              ),
+              child: Center(child: SingleChildScrollView(padding: const EdgeInsets.all(20), child: form)),
+            );
+          }
+          return Row(
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(colors: [Color(0xFF312E81), Color(0xFF0F172A)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                  ),
+                  padding: const EdgeInsets.all(60),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.hub_outlined, color: Colors.white, size: 48),
+                      const SizedBox(height: 24),
+                      const Text('School Management\nPlatform', style: TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w900, height: 1.2)),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Onboard schools, configure their structure, and oversee the platform from one place.',
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 15, height: 1.5),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
-          ),
+              ),
+              Expanded(
+                child: Container(
+                  color: const Color(0xFF0F172A),
+                  child: Center(child: SingleChildScrollView(padding: const EdgeInsets.all(40), child: form)),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _field({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    bool obscure = false,
+    Widget? suffix,
+    TextInputType? keyboardType,
+    void Function(String)? onSubmit,
+  }) {
+    return TextField(
+      controller: controller,
+      obscureText: obscure,
+      keyboardType: keyboardType,
+      onSubmitted: onSubmit,
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: Colors.white38),
+        prefixIcon: Icon(icon, color: Colors.white38, size: 20),
+        suffixIcon: suffix,
+        filled: true,
+        fillColor: Colors.white.withValues(alpha: 0.04),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1.5),
         ),
       ),
     );
