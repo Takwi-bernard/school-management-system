@@ -36,22 +36,52 @@ class SuperAdminRepository {
     required String schoolCode,
     required String domain,
     String? motto,
-    String? primaryColor,
-    String? secondaryColor,
+    String? website,
+    required List<String> phoneNumbers,
+    required String primaryColor,
+    required String secondaryColor,
   }) async {
     final data = await _call('create_school', {
       'school_name': schoolName,
       'school_code': schoolCode,
       'domain': domain,
       'motto': motto,
+      'website': website,
+      'phone_numbers': phoneNumbers,
       'primary_color': primaryColor,
       'secondary_color': secondaryColor,
     });
     return SchoolSummary.fromMap(Map<String, dynamic>.from(data['school'] as Map));
   }
 
-  Future<void> setSchoolStatus({required String schoolId, required String status}) async {
-    await _call('set_school_status', {'school_id': schoolId, 'status': status});
+  Future<SchoolSummary> updateSchool({
+    required String schoolId,
+    String? schoolName,
+    String? schoolCode,
+    String? domain,
+    String? motto,
+    String? website,
+    List<String>? phoneNumbers,
+    String? primaryColor,
+    String? secondaryColor,
+  }) async {
+    final data = await _call('update_school', {
+      'school_id': schoolId,
+      if (schoolName != null) 'school_name': schoolName,
+      if (schoolCode != null) 'school_code': schoolCode,
+      if (domain != null) 'domain': domain,
+      if (motto != null) 'motto': motto,
+      if (website != null) 'website': website,
+      if (phoneNumbers != null) 'phone_numbers': phoneNumbers,
+      if (primaryColor != null) 'primary_color': primaryColor,
+      if (secondaryColor != null) 'secondary_color': secondaryColor,
+    });
+    return SchoolSummary.fromMap(Map<String, dynamic>.from(data['school'] as Map));
+  }
+
+  Future<String> toggleSchoolStatus(String schoolId) async {
+    final data = await _call('toggle_school_status', {'school_id': schoolId});
+    return data['new_status'] as String;
   }
 
   Future<NewAdminCredentials> createSchoolAdmin({

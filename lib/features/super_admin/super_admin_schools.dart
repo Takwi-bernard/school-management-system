@@ -5,6 +5,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'super_admin_models.dart';
 import 'super_admin_providers.dart';
 
+Color? _tryParseHex(String hex) {
+  var v = hex.trim().replaceAll('#', '');
+  if (v.length == 6) v = 'FF$v';
+  if (v.length != 8) return null;
+  final parsed = int.tryParse(v, radix: 16);
+  return parsed == null ? null : Color(parsed);
+}
+
+String _colorToHex(Color c) => '#${c.value.toRadixString(16).substring(2).toUpperCase()}';
+
 class SchoolsSection extends ConsumerWidget {
   const SchoolsSection({super.key});
 
@@ -13,40 +23,41 @@ class SchoolsSection extends ConsumerWidget {
     final async = ref.watch(schoolsListProvider);
 
     return Padding(
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            const Expanded(
-              child: Text('Schools', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w800)),
-            ),
-            FilledButton.icon(
+          LayoutBuilder(builder: (context, constraints) {
+            final narrow = constraints.maxWidth < 500;
+            final title = const Text('Schools', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800));
+            final button = FilledButton.icon(
               onPressed: () async {
-                final created = await showDialog<bool>(context: context, builder: (_) => const _CreateSchoolWizard());
+                final created = await showDialog<bool>(context: context, builder: (_) => const _SchoolFormDialog());
                 if (created == true) ref.invalidate(schoolsListProvider);
               },
               icon: const Icon(Icons.add_rounded),
               label: const Text('Onboard a School'),
-            ),
-          ]),
+            );
+            if (narrow) {
+              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [title, const SizedBox(height: 12), SizedBox(width: double.infinity, child: button)]);
+            }
+            return Row(children: [Expanded(child: title), button]);
+          }),
           const SizedBox(height: 4),
-          Text('Every school currently registered on the platform.', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
-          const SizedBox(height: 24),
+          Text('Every school registered on the platform.', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
+          const SizedBox(height: 20),
           Expanded(
             child: async.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Text('$e', style: const TextStyle(color: Colors.redAccent)),
               data: (schools) {
                 if (schools.isEmpty) {
-                  return Center(
-                    child: Text('No schools onboarded yet.', style: TextStyle(color: Colors.white.withValues(alpha: 0.4))),
-                  );
+                  return Center(child: Text('No schools onboarded yet.', style: TextStyle(color: Colors.white.withValues(alpha: 0.4))));
                 }
                 return LayoutBuilder(builder: (context, constraints) {
                   final columns = constraints.maxWidth > 1100 ? 3 : constraints.maxWidth > 700 ? 2 : 1;
                   return GridView.builder(
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: columns, mainAxisSpacing: 14, crossAxisSpacing: 14, childAspectRatio: 1.9),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: columns, mainAxisSpacing: 14, crossAxisSpacing: 14, childAspectRatio: columns == 1 ? 1.5 : 1.7),
                     itemCount: schools.length,
                     itemBuilder: (context, i) => _SchoolCard(school: schools[i]),
                   );
@@ -72,16 +83,13 @@ class _SchoolCardState extends ConsumerState<_SchoolCard> {
   bool _busy = false;
 
   Future<void> _toggleStatus() async {
-    final newStatus = widget.school.isActive ? 'inactive' : 'active';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF1E293B),
         title: Text('${widget.school.isActive ? 'Deactivate' : 'Activate'} ${widget.school.schoolName}?', style: const TextStyle(color: Colors.white)),
         content: Text(
-          widget.school.isActive
-              ? 'Everyone at this school loses access to the platform immediately.'
-              : 'This school regains access to the platform.',
+          widget.school.isActive ? 'Everyone at this school loses access to the platform immediately.' : 'This school regains access to the platform.',
           style: const TextStyle(color: Colors.white70),
         ),
         actions: [
@@ -94,7 +102,7 @@ class _SchoolCardState extends ConsumerState<_SchoolCard> {
 
     setState(() => _busy = true);
     try {
-      await ref.read(superAdminRepositoryProvider).setSchoolStatus(schoolId: widget.school.id, status: newStatus);
+      await ref.read(superAdminRepositoryProvider).toggleSchoolStatus(widget.school.id);
       ref.invalidate(schoolsListProvider);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'.replaceFirst('Exception: ', ''))));
@@ -106,6 +114,8 @@ class _SchoolCardState extends ConsumerState<_SchoolCard> {
   @override
   Widget build(BuildContext context) {
     final s = widget.school;
+    final primary = _tryParseHex(s.primaryColor) ?? Colors.indigo;
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -117,24 +127,37 @@ class _SchoolCardState extends ConsumerState<_SchoolCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
+            Container(width: 12, height: 12, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: primary, shape: BoxShape.circle)),
             Expanded(child: Text(s.schoolName, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800), overflow: TextOverflow.ellipsis)),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(color: (s.isActive ? Colors.green : Colors.red).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
-              child: Text(s.isActive ? 'Active' : 'Inactive', style: TextStyle(color: s.isActive ? Colors.greenAccent : Colors.redAccent, fontSize: 11, fontWeight: FontWeight.w700)),
+              child: Text(s.status, style: TextStyle(color: s.isActive ? Colors.greenAccent : Colors.redAccent, fontSize: 11, fontWeight: FontWeight.w700)),
             ),
           ]),
           const SizedBox(height: 6),
           Text('${s.schoolCode} · ${s.domain}', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
+          if (s.phoneNumbers.isNotEmpty)
+            Padding(padding: const EdgeInsets.only(top: 4), child: Text(s.phoneNumbers.join(' · '), style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11))),
           const Spacer(),
           Row(children: [
             Expanded(
               child: OutlinedButton(
-                onPressed: () => showDialog(context: context, builder: (_) => _SchoolAdminsDialog(school: s)),
-                child: const Text('Admin Accounts'),
+                onPressed: () async {
+                  final changed = await showDialog<bool>(context: context, builder: (_) => _SchoolFormDialog(existing: s));
+                  if (changed == true) ref.invalidate(schoolsListProvider);
+                },
+                child: const Text('Edit'),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => showDialog(context: context, builder: (_) => _SchoolAdminsDialog(school: s)),
+                child: const Text('Admins'),
+              ),
+            ),
+            const SizedBox(width: 6),
             IconButton(
               icon: _busy
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
@@ -149,62 +172,100 @@ class _SchoolCardState extends ConsumerState<_SchoolCard> {
 }
 
 // ============================================================
-// CREATE SCHOOL - section-by-section wizard, not one long form
+// CREATE / EDIT SCHOOL - one form serves both, section by section
 // ============================================================
 
-class _CreateSchoolWizard extends ConsumerStatefulWidget {
-  const _CreateSchoolWizard();
+class _SchoolFormDialog extends ConsumerStatefulWidget {
+  final SchoolSummary? existing;
+  const _SchoolFormDialog({this.existing});
 
   @override
-  ConsumerState<_CreateSchoolWizard> createState() => _CreateSchoolWizardState();
+  ConsumerState<_SchoolFormDialog> createState() => _SchoolFormDialogState();
 }
 
-class _CreateSchoolWizardState extends ConsumerState<_CreateSchoolWizard> {
+class _SchoolFormDialogState extends ConsumerState<_SchoolFormDialog> {
   int _step = 0;
-  static const _titles = ['School Identity', 'Branding', 'Done'];
+  static const _titles = ['Identity', 'Branding', 'Done'];
 
-  final _nameController = TextEditingController();
-  final _codeController = TextEditingController();
-  final _domainController = TextEditingController();
-  final _mottoController = TextEditingController();
-  Color _primary = const Color(0xFF1A73E8);
-  Color _secondary = const Color(0xFF0D47A1);
+  late final TextEditingController _name;
+  late final TextEditingController _code;
+  late final TextEditingController _domain;
+  late final TextEditingController _motto;
+  late final TextEditingController _website;
+  late final TextEditingController _primaryHex;
+  late final TextEditingController _secondaryHex;
+  List<TextEditingController> _phoneControllers = [];
 
   bool _saving = false;
   String? _error;
-  SchoolSummary? _created;
+  SchoolSummary? _result;
+
+  bool get _isEdit => widget.existing != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    _name = TextEditingController(text: e?.schoolName ?? '');
+    _code = TextEditingController(text: e?.schoolCode ?? '');
+    _domain = TextEditingController(text: e?.domain ?? '');
+    _motto = TextEditingController(text: e?.motto ?? '');
+    _website = TextEditingController(text: e?.website ?? '');
+    _primaryHex = TextEditingController(text: e?.primaryColor ?? '#1A73E8');
+    _secondaryHex = TextEditingController(text: e?.secondaryColor ?? '#0D47A1');
+    _phoneControllers = (e?.phoneNumbers.isNotEmpty == true ? e!.phoneNumbers : ['']).map((p) => TextEditingController(text: p)).toList();
+  }
 
   @override
   void dispose() {
-    _nameController.dispose();
-    _codeController.dispose();
-    _domainController.dispose();
-    _mottoController.dispose();
+    for (final c in [_name, _code, _domain, _motto, _website, _primaryHex, _secondaryHex, ..._phoneControllers]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  String _colorToHex(Color c) => '#${c.value.toRadixString(16).substring(2).toUpperCase()}';
-
-  Future<void> _create() async {
-    if (_nameController.text.trim().isEmpty || _codeController.text.trim().isEmpty) {
-      setState(() => _error = 'School name and code are required.');
+  Future<void> _submit() async {
+    if (_name.text.trim().isEmpty || _code.text.trim().isEmpty) {
+      setState(() {
+        _step = 0;
+        _error = 'School name and code are required.';
+      });
       return;
     }
     setState(() {
       _saving = true;
       _error = null;
     });
+    final phones = _phoneControllers.map((c) => c.text.trim()).where((p) => p.isNotEmpty).toList();
     try {
-      final school = await ref.read(superAdminRepositoryProvider).createSchool(
-            schoolName: _nameController.text.trim(),
-            schoolCode: _codeController.text.trim(),
-            domain: _domainController.text.trim().isEmpty ? _nameController.text.trim() : _domainController.text.trim(),
-            motto: _mottoController.text.trim().isEmpty ? null : _mottoController.text.trim(),
-            primaryColor: _colorToHex(_primary),
-            secondaryColor: _colorToHex(_secondary),
-          );
+      final repo = ref.read(superAdminRepositoryProvider);
+      SchoolSummary saved;
+      if (_isEdit) {
+        saved = await repo.updateSchool(
+          schoolId: widget.existing!.id,
+          schoolName: _name.text.trim(),
+          schoolCode: _code.text.trim(),
+          domain: _domain.text.trim(),
+          motto: _motto.text.trim(),
+          website: _website.text.trim(),
+          phoneNumbers: phones,
+          primaryColor: _primaryHex.text.trim(),
+          secondaryColor: _secondaryHex.text.trim(),
+        );
+      } else {
+        saved = await repo.createSchool(
+          schoolName: _name.text.trim(),
+          schoolCode: _code.text.trim(),
+          domain: _domain.text.trim(),
+          motto: _motto.text.trim(),
+          website: _website.text.trim(),
+          phoneNumbers: phones,
+          primaryColor: _primaryHex.text.trim(),
+          secondaryColor: _secondaryHex.text.trim(),
+        );
+      }
       setState(() {
-        _created = school;
+        _result = saved;
         _step = 2;
       });
     } catch (e) {
@@ -220,37 +281,43 @@ class _CreateSchoolWizardState extends ConsumerState<_CreateSchoolWizard> {
       backgroundColor: const Color(0xFF1E293B),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
+        constraints: const BoxConstraints(maxWidth: 560),
         child: Padding(
           padding: const EdgeInsets.all(28),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Onboard a School · Step ${_step + 1} of ${_titles.length}: ${_titles[_step]}',
+              Text('${_isEdit ? 'Edit' : 'Onboard'} School · Step ${_step + 1} of ${_titles.length}: ${_titles[_step]}',
                   style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
               const SizedBox(height: 6),
               ClipRRect(
                 borderRadius: BorderRadius.circular(10),
                 child: LinearProgressIndicator(value: (_step + 1) / _titles.length, minHeight: 5, backgroundColor: Colors.white12),
               ),
-              const SizedBox(height: 24),
-              if (_step == 0) _identityStep(),
-              if (_step == 1) _brandingStep(),
-              if (_step == 2) _doneStep(),
+              const SizedBox(height: 22),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 420),
+                child: SingleChildScrollView(
+                  child: _step == 0
+                      ? _identityStep()
+                      : _step == 1
+                          ? _brandingStep()
+                          : _doneStep(),
+                ),
+              ),
               if (_error != null) ...[
                 const SizedBox(height: 14),
                 Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
               ],
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               Row(children: [
-                if (_step > 0 && _step < 2)
-                  TextButton(onPressed: _saving ? null : () => setState(() => _step--), child: const Text('Back')),
+                if (_step > 0 && _step < 2) TextButton(onPressed: _saving ? null : () => setState(() => _step--), child: const Text('Back')),
                 const Spacer(),
                 if (_step == 0)
                   FilledButton(
                     onPressed: () {
-                      if (_nameController.text.trim().isEmpty || _codeController.text.trim().isEmpty) {
+                      if (_name.text.trim().isEmpty || _code.text.trim().isEmpty) {
                         setState(() => _error = 'School name and code are required.');
                         return;
                       }
@@ -263,10 +330,10 @@ class _CreateSchoolWizardState extends ConsumerState<_CreateSchoolWizard> {
                   ),
                 if (_step == 1)
                   FilledButton(
-                    onPressed: _saving ? null : _create,
+                    onPressed: _saving ? null : _submit,
                     child: _saving
                         ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Text('Create School'),
+                        : Text(_isEdit ? 'Save Changes' : 'Create School'),
                   ),
                 if (_step == 2) FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Done')),
               ]),
@@ -279,23 +346,48 @@ class _CreateSchoolWizardState extends ConsumerState<_CreateSchoolWizard> {
 
   Widget _identityStep() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _darkField(_nameController, 'School name'),
+      _darkField(_name, 'School name'),
       const SizedBox(height: 14),
-      _darkField(_codeController, 'School code (e.g. SHC) - used in admission numbers'),
+      _darkField(_code, 'School code (e.g. SHC) - used in admission numbers'),
       const SizedBox(height: 14),
-      _darkField(_domainController, 'Domain (e.g. sacredheart) - leave blank to derive from the name'),
+      _darkField(_domain, 'Domain (e.g. sacredheart.com) - leave blank to derive from the name'),
+      const SizedBox(height: 14),
+      _darkField(_website, 'Website (optional - defaults to the domain if left blank)'),
+      const SizedBox(height: 18),
+      Row(children: [
+        const Text('Phone numbers', style: TextStyle(color: Colors.white70, fontSize: 13)),
+        const Spacer(),
+        TextButton.icon(
+          onPressed: () => setState(() => _phoneControllers.add(TextEditingController())),
+          icon: const Icon(Icons.add_rounded, size: 16),
+          label: const Text('Add'),
+        ),
+      ]),
+      ..._phoneControllers.asMap().entries.map((entry) {
+        final i = entry.key;
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(children: [
+            Expanded(child: _darkField(entry.value, 'Phone ${i + 1}', dense: true)),
+            if (_phoneControllers.length > 1)
+              IconButton(icon: const Icon(Icons.close_rounded, color: Colors.white38, size: 18), onPressed: () => setState(() => _phoneControllers.removeAt(i))),
+          ]),
+        );
+      }),
     ]);
   }
 
   Widget _brandingStep() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _darkField(_mottoController, 'Motto (optional)'),
+      _darkField(_motto, 'Motto (optional)'),
       const SizedBox(height: 18),
       Row(children: [
-        Expanded(child: _colorPicker('Primary color', _primary, (c) => setState(() => _primary = c))),
+        Expanded(child: _hexColorField('Primary color', _primaryHex)),
         const SizedBox(width: 14),
-        Expanded(child: _colorPicker('Secondary color', _secondary, (c) => setState(() => _secondary = c))),
+        Expanded(child: _hexColorField('Secondary color', _secondaryHex)),
       ]),
+      const SizedBox(height: 8),
+      Text('Enter any hex code the school wants - not limited to a fixed set.', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11)),
     ]);
   }
 
@@ -303,22 +395,25 @@ class _CreateSchoolWizardState extends ConsumerState<_CreateSchoolWizard> {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Icon(Icons.check_circle_rounded, color: Colors.green, size: 40),
       const SizedBox(height: 12),
-      Text('${_created?.schoolName ?? ''} created.', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
+      Text('${_result?.schoolName ?? ''} ${_isEdit ? 'updated' : 'created'}.', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
       const SizedBox(height: 4),
-      Text('Domain: ${_created?.domain ?? ''}', style: const TextStyle(color: Colors.white70)),
-      const SizedBox(height: 16),
-      Text('Next, open "Admin Accounts" on this school\'s card to create its Proprietor, Principal, and Secretary logins.',
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13)),
+      Text('Domain: ${_result?.domain ?? ''}', style: const TextStyle(color: Colors.white70)),
+      if (!_isEdit) ...[
+        const SizedBox(height: 16),
+        Text('Next, open "Admins" on this school\'s card to create its Proprietor, Principal, and Secretary logins.',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13)),
+      ],
     ]);
   }
 
-  Widget _darkField(TextEditingController controller, String label) {
+  Widget _darkField(TextEditingController controller, String label, {bool dense = false}) {
     return TextField(
       controller: controller,
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
         labelText: label,
         labelStyle: const TextStyle(color: Colors.white38),
+        isDense: dense,
         filled: true,
         fillColor: Colors.white.withValues(alpha: 0.04),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
@@ -326,25 +421,32 @@ class _CreateSchoolWizardState extends ConsumerState<_CreateSchoolWizard> {
     );
   }
 
-  Widget _colorPicker(String label, Color value, void Function(Color) onChanged) {
-    const palette = [
-      Color(0xFF1A73E8), Color(0xFF0D47A1), Color(0xFFD32F2F), Color(0xFF388E3C),
-      Color(0xFFF57C00), Color(0xFF7B1FA2), Color(0xFF00897B), Color(0xFF455A64),
-    ];
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-      const SizedBox(height: 8),
-      Wrap(spacing: 8, runSpacing: 8, children: palette.map((c) {
-        final selected = c.value == value.value;
-        return GestureDetector(
-          onTap: () => onChanged(c),
-          child: Container(
-            width: 32, height: 32,
-            decoration: BoxDecoration(color: c, shape: BoxShape.circle, border: selected ? Border.all(color: Colors.white, width: 2.5) : null),
+  Widget _hexColorField(String label, TextEditingController controller) {
+    return StatefulBuilder(builder: (context, setLocalState) {
+      final color = _tryParseHex(controller.text) ?? Colors.grey;
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+        const SizedBox(height: 8),
+        Row(children: [
+          Container(width: 40, height: 40, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.white24))),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              onChanged: (_) => setLocalState(() {}),
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: '#1A73E8',
+                hintStyle: const TextStyle(color: Colors.white24),
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.04),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+              ),
+            ),
           ),
-        );
-      }).toList()),
-    ]);
+        ]),
+      ]);
+    });
   }
 }
 
@@ -379,26 +481,25 @@ class _SchoolAdminsDialog extends ConsumerWidget {
                   error: (e, _) => Text('$e', style: const TextStyle(color: Colors.redAccent)),
                   data: (admins) {
                     if (admins.isEmpty) {
-                      return const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 20),
-                        child: Text('No admin accounts created yet for this school.', style: TextStyle(color: Colors.white54)),
-                      );
+                      return const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Text('No admin accounts created yet.', style: TextStyle(color: Colors.white54)));
                     }
                     return ListView(
                       shrinkWrap: true,
-                      children: admins.map((a) => Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(12)),
-                        child: Row(children: [
-                          Expanded(
-                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text(a.fullName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-                              Text('${a.role[0].toUpperCase()}${a.role.substring(1)} · ${a.email ?? ''}', style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                            ]),
-                          ),
-                        ]),
-                      )).toList(),
+                      children: admins
+                          .map((a) => Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(12)),
+                                child: Row(children: [
+                                  Expanded(
+                                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                      Text(a.fullName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                                      Text('${a.role[0].toUpperCase()}${a.role.substring(1)} · ${a.email ?? ''}', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                                    ]),
+                                  ),
+                                ]),
+                              ))
+                          .toList(),
                     );
                   },
                 ),
@@ -408,15 +509,10 @@ class _SchoolAdminsDialog extends ConsumerWidget {
                 Expanded(
                   child: FilledButton.icon(
                     onPressed: () async {
-                      final creds = await showDialog<NewAdminCredentials>(
-                        context: context,
-                        builder: (_) => _CreateAdminDialog(schoolId: school.id),
-                      );
+                      final creds = await showDialog<NewAdminCredentials>(context: context, builder: (_) => _CreateAdminDialog(schoolId: school.id));
                       if (creds != null) {
                         ref.invalidate(schoolAdminsProvider(school.id));
-                        if (context.mounted) {
-                          await showDialog(context: context, builder: (_) => _AdminCredentialsDialog(credentials: creds, schoolName: school.schoolName));
-                        }
+                        if (context.mounted) await showDialog(context: context, builder: (_) => _AdminCredentialsDialog(credentials: creds, schoolName: school.schoolName));
                       }
                     },
                     icon: const Icon(Icons.person_add_alt_1_rounded),

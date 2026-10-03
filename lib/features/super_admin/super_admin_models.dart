@@ -4,12 +4,20 @@ class SuperAdminProfile {
   const SuperAdminProfile({required this.id, required this.fullName});
 }
 
+/// Reads everything the backend returns ('*') rather than naming
+/// specific columns, so an unexpected or renamed column never breaks
+/// the list/detail view - it just won't show a field we don't know about.
 class SchoolSummary {
   final String id;
   final String schoolName;
   final String schoolCode;
   final String domain;
   final String status;
+  final String? motto;
+  final String? website;
+  final List<String> phoneNumbers;
+  final String primaryColor;
+  final String secondaryColor;
   final DateTime createdAt;
 
   const SchoolSummary({
@@ -18,6 +26,11 @@ class SchoolSummary {
     required this.schoolCode,
     required this.domain,
     required this.status,
+    this.motto,
+    this.website,
+    required this.phoneNumbers,
+    required this.primaryColor,
+    required this.secondaryColor,
     required this.createdAt,
   });
 
@@ -29,6 +42,11 @@ class SchoolSummary {
         schoolCode: m['school_code'] as String? ?? '',
         domain: m['domain'] as String? ?? '',
         status: m['status'] as String? ?? 'active',
+        motto: m['motto'] as String?,
+        website: m['website'] as String?,
+        phoneNumbers: ((m['phone_numbers'] as List?) ?? []).map((p) => p.toString()).toList(),
+        primaryColor: m['primary_color'] as String? ?? '#1A73E8',
+        secondaryColor: m['secondary_color'] as String? ?? '#0D47A1',
         createdAt: DateTime.tryParse(m['created_at'] as String? ?? '') ?? DateTime.now(),
       );
 }
