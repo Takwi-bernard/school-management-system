@@ -50,10 +50,19 @@ class SuperAdminRepository {
     required String secondaryColor,
   }) async {
     final data = await _call('create_school', {
-      'school_name': schoolName, 'school_code': schoolCode, 'domain': domain,
-      'language_mode': languageMode, 'motto': motto, 'website': website,
-      'email': email, 'phone': phone, 'address': address, 'city': city, 'country': country,
-      'primary_color': primaryColor, 'secondary_color': secondaryColor,
+      'school_name': schoolName,
+      'school_code': schoolCode,
+      'domain': domain,
+      'language_mode': languageMode,
+      'motto': motto,
+      'website': website,
+      'email': email,
+      'phone': phone,
+      'address': address,
+      'city': city,
+      'country': country,
+      'primary_color': primaryColor,
+      'secondary_color': secondaryColor,
     });
     return SchoolSummary.fromMap(Map<String, dynamic>.from(data['school'] as Map));
   }
@@ -100,7 +109,13 @@ class SuperAdminRepository {
 
   // ---------------- ADMIN ACCOUNTS ----------------
 
-  Future<NewAdminCredentials> createSchoolAdmin({required String schoolId, required String role, required String fullName, required String email, String? phone}) async {
+  Future<NewAdminCredentials> createSchoolAdmin({
+    required String schoolId,
+    required String role,
+    required String fullName,
+    required String email,
+    String? phone,
+  }) async {
     final data = await _call('create_school_admin', {'school_id': schoolId, 'role': role, 'full_name': fullName, 'email': email, 'phone': phone});
     return NewAdminCredentials.fromMap(Map<String, dynamic>.from(data['account'] as Map));
   }
@@ -148,13 +163,26 @@ class SuperAdminRepository {
   }
 
   Future<void> saveAchievement({
-    String? id, required String schoolId, String? titleEn, String? titleFr, String? descriptionEn, String? descriptionFr,
-    String? imageUrl, DateTime? achievedOn, int displayOrder = 0,
+    String? id,
+    required String schoolId,
+    String? titleEn,
+    String? titleFr,
+    String? descriptionEn,
+    String? descriptionFr,
+    String? imageUrl,
+    DateTime? achievedOn,
+    int displayOrder = 0,
   }) async {
     await _call('upsert_achievement', {
-      'id': id, 'school_id': schoolId, 'title_en': titleEn, 'title_fr': titleFr,
-      'description_en': descriptionEn, 'description_fr': descriptionFr, 'image_url': imageUrl,
-      'achieved_on': achievedOn?.toIso8601String().split('T').first, 'display_order': displayOrder,
+      'id': id,
+      'school_id': schoolId,
+      'title_en': titleEn,
+      'title_fr': titleFr,
+      'description_en': descriptionEn,
+      'description_fr': descriptionFr,
+      'image_url': imageUrl,
+      'achieved_on': achievedOn?.toIso8601String().split('T').first,
+      'display_order': displayOrder,
     });
   }
 
@@ -168,12 +196,24 @@ class SuperAdminRepository {
   }
 
   Future<void> saveEvent({
-    String? id, required String schoolId, String? title, String? description,
-    DateTime? eventDate, String? eventTime, String? location, String? status,
+    String? id,
+    required String schoolId,
+    String? title,
+    String? description,
+    DateTime? eventDate,
+    String? eventTime,
+    String? location,
+    String? status,
   }) async {
     await _call('upsert_event', {
-      'id': id, 'school_id': schoolId, 'title': title, 'description': description,
-      'event_date': eventDate?.toIso8601String().split('T').first, 'event_time': eventTime, 'location': location, 'status': status,
+      'id': id,
+      'school_id': schoolId,
+      'title': title,
+      'description': description,
+      'event_date': eventDate?.toIso8601String().split('T').first,
+      'event_time': eventTime,
+      'location': location,
+      'status': status,
     });
   }
 
@@ -186,8 +226,6 @@ class SuperAdminRepository {
     return ((data['assets'] as List?) ?? []).map((a) => SchoolAssetItem.fromMap(Map<String, dynamic>.from(a as Map))).toList();
   }
 
-  /// Uploads directly to the public school-branding bucket (the client
-  /// owns the file bytes), then records it via the Edge Function.
   Future<String> uploadBrandingFile({required Uint8List bytes, required String extension, required String folder}) async {
     final path = '$folder/${DateTime.now().millisecondsSinceEpoch}.$extension';
     await _client.storage.from('school-branding').uploadBinary(path, bytes);
@@ -199,4 +237,111 @@ class SuperAdminRepository {
   }
 
   Future<void> deleteAsset(String id) async => _call('delete_asset', {'id': id});
+
+  // ---------------- ACADEMIC STRUCTURE ----------------
+
+  Future<AcademicStructure> getAcademicStructure(String schoolId) async {
+    final data = await _call('get_academic_structure', {'school_id': schoolId});
+    return AcademicStructure.fromMap(Map<String, dynamic>.from(data['structure'] as Map));
+  }
+
+  Future<void> saveDepartment({String? id, required String schoolId, required String name, String? type}) async =>
+      _call('upsert_department', {'id': id, 'school_id': schoolId, 'department_name': name, 'department_type': type});
+
+  Future<void> deleteDepartment(String id) async => _call('delete_department', {'id': id});
+
+  Future<void> saveClass({
+    String? id,
+    required String schoolId,
+    required String className,
+    String? classCode,
+    required String departmentId,
+    int levelOrder = 0,
+    int maxStudents = 50,
+  }) async =>
+      _call('upsert_class', {
+        'id': id,
+        'school_id': schoolId,
+        'class_name': className,
+        'class_code': classCode,
+        'department_id': departmentId,
+        'level_order': levelOrder,
+        'max_students': maxStudents,
+      });
+
+  Future<void> deactivateClass(String id) async => _call('delete_class', {'id': id});
+
+  Future<void> saveSubjectWithCoefficient({
+    String? subjectId,
+    required String schoolId,
+    required String departmentId,
+    String? subjectCode,
+    String? subjectName,
+    required int coefficient,
+  }) async =>
+      _call('upsert_subject_with_coefficient', {
+        'subject_id': subjectId,
+        'school_id': schoolId,
+        'department_id': departmentId,
+        'subject_code': subjectCode,
+        'subject_name': subjectName,
+        'coefficient': coefficient,
+      });
+
+  Future<void> setSubjectOffering({required String classId, required String subjectId, required bool isOffered, required bool isCompulsory}) async =>
+      _call('set_subject_offering', {'class_id': classId, 'subject_id': subjectId, 'is_offered': isOffered, 'is_compulsory': isCompulsory});
+
+  Future<void> saveAcademicYear({
+    String? id,
+    required String schoolId,
+    required String yearName,
+    required DateTime startDate,
+    required DateTime endDate,
+    bool isCurrent = false,
+  }) async =>
+      _call('upsert_academic_year', {
+        'id': id,
+        'school_id': schoolId,
+        'year_name': yearName,
+        'start_date': startDate.toIso8601String().split('T').first,
+        'end_date': endDate.toIso8601String().split('T').first,
+        'is_current': isCurrent,
+      });
+
+  Future<void> saveAcademicTerm({String? id, required String academicYearId, required String termName, int termOrder = 1, bool isCurrent = false}) async =>
+      _call('upsert_academic_term', {'id': id, 'academic_year_id': academicYearId, 'term_name': termName, 'term_order': termOrder, 'is_current': isCurrent});
+
+  Future<void> saveExamPeriod({
+    String? id,
+    required String schoolId,
+    required String academicYearId,
+    required String academicTermId,
+    required String periodName,
+    int sequenceOrder = 1,
+  }) async =>
+      _call('upsert_exam_period', {
+        'id': id,
+        'school_id': schoolId,
+        'academic_year_id': academicYearId,
+        'academic_term_id': academicTermId,
+        'period_name': periodName,
+        'sequence_order': sequenceOrder,
+      });
+
+  Future<void> saveFeeStructure({
+    String? feeId,
+    required String schoolId,
+    required String classId,
+    required String academicYearId,
+    required double registrationFee,
+    required List<Map<String, dynamic>> installments,
+  }) async =>
+      _call('upsert_fee_structure', {
+        'fee_id': feeId,
+        'school_id': schoolId,
+        'class_id': classId,
+        'academic_year_id': academicYearId,
+        'registration_fee': registrationFee,
+        'installments': installments,
+      });
 }

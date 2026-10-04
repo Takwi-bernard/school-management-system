@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'super_admin_academic.dart';
 import 'super_admin_branding.dart';
 import 'super_admin_models.dart';
 import 'super_admin_providers.dart';
@@ -54,7 +55,7 @@ class SchoolsSection extends ConsumerWidget {
                 return LayoutBuilder(builder: (context, constraints) {
                   final columns = constraints.maxWidth > 1100 ? 3 : constraints.maxWidth > 700 ? 2 : 1;
                   return GridView.builder(
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: columns, mainAxisSpacing: 14, crossAxisSpacing: 14, childAspectRatio: columns == 1 ? 1.35 : 1.5),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: columns, mainAxisSpacing: 14, crossAxisSpacing: 14, childAspectRatio: columns == 1 ? 1.3 : 1.45),
                     itemCount: schools.length,
                     itemBuilder: (context, i) => _SchoolCard(school: schools[i]),
                   );
@@ -132,23 +133,54 @@ class _SchoolCardState extends ConsumerState<_SchoolCard> {
           if (s.phone != null && s.phone!.isNotEmpty)
             Padding(padding: const EdgeInsets.only(top: 4), child: Text(s.phone!, style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11))),
           if (s.city != null && s.city!.isNotEmpty)
-            Padding(padding: const EdgeInsets.only(top: 2), child: Text('${s.city}${s.country != null ? ', ${s.country}' : ''}', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11))),
-          const Spacer(),
-          Wrap(spacing: 6, runSpacing: 6, children: [
-            SizedBox(width: 90, child: OutlinedButton(onPressed: () async {
-              final changed = await showDialog<bool>(context: context, builder: (_) => _SchoolFormDialog(existing: s));
-              if (changed == true) ref.invalidate(schoolsListProvider);
-            }, child: const Text('Edit'))),
-            SizedBox(width: 100, child: OutlinedButton(onPressed: () => showDialog(context: context, builder: (_) => _SchoolAdminsDialog(school: s)), child: const Text('Admins'))),
-            SizedBox(width: 110, child: FilledButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => BrandingPage(school: s))),
-              child: const Text('Branding'),
-            )),
-            IconButton(
-              icon: _busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : Icon(s.isActive ? Icons.toggle_on_rounded : Icons.toggle_off_outlined, color: s.isActive ? Colors.green : Colors.white38, size: 28),
-              onPressed: _busy ? null : _toggleStatus,
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text('${s.city}${s.country != null && s.country!.isNotEmpty ? ', ${s.country}' : ''}', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11)),
             ),
-          ]),
+          const Spacer(),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              SizedBox(
+                width: 85,
+                child: OutlinedButton(
+                  onPressed: () async {
+                    final changed = await showDialog<bool>(context: context, builder: (_) => _SchoolFormDialog(existing: s));
+                    if (changed == true) ref.invalidate(schoolsListProvider);
+                  },
+                  child: const Text('Edit', style: TextStyle(fontSize: 13)),
+                ),
+              ),
+              SizedBox(
+                width: 95,
+                child: OutlinedButton(
+                  onPressed: () => showDialog(context: context, builder: (_) => _SchoolAdminsDialog(school: s)),
+                  child: const Text('Admins', style: TextStyle(fontSize: 13)),
+                ),
+              ),
+              SizedBox(
+                width: 100,
+                child: FilledButton(
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => BrandingPage(school: s))),
+                  child: const Text('Branding', style: TextStyle(fontSize: 13)),
+                ),
+              ),
+              SizedBox(
+                width: 100,
+                child: FilledButton(
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AcademicStructurePage(school: s))),
+                  child: const Text('Academic', style: TextStyle(fontSize: 13)),
+                ),
+              ),
+              IconButton(
+                icon: _busy
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : Icon(s.isActive ? Icons.toggle_on_rounded : Icons.toggle_off_outlined, color: s.isActive ? Colors.green : Colors.white38, size: 28),
+                onPressed: _busy ? null : _toggleStatus,
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -220,23 +252,71 @@ class _SchoolFormDialogState extends ConsumerState<_SchoolFormDialog> {
 
   Future<void> _submit() async {
     if (_name.text.trim().isEmpty || _code.text.trim().isEmpty) {
-      setState(() { _step = 0; _error = 'School name and code are required.'; });
+      setState(() {
+        _step = 0;
+        _error = 'School name and code are required.';
+      });
       return;
     }
-    setState(() { _saving = true; _error = null; });
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
     try {
       final repo = ref.read(superAdminRepositoryProvider);
-      final params = (
-        schoolName: _name.text.trim(), schoolCode: _code.text.trim(), domain: _domain.text.trim(),
-        languageMode: _languageMode, motto: _motto.text.trim(), website: _website.text.trim(),
-        email: _email.text.trim(), phone: _phone.text.trim(), address: _address.text.trim(),
-        city: _city.text.trim(), country: _country.text.trim(),
-        primaryColor: _primaryHex.text.trim(), secondaryColor: _secondaryHex.text.trim(),
-      );
-      final saved = _isEdit
-          ? await repo.updateSchool(schoolId: widget.existing!.id, schoolName: params.schoolName, schoolCode: params.schoolCode, domain: params.domain, languageMode: params.languageMode, motto: params.motto, website: params.website, email: params.email, phone: params.phone, address: params.address, city: params.city, country: params.country, primaryColor: params.primaryColor, secondaryColor: params.secondaryColor)
-          : await repo.createSchool(schoolName: params.schoolName, schoolCode: params.schoolCode, domain: params.domain, languageMode: params.languageMode, motto: params.motto, website: params.website, email: params.email, phone: params.phone, address: params.address, city: params.city, country: params.country, primaryColor: params.primaryColor, secondaryColor: params.secondaryColor);
-      setState(() { _result = saved; _step = 3; });
+      final schoolName = _name.text.trim();
+      final schoolCode = _code.text.trim();
+      final domain = _domain.text.trim();
+      final languageMode = _languageMode;
+      final motto = _motto.text.trim();
+      final website = _website.text.trim();
+      final email = _email.text.trim();
+      final phone = _phone.text.trim();
+      final address = _address.text.trim();
+      final city = _city.text.trim();
+      final country = _country.text.trim();
+      final primaryColor = _primaryHex.text.trim();
+      final secondaryColor = _secondaryHex.text.trim();
+
+      final SchoolSummary saved;
+      if (_isEdit) {
+        saved = await repo.updateSchool(
+          schoolId: widget.existing!.id,
+          schoolName: schoolName,
+          schoolCode: schoolCode,
+          domain: domain,
+          languageMode: languageMode,
+          motto: motto,
+          website: website,
+          email: email,
+          phone: phone,
+          address: address,
+          city: city,
+          country: country,
+          primaryColor: primaryColor,
+          secondaryColor: secondaryColor,
+        );
+      } else {
+        saved = await repo.createSchool(
+          schoolName: schoolName,
+          schoolCode: schoolCode,
+          domain: domain,
+          languageMode: languageMode,
+          motto: motto,
+          website: website,
+          email: email,
+          phone: phone,
+          address: address,
+          city: city,
+          country: country,
+          primaryColor: primaryColor,
+          secondaryColor: secondaryColor,
+        );
+      }
+      setState(() {
+        _result = saved;
+        _step = 3;
+      });
     } catch (e) {
       setState(() => _error = '$e'.replaceFirst('Exception: ', ''));
     } finally {
@@ -264,12 +344,13 @@ class _SchoolFormDialogState extends ConsumerState<_SchoolFormDialog> {
               ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 420),
                 child: SingleChildScrollView(
-                  child: switch (_step) {
-                    0 => _identityStep(),
-                    1 => _locationStep(),
-                    2 => _brandingStep(),
-                    _ => _doneStep(),
-                  },
+                  child: _step == 0
+                      ? _identityStep()
+                      : _step == 1
+                          ? _locationStep()
+                          : _step == 2
+                              ? _brandingStep()
+                              : _doneStep(),
                 ),
               ),
               if (_error != null) ...[const SizedBox(height: 14), Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 13))],
@@ -278,17 +359,25 @@ class _SchoolFormDialogState extends ConsumerState<_SchoolFormDialog> {
                 if (_step > 0 && _step < 3) TextButton(onPressed: _saving ? null : () => setState(() => _step--), child: const Text('Back')),
                 const Spacer(),
                 if (_step < 2)
-                  FilledButton(onPressed: () {
-                    if (_step == 0 && (_name.text.trim().isEmpty || _code.text.trim().isEmpty)) {
-                      setState(() => _error = 'School name and code are required.');
-                      return;
-                    }
-                    setState(() { _error = null; _step++; });
-                  }, child: const Text('Next')),
+                  FilledButton(
+                    onPressed: () {
+                      if (_step == 0 && (_name.text.trim().isEmpty || _code.text.trim().isEmpty)) {
+                        setState(() => _error = 'School name and code are required.');
+                        return;
+                      }
+                      setState(() {
+                        _error = null;
+                        _step++;
+                      });
+                    },
+                    child: const Text('Next'),
+                  ),
                 if (_step == 2)
                   FilledButton(
                     onPressed: _saving ? null : _submit,
-                    child: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : Text(_isEdit ? 'Save Changes' : 'Create School'),
+                    child: _saving
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : Text(_isEdit ? 'Save Changes' : 'Create School'),
                   ),
                 if (_step == 3) FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Done')),
               ]),
@@ -337,7 +426,10 @@ class _SchoolFormDialogState extends ConsumerState<_SchoolFormDialog> {
         const SizedBox(height: 18),
         Row(children: [Expanded(child: _hexColorField('Primary color', _primaryHex)), const SizedBox(width: 14), Expanded(child: _hexColorField('Secondary color', _secondaryHex))]),
         const SizedBox(height: 8),
-        Text('Logo, hero banner, gallery, mission/vision/history are managed from the "Branding" button once the school exists.', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11)),
+        Text(
+          'Logo, hero banner, gallery, mission/vision/history are managed from the "Branding" button once the school exists.',
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11),
+        ),
       ]);
 
   Widget _doneStep() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -351,7 +443,13 @@ class _SchoolFormDialogState extends ConsumerState<_SchoolFormDialog> {
   Widget _darkField(TextEditingController controller, String label) => TextField(
         controller: controller,
         style: const TextStyle(color: Colors.white),
-        decoration: InputDecoration(labelText: label, labelStyle: const TextStyle(color: Colors.white38), filled: true, fillColor: Colors.white.withValues(alpha: 0.04), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none)),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(color: Colors.white38),
+          filled: true,
+          fillColor: Colors.white.withValues(alpha: 0.04),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+        ),
       );
 
   Widget _hexColorField(String label, TextEditingController controller) {
@@ -363,7 +461,20 @@ class _SchoolFormDialogState extends ConsumerState<_SchoolFormDialog> {
         Row(children: [
           Container(width: 40, height: 40, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.white24))),
           const SizedBox(width: 10),
-          Expanded(child: TextField(controller: controller, onChanged: (_) => setLocalState(() {}), style: const TextStyle(color: Colors.white), decoration: InputDecoration(hintText: '#1A73E8', hintStyle: const TextStyle(color: Colors.white24), filled: true, fillColor: Colors.white.withValues(alpha: 0.04), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)))),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              onChanged: (_) => setLocalState(() {}),
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: '#1A73E8',
+                hintStyle: const TextStyle(color: Colors.white24),
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.04),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+              ),
+            ),
+          ),
         ]),
       ]);
     });
@@ -401,29 +512,42 @@ class _SchoolAdminsDialog extends ConsumerWidget {
                   error: (e, _) => Text('$e', style: const TextStyle(color: Colors.redAccent)),
                   data: (admins) {
                     if (admins.isEmpty) return const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Text('No admin accounts created yet.', style: TextStyle(color: Colors.white54)));
-                    return ListView(shrinkWrap: true, children: admins.map((a) => Container(
-                      margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(12)),
-                      child: Row(children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(a.fullName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-                        Text('${a.role[0].toUpperCase()}${a.role.substring(1)} · ${a.email ?? ''}', style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                      ]))]),
-                    )).toList());
+                    return ListView(
+                      shrinkWrap: true,
+                      children: admins
+                          .map((a) => Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(12)),
+                                child: Row(children: [
+                                  Expanded(
+                                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                      Text(a.fullName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                                      Text('${a.role[0].toUpperCase()}${a.role.substring(1)} · ${a.email ?? ''}', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                                    ]),
+                                  ),
+                                ]),
+                              ))
+                          .toList(),
+                    );
                   },
                 ),
               ),
               const SizedBox(height: 16),
               Row(children: [
-                Expanded(child: FilledButton.icon(
-                  onPressed: () async {
-                    final creds = await showDialog<NewAdminCredentials>(context: context, builder: (_) => _CreateAdminDialog(schoolId: school.id));
-                    if (creds != null) {
-                      ref.invalidate(schoolAdminsProvider(school.id));
-                      if (context.mounted) await showDialog(context: context, builder: (_) => _AdminCredentialsDialog(credentials: creds, schoolName: school.schoolName));
-                    }
-                  },
-                  icon: const Icon(Icons.person_add_alt_1_rounded), label: const Text('Create Admin Account'),
-                )),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () async {
+                      final creds = await showDialog<NewAdminCredentials>(context: context, builder: (_) => _CreateAdminDialog(schoolId: school.id));
+                      if (creds != null) {
+                        ref.invalidate(schoolAdminsProvider(school.id));
+                        if (context.mounted) await showDialog(context: context, builder: (_) => _AdminCredentialsDialog(credentials: creds, schoolName: school.schoolName));
+                      }
+                    },
+                    icon: const Icon(Icons.person_add_alt_1_rounded),
+                    label: const Text('Create Admin Account'),
+                  ),
+                ),
                 const SizedBox(width: 10),
                 TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
               ]),
@@ -453,7 +577,9 @@ class _CreateAdminDialogState extends ConsumerState<_CreateAdminDialog> {
 
   @override
   void dispose() {
-    _name.dispose(); _email.dispose(); _phone.dispose();
+    _name.dispose();
+    _email.dispose();
+    _phone.dispose();
     super.dispose();
   }
 
@@ -462,9 +588,18 @@ class _CreateAdminDialogState extends ConsumerState<_CreateAdminDialog> {
       setState(() => _error = 'Enter a name and a valid email.');
       return;
     }
-    setState(() { _saving = true; _error = null; });
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
     try {
-      final creds = await ref.read(superAdminRepositoryProvider).createSchoolAdmin(schoolId: widget.schoolId, role: _role, fullName: _name.text.trim(), email: _email.text.trim(), phone: _phone.text.trim());
+      final creds = await ref.read(superAdminRepositoryProvider).createSchoolAdmin(
+            schoolId: widget.schoolId,
+            role: _role,
+            fullName: _name.text.trim(),
+            email: _email.text.trim(),
+            phone: _phone.text.trim(),
+          );
       if (mounted) Navigator.pop(context, creds);
     } catch (e) {
       setState(() => _error = '$e'.replaceFirst('Exception: ', ''));
@@ -478,16 +613,30 @@ class _CreateAdminDialogState extends ConsumerState<_CreateAdminDialog> {
     return AlertDialog(
       backgroundColor: const Color(0xFF1E293B),
       title: const Text('Create Admin Account', style: TextStyle(color: Colors.white)),
-      content: SizedBox(width: 380, child: Column(mainAxisSize: MainAxisSize.min, children: [
-        DropdownButtonFormField<String>(
-          initialValue: _role, dropdownColor: const Color(0xFF1E293B), style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(labelText: 'Role', labelStyle: TextStyle(color: Colors.white38)),
-          items: const [DropdownMenuItem(value: 'principal', child: Text('Principal')), DropdownMenuItem(value: 'proprietor', child: Text('Proprietor')), DropdownMenuItem(value: 'secretary', child: Text('Secretary'))],
-          onChanged: (v) => setState(() => _role = v ?? 'principal'),
-        ),
-        const SizedBox(height: 12), _field(_name, 'Full name'), const SizedBox(height: 12), _field(_email, 'Email (their login)'), const SizedBox(height: 12), _field(_phone, 'Phone'),
-        if (_error != null) ...[const SizedBox(height: 10), Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 12))],
-      ])),
+      content: SizedBox(
+        width: 380,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          DropdownButtonFormField<String>(
+            initialValue: _role,
+            dropdownColor: const Color(0xFF1E293B),
+            style: const TextStyle(color: Colors.white),
+            decoration: const InputDecoration(labelText: 'Role', labelStyle: TextStyle(color: Colors.white38)),
+            items: const [
+              DropdownMenuItem(value: 'principal', child: Text('Principal')),
+              DropdownMenuItem(value: 'proprietor', child: Text('Proprietor')),
+              DropdownMenuItem(value: 'secretary', child: Text('Secretary')),
+            ],
+            onChanged: (v) => setState(() => _role = v ?? 'principal'),
+          ),
+          const SizedBox(height: 12),
+          _field(_name, 'Full name'),
+          const SizedBox(height: 12),
+          _field(_email, 'Email (their login)'),
+          const SizedBox(height: 12),
+          _field(_phone, 'Phone'),
+          if (_error != null) ...[const SizedBox(height: 10), Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 12))],
+        ]),
+      ),
       actions: [
         TextButton(onPressed: _saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
         FilledButton(onPressed: _saving ? null : _save, child: _saving ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Create')),
@@ -495,7 +644,8 @@ class _CreateAdminDialogState extends ConsumerState<_CreateAdminDialog> {
     );
   }
 
-  Widget _field(TextEditingController c, String label) => TextField(controller: c, style: const TextStyle(color: Colors.white), decoration: InputDecoration(labelText: label, labelStyle: const TextStyle(color: Colors.white38)));
+  Widget _field(TextEditingController c, String label) =>
+      TextField(controller: c, style: const TextStyle(color: Colors.white), decoration: InputDecoration(labelText: label, labelStyle: const TextStyle(color: Colors.white38)));
 }
 
 class _AdminCredentialsDialog extends StatelessWidget {
@@ -510,19 +660,39 @@ class _AdminCredentialsDialog extends StatelessWidget {
     return AlertDialog(
       backgroundColor: const Color(0xFF1E293B),
       title: const Text('Account created', style: TextStyle(color: Colors.white)),
-      content: SizedBox(width: 400, child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)), child: const Text('Shown only now. Copy and send these before closing.', style: TextStyle(color: Colors.amberAccent, fontSize: 12))),
-        const SizedBox(height: 16), _row('Role', credentials.role), _row('Sign in at', _signInUrl), _row('Email', credentials.email), _row('Temporary password', credentials.temporaryPassword, bold: true),
-      ])),
+      content: SizedBox(
+        width: 400,
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
+            child: const Text('Shown only now. Copy and send these before closing.', style: TextStyle(color: Colors.amberAccent, fontSize: 12)),
+          ),
+          const SizedBox(height: 16),
+          _row('Role', credentials.role),
+          _row('Sign in at', _signInUrl),
+          _row('Email', credentials.email),
+          _row('Temporary password', credentials.temporaryPassword, bold: true),
+        ]),
+      ),
       actions: [
-        TextButton.icon(onPressed: () => Clipboard.setData(ClipboardData(text: '$schoolName\nRole: ${credentials.role}\nSign in: $_signInUrl\nEmail: ${credentials.email}\nPassword: ${credentials.temporaryPassword}')), icon: const Icon(Icons.copy_rounded, size: 16), label: const Text('Copy')),
+        TextButton.icon(
+          onPressed: () => Clipboard.setData(ClipboardData(
+            text: '$schoolName\nRole: ${credentials.role}\nSign in: $_signInUrl\nEmail: ${credentials.email}\nPassword: ${credentials.temporaryPassword}',
+          )),
+          icon: const Icon(Icons.copy_rounded, size: 16),
+          label: const Text('Copy'),
+        ),
         FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
       ],
     );
   }
 
-  Widget _row(String label, String value, {bool bold = false}) => Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: const TextStyle(color: Colors.white38, fontSize: 11)),
-        SelectableText(value, style: TextStyle(color: Colors.white, fontWeight: bold ? FontWeight.w800 : FontWeight.w500, fontSize: bold ? 17 : 14)),
-      ]));
+  Widget _row(String label, String value, {bool bold = false}) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+          SelectableText(value, style: TextStyle(color: Colors.white, fontWeight: bold ? FontWeight.w800 : FontWeight.w500, fontSize: bold ? 17 : 14)),
+        ]),
+      );
 }

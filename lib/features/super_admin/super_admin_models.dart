@@ -216,3 +216,198 @@ class SchoolAssetItem {
         uploadedAt: DateTime.tryParse(m['uploaded_at'] as String? ?? '') ?? DateTime.now(),
       );
 }
+
+// ---------------------------------------------------------------- ACADEMIC STRUCTURE
+
+class AcademicStructure {
+  final List<AsDepartment> departments;
+  final List<AsClass> classes;
+  final List<AsSubject> subjects;
+  final List<AsSubjectDepartment> subjectDepartments;
+  final List<AsSubjectOffering> subjectOfferings;
+  final List<AsAcademicYear> academicYears;
+  final List<AsAcademicTerm> academicTerms;
+  final List<AsExamPeriod> examPeriods;
+  final List<AsFee> fees;
+  final List<AsInstallment> installments;
+
+  const AcademicStructure({
+    required this.departments,
+    required this.classes,
+    required this.subjects,
+    required this.subjectDepartments,
+    required this.subjectOfferings,
+    required this.academicYears,
+    required this.academicTerms,
+    required this.examPeriods,
+    required this.fees,
+    required this.installments,
+  });
+
+  factory AcademicStructure.fromMap(Map<String, dynamic> m) => AcademicStructure(
+        departments: ((m['departments'] as List?) ?? []).map((d) => AsDepartment.fromMap(Map<String, dynamic>.from(d as Map))).toList(),
+        classes: ((m['classes'] as List?) ?? []).map((c) => AsClass.fromMap(Map<String, dynamic>.from(c as Map))).toList(),
+        subjects: ((m['subjects'] as List?) ?? []).map((s) => AsSubject.fromMap(Map<String, dynamic>.from(s as Map))).toList(),
+        subjectDepartments: ((m['subject_departments'] as List?) ?? []).map((s) => AsSubjectDepartment.fromMap(Map<String, dynamic>.from(s as Map))).toList(),
+        subjectOfferings: ((m['subject_offerings'] as List?) ?? []).map((s) => AsSubjectOffering.fromMap(Map<String, dynamic>.from(s as Map))).toList(),
+        academicYears: ((m['academic_years'] as List?) ?? []).map((y) => AsAcademicYear.fromMap(Map<String, dynamic>.from(y as Map))).toList(),
+        academicTerms: ((m['academic_terms'] as List?) ?? []).map((t) => AsAcademicTerm.fromMap(Map<String, dynamic>.from(t as Map))).toList(),
+        examPeriods: ((m['exam_periods'] as List?) ?? []).map((p) => AsExamPeriod.fromMap(Map<String, dynamic>.from(p as Map))).toList(),
+        fees: ((m['fees'] as List?) ?? []).map((f) => AsFee.fromMap(Map<String, dynamic>.from(f as Map))).toList(),
+        installments: ((m['installments'] as List?) ?? []).map((i) => AsInstallment.fromMap(Map<String, dynamic>.from(i as Map))).toList(),
+      );
+}
+
+class AsDepartment {
+  final String id;
+  final String departmentName;
+  final String? departmentType;
+  const AsDepartment({required this.id, required this.departmentName, this.departmentType});
+  factory AsDepartment.fromMap(Map<String, dynamic> m) => AsDepartment(
+        id: m['id'] as String,
+        departmentName: m['department_name'] as String? ?? '',
+        departmentType: m['department_type'] as String?,
+      );
+}
+
+class AsClass {
+  final String id;
+  final String className;
+  final String? classCode;
+  final String departmentId;
+  final int levelOrder;
+  final int maxStudents;
+  final bool isActive;
+  const AsClass({
+    required this.id,
+    required this.className,
+    this.classCode,
+    required this.departmentId,
+    required this.levelOrder,
+    required this.maxStudents,
+    required this.isActive,
+  });
+  factory AsClass.fromMap(Map<String, dynamic> m) => AsClass(
+        id: m['id'] as String,
+        className: m['class_name'] as String? ?? '',
+        classCode: m['class_code'] as String?,
+        departmentId: m['department_id'] as String? ?? '',
+        levelOrder: m['level_order'] as int? ?? 0,
+        maxStudents: m['max_students'] as int? ?? 50,
+        isActive: m['is_active'] as bool? ?? true,
+      );
+}
+
+class AsSubject {
+  final String id;
+  final String subjectCode;
+  final String subjectName;
+  const AsSubject({required this.id, required this.subjectCode, required this.subjectName});
+  factory AsSubject.fromMap(Map<String, dynamic> m) => AsSubject(
+        id: m['id'] as String,
+        subjectCode: m['subject_code'] as String? ?? '',
+        subjectName: m['subject_name'] as String? ?? '',
+      );
+}
+
+class AsSubjectDepartment {
+  final String subjectId;
+  final String departmentId;
+  final int coefficient;
+  const AsSubjectDepartment({required this.subjectId, required this.departmentId, required this.coefficient});
+  factory AsSubjectDepartment.fromMap(Map<String, dynamic> m) => AsSubjectDepartment(
+        subjectId: m['subject_id'] as String? ?? '',
+        departmentId: m['department_id'] as String? ?? '',
+        coefficient: m['coefficient'] as int? ?? 1,
+      );
+}
+
+class AsSubjectOffering {
+  final String classId;
+  final String subjectId;
+  final bool isCompulsory;
+  const AsSubjectOffering({required this.classId, required this.subjectId, required this.isCompulsory});
+  factory AsSubjectOffering.fromMap(Map<String, dynamic> m) => AsSubjectOffering(
+        classId: m['class_id'] as String? ?? '',
+        subjectId: m['subject_id'] as String? ?? '',
+        isCompulsory: m['is_compulsory'] as bool? ?? false,
+      );
+}
+
+class AsAcademicYear {
+  final String id;
+  final String yearName;
+  final bool isCurrent;
+  const AsAcademicYear({required this.id, required this.yearName, required this.isCurrent});
+  factory AsAcademicYear.fromMap(Map<String, dynamic> m) => AsAcademicYear(
+        id: m['id'] as String,
+        yearName: m['year_name'] as String? ?? '',
+        isCurrent: m['is_current'] as bool? ?? false,
+      );
+}
+
+class AsAcademicTerm {
+  final String id;
+  final String academicYearId;
+  final String termName;
+  final int termOrder;
+  final bool isCurrent;
+  const AsAcademicTerm({required this.id, required this.academicYearId, required this.termName, required this.termOrder, required this.isCurrent});
+  factory AsAcademicTerm.fromMap(Map<String, dynamic> m) => AsAcademicTerm(
+        id: m['id'] as String,
+        academicYearId: m['academic_year_id'] as String? ?? '',
+        termName: m['term_name'] as String? ?? '',
+        termOrder: m['term_order'] as int? ?? 1,
+        isCurrent: m['is_current'] as bool? ?? false,
+      );
+}
+
+class AsExamPeriod {
+  final String id;
+  final String academicTermId;
+  final String periodName;
+  final int sequenceOrder;
+  final bool isOpen;
+  const AsExamPeriod({required this.id, required this.academicTermId, required this.periodName, required this.sequenceOrder, required this.isOpen});
+  factory AsExamPeriod.fromMap(Map<String, dynamic> m) => AsExamPeriod(
+        id: m['id'] as String,
+        academicTermId: m['academic_term_id'] as String? ?? '',
+        periodName: m['period_name'] as String? ?? '',
+        sequenceOrder: m['sequence_order'] as int? ?? 1,
+        isOpen: m['is_open'] as bool? ?? false,
+      );
+}
+
+class AsFee {
+  final String id;
+  final String classId;
+  final String academicYearId;
+  final double registrationFee;
+  final double totalSchoolFee;
+  const AsFee({required this.id, required this.classId, required this.academicYearId, required this.registrationFee, required this.totalSchoolFee});
+  factory AsFee.fromMap(Map<String, dynamic> m) => AsFee(
+        id: m['id'] as String,
+        classId: m['class_id'] as String? ?? '',
+        academicYearId: m['academic_year_id'] as String? ?? '',
+        registrationFee: (m['registration_fee'] as num?)?.toDouble() ?? 0,
+        totalSchoolFee: (m['total_school_fee'] as num?)?.toDouble() ?? 0,
+      );
+}
+
+class AsInstallment {
+  final String id;
+  final String feeId;
+  final String installmentName;
+  final double amount;
+  final DateTime? dueDate;
+  final int displayOrder;
+  const AsInstallment({required this.id, required this.feeId, required this.installmentName, required this.amount, this.dueDate, required this.displayOrder});
+  factory AsInstallment.fromMap(Map<String, dynamic> m) => AsInstallment(
+        id: m['id'] as String,
+        feeId: m['fee_id'] as String? ?? '',
+        installmentName: m['installment_name'] as String? ?? '',
+        amount: (m['amount'] as num?)?.toDouble() ?? 0,
+        dueDate: DateTime.tryParse(m['due_date'] as String? ?? ''),
+        displayOrder: m['display_order'] as int? ?? 0,
+      );
+}

@@ -38,3 +38,7 @@ final schoolEventsProvider = FutureProvider.family<List<EventItem>, String>((ref
 final schoolAssetsProvider = FutureProvider.family<List<SchoolAssetItem>, String>((ref, schoolId) {
   return ref.watch(superAdminRepositoryProvider).listAssets(schoolId);
 });
+
+final academicStructureProvider = FutureProvider.family<AcademicStructure, String>((ref, schoolId) {
+  return ref.watch(superAdminRepositoryProvider).getAcademicStructure(schoolId);
+});
