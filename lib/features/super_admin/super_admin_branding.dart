@@ -392,7 +392,8 @@ class _GalleryTabState extends ConsumerState<_GalleryTab> {
 }
 
 // ============================================================
-// ACHIEVEMENTS
+// ACHIEVEMENTS - now with real image upload, used on the landing
+// page's achievement cards.
 // ============================================================
 
 class _AchievementsTab extends ConsumerWidget {
@@ -433,6 +434,15 @@ class _AchievementsTab extends ConsumerWidget {
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(12)),
                     child: Row(children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        margin: const EdgeInsets.only(right: 12),
+                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(10)),
+                        child: a.imageUrl != null && a.imageUrl!.isNotEmpty
+                            ? ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.network(a.imageUrl!, fit: BoxFit.cover))
+                            : const Icon(Icons.emoji_events_outlined, color: Colors.white24, size: 22),
+                      ),
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Text(a.titleEn ?? a.titleFr ?? '', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
@@ -481,7 +491,10 @@ class _AchievementDialogState extends ConsumerState<_AchievementDialog> {
   TextEditingController? _titleFr;
   TextEditingController? _descFr;
   DateTime? _achievedOn;
+  String? _imageUrl;
+  XFile? _pickedImage;
   bool _saving = false;
+  bool _uploadingImage = false;
 
   bool get _showEnglish => widget.languageMode != 'french';
   bool get _showFrench => widget.languageMode != 'english';
@@ -499,6 +512,7 @@ class _AchievementDialogState extends ConsumerState<_AchievementDialog> {
       _descFr = TextEditingController(text: e?.descriptionFr ?? '');
     }
     _achievedOn = e?.achievedOn;
+    _imageUrl = e?.imageUrl;
   }
 
   @override
@@ -508,6 +522,25 @@ class _AchievementDialogState extends ConsumerState<_AchievementDialog> {
     _titleFr?.dispose();
     _descFr?.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
+    if (picked == null) return;
+    setState(() {
+      _pickedImage = picked;
+      _uploadingImage = true;
+    });
+    try {
+      final bytes = await picked.readAsBytes();
+      final ext = picked.name.contains('.') ? picked.name.split('.').last : 'jpg';
+      final url = await ref.read(superAdminRepositoryProvider).uploadBrandingFile(bytes: bytes, extension: ext, folder: '${widget.schoolId}/achievements');
+      if (mounted) setState(() => _imageUrl = url);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'.replaceFirst('Exception: ', ''))));
+    } finally {
+      if (mounted) setState(() => _uploadingImage = false);
+    }
   }
 
   Future<void> _save() async {
@@ -520,6 +553,7 @@ class _AchievementDialogState extends ConsumerState<_AchievementDialog> {
             titleFr: _showFrench ? _titleFr!.text.trim() : null,
             descriptionEn: _showEnglish ? _descEn!.text.trim() : null,
             descriptionFr: _showFrench ? _descFr!.text.trim() : null,
+            imageUrl: _imageUrl,
             achievedOn: _achievedOn,
           );
       if (mounted) Navigator.pop(context, true);
@@ -536,9 +570,33 @@ class _AchievementDialogState extends ConsumerState<_AchievementDialog> {
       backgroundColor: const Color(0xFF1E293B),
       title: Text(widget.existing == null ? 'Add Achievement' : 'Edit Achievement', style: const TextStyle(color: Colors.white)),
       content: SizedBox(
-        width: 420,
+        width: 440,
         child: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
+            // Image upload - this is what the home page's achievement
+            // cards actually display. Missing before; required now.
+            Center(
+              child: GestureDetector(
+                onTap: _uploadingImage ? null : _pickImage,
+                child: Container(
+                  width: 96,
+                  height: 96,
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.white24)),
+                  child: _uploadingImage
+                      ? const Center(child: CircularProgressIndicator())
+                      : _imageUrl != null && _imageUrl!.isNotEmpty
+                          ? ClipRRect(borderRadius: BorderRadius.circular(14), child: Image.network(_imageUrl!, fit: BoxFit.cover))
+                          : const Icon(Icons.add_photo_alternate_outlined, color: Colors.white38, size: 28),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _imageUrl == null || _imageUrl!.isEmpty ? 'Tap to add an achievement image (used on the home page)' : 'Tap to replace',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
             if (_showEnglish) ...[
               _darkField(_titleEn!, 'Title (English)'),
               const SizedBox(height: 10),
@@ -564,15 +622,18 @@ class _AchievementDialogState extends ConsumerState<_AchievementDialog> {
       ),
       actions: [
         TextButton(onPressed: _saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
-        FilledButton(onPressed: _saving ? null : _save, child: _saving ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Save')),
+        FilledButton(
+          onPressed: _saving || _uploadingImage ? null : _save,
+          child: _saving ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Save'),
+        ),
       ],
     );
   }
 }
 
 // ============================================================
-// EVENTS - now collects status and time too, which the schema
-// supports but the old dialog silently dropped.
+// EVENTS - status is now a locked dropdown with the real confirmed
+// enum values: draft, published, cancelled.
 // ============================================================
 
 class _EventsTab extends ConsumerWidget {
@@ -600,14 +661,7 @@ class _EventsTab extends ConsumerWidget {
         Expanded(
           child: async.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Padding(
-              padding: const EdgeInsets.all(20),
-              child: Text(
-                '$e\n\nIf this names a specific enum type, tell me the exact text and I will correct the status dropdown below to match it.',
-                style: const TextStyle(color: Colors.redAccent),
-                textAlign: TextAlign.center,
-              ),
-            ),
+            error: (e, _) => Padding(padding: const EdgeInsets.all(20), child: Text('$e', style: const TextStyle(color: Colors.redAccent), textAlign: TextAlign.center)),
             data: (items) {
               if (items.isEmpty) return const Center(child: Text('No events yet.', style: TextStyle(color: Colors.white38)));
               return ListView.separated(
@@ -615,18 +669,26 @@ class _EventsTab extends ConsumerWidget {
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (context, i) {
                   final e = items[i];
+                  final statusColor = e.status == 'published' ? Colors.green : e.status == 'cancelled' ? Colors.red : Colors.orange;
                   return Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(12)),
                     child: Row(children: [
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(e.title ?? '', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                          Row(children: [
+                            Expanded(child: Text(e.title ?? '', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700))),
+                            if (e.status != null)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(color: statusColor.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
+                                child: Text(e.status!, style: TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.w700)),
+                              ),
+                          ]),
                           Text(
                             '${e.eventDate != null ? '${e.eventDate!.day}/${e.eventDate!.month}/${e.eventDate!.year}' : ''}'
                             '${e.eventTime != null ? ' · ${e.eventTime}' : ''}'
-                            '${e.location != null && e.location!.isNotEmpty ? ' · ${e.location}' : ''}'
-                            '${e.status != null ? ' · ${e.status}' : ''}',
+                            '${e.location != null && e.location!.isNotEmpty ? ' · ${e.location}' : ''}',
                             style: const TextStyle(color: Colors.white38, fontSize: 12),
                           ),
                         ]),
@@ -672,12 +734,10 @@ class _EventDialogState extends ConsumerState<_EventDialog> {
   late final TextEditingController _location;
   DateTime? _date;
   TimeOfDay? _time;
-  // Kept as a free-text status field with common suggestions rather
-  // than a locked dropdown, since the real enum values for
-  // school_events.status were never confirmed this session - safer
-  // than guessing wrong values and having every save silently fail.
-  late final TextEditingController _status;
+  String _status = 'draft';
   bool _saving = false;
+
+  static const _validStatuses = ['draft', 'published', 'cancelled'];
 
   @override
   void initState() {
@@ -686,7 +746,7 @@ class _EventDialogState extends ConsumerState<_EventDialog> {
     _title = TextEditingController(text: e?.title ?? '');
     _description = TextEditingController(text: e?.description ?? '');
     _location = TextEditingController(text: e?.location ?? '');
-    _status = TextEditingController(text: e?.status ?? '');
+    _status = _validStatuses.contains(e?.status) ? e!.status! : 'draft';
     _date = e?.eventDate;
     if (e?.eventTime != null) {
       final parts = e!.eventTime!.split(':');
@@ -701,7 +761,6 @@ class _EventDialogState extends ConsumerState<_EventDialog> {
     _title.dispose();
     _description.dispose();
     _location.dispose();
-    _status.dispose();
     super.dispose();
   }
 
@@ -721,7 +780,7 @@ class _EventDialogState extends ConsumerState<_EventDialog> {
             eventDate: _date,
             eventTime: _formattedTime(),
             location: _location.text.trim(),
-            status: _status.text.trim().isEmpty ? null : _status.text.trim(),
+            status: _status,
           );
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -746,7 +805,18 @@ class _EventDialogState extends ConsumerState<_EventDialog> {
             const SizedBox(height: 10),
             _darkField(_location, 'Location'),
             const SizedBox(height: 10),
-            _darkField(_status, 'Status (e.g. upcoming, published - leave blank if unsure)'),
+            DropdownButtonFormField<String>(
+              initialValue: _status,
+              dropdownColor: const Color(0xFF1E293B),
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(labelText: 'Status', labelStyle: TextStyle(color: Colors.white38)),
+              items: const [
+                DropdownMenuItem(value: 'draft', child: Text('Draft')),
+                DropdownMenuItem(value: 'published', child: Text('Published')),
+                DropdownMenuItem(value: 'cancelled', child: Text('Cancelled')),
+              ],
+              onChanged: (v) => setState(() => _status = v ?? 'draft'),
+            ),
             const SizedBox(height: 10),
             Row(children: [
               Expanded(

@@ -15,11 +15,48 @@ Color? _tryParseHex(String hex) {
   return parsed == null ? null : Color(parsed);
 }
 
-class SchoolsSection extends ConsumerWidget {
+enum _StatusFilter { all, active, inactive }
+
+class SchoolsSection extends ConsumerStatefulWidget {
   const SchoolsSection({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SchoolsSection> createState() => _SchoolsSectionState();
+}
+
+class _SchoolsSectionState extends ConsumerState<SchoolsSection> {
+  final _searchController = TextEditingController();
+  String _query = '';
+  _StatusFilter _statusFilter = _StatusFilter.all;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<SchoolSummary> _applyFilters(List<SchoolSummary> schools) {
+    final q = _query.trim().toLowerCase();
+    return schools.where((s) {
+      final matchesStatus = switch (_statusFilter) {
+        _StatusFilter.all => true,
+        _StatusFilter.active => s.isActive,
+        _StatusFilter.inactive => !s.isActive,
+      };
+      if (!matchesStatus) return false;
+      if (q.isEmpty) return true;
+      return s.schoolName.toLowerCase().contains(q) ||
+          s.schoolCode.toLowerCase().contains(q) ||
+          s.domain.toLowerCase().contains(q) ||
+          s.id.toLowerCase().contains(q) ||
+          (s.city?.toLowerCase().contains(q) ?? false) ||
+          (s.country?.toLowerCase().contains(q) ?? false) ||
+          (s.email?.toLowerCase().contains(q) ?? false);
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final async = ref.watch(schoolsListProvider);
 
     return Padding(
@@ -43,23 +80,93 @@ class SchoolsSection extends ConsumerWidget {
             }
             return Row(children: [Expanded(child: title), button]);
           }),
-          const SizedBox(height: 4),
-          Text('Every school registered on the platform.', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
+          LayoutBuilder(builder: (context, constraints) {
+            final narrow = constraints.maxWidth < 650;
+            final search = TextField(
+              controller: _searchController,
+              onChanged: (v) => setState(() => _query = v),
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'Search by name, code, domain, ID, city, email...',
+                hintStyle: const TextStyle(color: Colors.white38),
+                prefixIcon: const Icon(Icons.search_rounded, color: Colors.white38),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close_rounded, color: Colors.white38, size: 18),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _query = '');
+                        },
+                      ),
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.04),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              ),
+            );
+            final filterChips = Wrap(
+              spacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('All'),
+                  selected: _statusFilter == _StatusFilter.all,
+                  onSelected: (_) => setState(() => _statusFilter = _StatusFilter.all),
+                  labelStyle: TextStyle(color: _statusFilter == _StatusFilter.all ? Colors.white : Colors.white60),
+                  backgroundColor: Colors.white.withValues(alpha: 0.04),
+                  selectedColor: Colors.indigo,
+                ),
+                ChoiceChip(
+                  label: const Text('Active'),
+                  selected: _statusFilter == _StatusFilter.active,
+                  onSelected: (_) => setState(() => _statusFilter = _StatusFilter.active),
+                  labelStyle: TextStyle(color: _statusFilter == _StatusFilter.active ? Colors.white : Colors.white60),
+                  backgroundColor: Colors.white.withValues(alpha: 0.04),
+                  selectedColor: Colors.green,
+                ),
+                ChoiceChip(
+                  label: const Text('Inactive'),
+                  selected: _statusFilter == _StatusFilter.inactive,
+                  onSelected: (_) => setState(() => _statusFilter = _StatusFilter.inactive),
+                  labelStyle: TextStyle(color: _statusFilter == _StatusFilter.inactive ? Colors.white : Colors.white60),
+                  backgroundColor: Colors.white.withValues(alpha: 0.04),
+                  selectedColor: Colors.red,
+                ),
+              ],
+            );
+            if (narrow) {
+              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [search, const SizedBox(height: 10), filterChips]);
+            }
+            return Row(children: [Expanded(child: search), const SizedBox(width: 14), filterChips]);
+          }),
+          const SizedBox(height: 16),
           Expanded(
             child: async.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Text('$e', style: const TextStyle(color: Colors.redAccent)),
-              data: (schools) {
-                if (schools.isEmpty) return Center(child: Text('No schools onboarded yet.', style: TextStyle(color: Colors.white.withValues(alpha: 0.4))));
-                return LayoutBuilder(builder: (context, constraints) {
-                  final columns = constraints.maxWidth > 1100 ? 3 : constraints.maxWidth > 700 ? 2 : 1;
-                  return GridView.builder(
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: columns, mainAxisSpacing: 14, crossAxisSpacing: 14, childAspectRatio: columns == 1 ? 1.3 : 1.45),
-                    itemCount: schools.length,
-                    itemBuilder: (context, i) => _SchoolCard(school: schools[i]),
-                  );
-                });
+              data: (allSchools) {
+                final schools = _applyFilters(allSchools);
+                if (allSchools.isEmpty) return Center(child: Text('No schools onboarded yet.', style: TextStyle(color: Colors.white.withValues(alpha: 0.4))));
+                if (schools.isEmpty) return Center(child: Text('No schools match this search.', style: TextStyle(color: Colors.white.withValues(alpha: 0.4))));
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Text('${schools.length} of ${allSchools.length} schools', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12)),
+                    ),
+                    Expanded(
+                      child: LayoutBuilder(builder: (context, constraints) {
+                        final columns = constraints.maxWidth > 1100 ? 3 : constraints.maxWidth > 700 ? 2 : 1;
+                        return GridView.builder(
+                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: columns, mainAxisSpacing: 14, crossAxisSpacing: 14, childAspectRatio: columns == 1 ? 1.3 : 1.45),
+                          itemCount: schools.length,
+                          itemBuilder: (context, i) => _SchoolCard(school: schools[i]),
+                        );
+                      }),
+                    ),
+                  ],
+                );
               },
             ),
           ),

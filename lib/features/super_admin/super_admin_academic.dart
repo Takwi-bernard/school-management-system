@@ -284,8 +284,6 @@ class _ClassDialogState extends ConsumerState<_ClassDialog> {
     if (_name.text.trim().isEmpty) return;
     setState(() => _saving = true);
     try {
-      // Preserve the class's current active state explicitly - never
-      // silently reactivate a class the Super Admin had deactivated.
       await ref.read(superAdminRepositoryProvider).saveClass(
             id: widget.existing?.id,
             schoolId: widget.schoolId,
@@ -332,7 +330,7 @@ class _ClassDialogState extends ConsumerState<_ClassDialog> {
 }
 
 // ============================================================
-// SUBJECTS - with coefficient per department, offering per class
+// SUBJECTS
 // ============================================================
 
 class _SubjectsTab extends ConsumerStatefulWidget {
@@ -567,9 +565,8 @@ class _SubjectDialogState extends ConsumerState<_SubjectDialog> {
 }
 
 // ============================================================
-// YEARS, TERMS & SEQUENCES - now with a one-tap "set current" and
-// full edit for both Years and Terms, matching the pattern that was
-// missing before.
+// YEARS, TERMS & SEQUENCES - sequence chips now have explicit
+// visible colors (the white-on-white bug is fixed here).
 // ============================================================
 
 class _YearsTermsTab extends ConsumerWidget {
@@ -690,11 +687,24 @@ class _YearsTermsTab extends ConsumerWidget {
                           },
                         ),
                       ]),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
+                      // FIX: sequence chips previously had no explicit
+                      // colors, so Flutter's default Chip rendered them
+                      // dark-text-on-default-background - effectively
+                      // invisible against this dark theme. Now explicit.
                       Wrap(
                         spacing: 6,
+                        runSpacing: 6,
                         children: periods
-                            .map((p) => Chip(label: Text(p.periodName, style: const TextStyle(fontSize: 11)), backgroundColor: Colors.white.withValues(alpha: 0.06), labelStyle: const TextStyle(color: Colors.white)))
+                            .map((p) => Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: p.isOpen ? Colors.green.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: p.isOpen ? Colors.green.withValues(alpha: 0.4) : Colors.white24),
+                                  ),
+                                  child: Text(p.periodName, style: TextStyle(fontSize: 11, color: p.isOpen ? Colors.greenAccent : Colors.white, fontWeight: FontWeight.w600)),
+                                ))
                             .toList(),
                       ),
                       const SizedBox(height: 6),
@@ -758,8 +768,6 @@ class _AcademicYearDialogState extends ConsumerState<_AcademicYearDialog> {
 
   Future<void> _save() async {
     if (_name.text.trim().isEmpty) return;
-    // For a new year, dates are required. For an edit, keep today's
-    // date if the admin didn't re-pick one, rather than blocking save.
     final start = _start ?? DateTime.now();
     final end = _end ?? DateTime.now().add(const Duration(days: 300));
     if (widget.existing == null && (_start == null || _end == null)) return;
@@ -772,7 +780,7 @@ class _AcademicYearDialogState extends ConsumerState<_AcademicYearDialog> {
             yearName: _name.text.trim(),
             startDate: start,
             endDate: end,
-            isCurrent: false, // use the dedicated "Set as Current" action instead
+            isCurrent: false,
           );
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -852,7 +860,7 @@ class _AcademicTermDialogState extends ConsumerState<_AcademicTermDialog> {
             academicYearId: widget.academicYearId,
             termName: _name.text.trim(),
             termOrder: widget.existing?.termOrder ?? widget.nextOrder,
-            isCurrent: false, // use the dedicated "Set Current" action instead
+            isCurrent: false,
           );
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
