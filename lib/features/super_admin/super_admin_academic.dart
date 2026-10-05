@@ -127,7 +127,35 @@ class _DepartmentsClassesTab extends ConsumerWidget {
               ...classesInDept.map((c) => Padding(
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Row(children: [
-                      Expanded(child: Text('${c.className} (${c.classCode ?? "GEN"}) · max ${c.maxStudents}', style: TextStyle(color: c.isActive ? Colors.white70 : Colors.white24))),
+                      Expanded(
+                        child: Row(children: [
+                          Expanded(child: Text('${c.className} (${c.classCode ?? "GEN"}) · max ${c.maxStudents}', style: TextStyle(color: c.isActive ? Colors.white70 : Colors.white24))),
+                          if (!c.isActive)
+                            Container(
+                              margin: const EdgeInsets.only(right: 6),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
+                              child: const Text('Inactive', style: TextStyle(color: Colors.redAccent, fontSize: 10, fontWeight: FontWeight.w700)),
+                            ),
+                        ]),
+                      ),
+                      IconButton(
+                        icon: Icon(c.isActive ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: Colors.white38, size: 16),
+                        tooltip: c.isActive ? 'Deactivate' : 'Reactivate',
+                        onPressed: () async {
+                          await ref.read(superAdminRepositoryProvider).saveClass(
+                                id: c.id,
+                                schoolId: schoolId,
+                                className: c.className,
+                                classCode: c.classCode,
+                                departmentId: c.departmentId,
+                                levelOrder: c.levelOrder,
+                                maxStudents: c.maxStudents,
+                                isActive: !c.isActive,
+                              );
+                          ref.invalidate(academicStructureProvider(schoolId));
+                        },
+                      ),
                       IconButton(
                         icon: const Icon(Icons.edit_outlined, color: Colors.white38, size: 16),
                         onPressed: () async {
@@ -256,6 +284,8 @@ class _ClassDialogState extends ConsumerState<_ClassDialog> {
     if (_name.text.trim().isEmpty) return;
     setState(() => _saving = true);
     try {
+      // Preserve the class's current active state explicitly - never
+      // silently reactivate a class the Super Admin had deactivated.
       await ref.read(superAdminRepositoryProvider).saveClass(
             id: widget.existing?.id,
             schoolId: widget.schoolId,
@@ -264,6 +294,7 @@ class _ClassDialogState extends ConsumerState<_ClassDialog> {
             departmentId: widget.departmentId,
             levelOrder: int.tryParse(_level.text) ?? 0,
             maxStudents: int.tryParse(_capacity.text) ?? 50,
+            isActive: widget.existing?.isActive,
           );
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -536,7 +567,9 @@ class _SubjectDialogState extends ConsumerState<_SubjectDialog> {
 }
 
 // ============================================================
-// YEARS, TERMS & SEQUENCES
+// YEARS, TERMS & SEQUENCES - now with a one-tap "set current" and
+// full edit for both Years and Terms, matching the pattern that was
+// missing before.
 // ============================================================
 
 class _YearsTermsTab extends ConsumerWidget {
@@ -544,11 +577,55 @@ class _YearsTermsTab extends ConsumerWidget {
   final AcademicStructure structure;
   const _YearsTermsTab({required this.schoolId, required this.structure});
 
+  Future<void> _setCurrentYear(WidgetRef ref, BuildContext context, AsAcademicYear year) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        title: Text('Set ${year.yearName} as the current academic year?', style: const TextStyle(color: Colors.white)),
+        content: const Text(
+          'Every class, term, sequence, fee lookup, promotion, and report card in this school is based on whichever year is current. The previous current year will no longer be marked as current.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Set as Current')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await ref.read(superAdminRepositoryProvider).setCurrentAcademicYear(id: year.id, schoolId: schoolId);
+    ref.invalidate(academicStructureProvider(schoolId));
+  }
+
+  Future<void> _setCurrentTerm(WidgetRef ref, AsAcademicTerm term) async {
+    await ref.read(superAdminRepositoryProvider).setCurrentAcademicTerm(id: term.id, academicYearId: term.academicYearId);
+    ref.invalidate(academicStructureProvider(schoolId));
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final hasCurrent = structure.academicYears.any((y) => y.isCurrent);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (!hasCurrent && structure.academicYears.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(bottom: 14),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
+            child: const Row(children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.amberAccent, size: 18),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'No academic year is set as current. Classes, fees, and promotions will not work correctly until one is marked current.',
+                  style: TextStyle(color: Colors.amberAccent, fontSize: 12),
+                ),
+              ),
+            ]),
+          ),
         Row(children: [
           const Expanded(child: Text('Academic Years', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800))),
           FilledButton.icon(
@@ -575,7 +652,16 @@ class _YearsTermsTab extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(color: Colors.indigo.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(20)),
                     child: const Text('Current', style: TextStyle(color: Colors.white, fontSize: 11)),
-                  ),
+                  )
+                else
+                  TextButton(onPressed: () => _setCurrentYear(ref, context, year), child: const Text('Set as Current', style: TextStyle(fontSize: 12))),
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined, color: Colors.white54, size: 18),
+                  onPressed: () async {
+                    final saved = await showDialog<bool>(context: context, builder: (_) => _AcademicYearDialog(schoolId: schoolId, existing: year));
+                    if (saved == true) ref.invalidate(academicStructureProvider(schoolId));
+                  },
+                ),
               ]),
               const SizedBox(height: 10),
               ...terms.map((term) {
@@ -588,7 +674,21 @@ class _YearsTermsTab extends ConsumerWidget {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Row(children: [
                         Expanded(child: Text(term.termName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700))),
-                        if (term.isCurrent) const Icon(Icons.check_circle_rounded, color: Colors.green, size: 16),
+                        if (term.isCurrent)
+                          const Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.check_circle_rounded, color: Colors.green, size: 16))
+                        else
+                          TextButton(
+                            onPressed: () => _setCurrentTerm(ref, term),
+                            style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 6), minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                            child: const Text('Set Current', style: TextStyle(fontSize: 11)),
+                          ),
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, color: Colors.white38, size: 14),
+                          onPressed: () async {
+                            final saved = await showDialog<bool>(context: context, builder: (_) => _AcademicTermDialog(academicYearId: year.id, nextOrder: term.termOrder, existing: term));
+                            if (saved == true) ref.invalidate(academicStructureProvider(schoolId));
+                          },
+                        ),
                       ]),
                       const SizedBox(height: 4),
                       Wrap(
@@ -631,18 +731,24 @@ class _YearsTermsTab extends ConsumerWidget {
 
 class _AcademicYearDialog extends ConsumerStatefulWidget {
   final String schoolId;
-  const _AcademicYearDialog({required this.schoolId});
+  final AsAcademicYear? existing;
+  const _AcademicYearDialog({required this.schoolId, this.existing});
 
   @override
   ConsumerState<_AcademicYearDialog> createState() => _AcademicYearDialogState();
 }
 
 class _AcademicYearDialogState extends ConsumerState<_AcademicYearDialog> {
-  final _name = TextEditingController();
+  late final TextEditingController _name;
   DateTime? _start;
   DateTime? _end;
-  bool _isCurrent = false;
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _name = TextEditingController(text: widget.existing?.yearName ?? '');
+  }
 
   @override
   void dispose() {
@@ -651,10 +757,23 @@ class _AcademicYearDialogState extends ConsumerState<_AcademicYearDialog> {
   }
 
   Future<void> _save() async {
-    if (_name.text.trim().isEmpty || _start == null || _end == null) return;
+    if (_name.text.trim().isEmpty) return;
+    // For a new year, dates are required. For an edit, keep today's
+    // date if the admin didn't re-pick one, rather than blocking save.
+    final start = _start ?? DateTime.now();
+    final end = _end ?? DateTime.now().add(const Duration(days: 300));
+    if (widget.existing == null && (_start == null || _end == null)) return;
+
     setState(() => _saving = true);
     try {
-      await ref.read(superAdminRepositoryProvider).saveAcademicYear(schoolId: widget.schoolId, yearName: _name.text.trim(), startDate: _start!, endDate: _end!, isCurrent: _isCurrent);
+      await ref.read(superAdminRepositoryProvider).saveAcademicYear(
+            id: widget.existing?.id,
+            schoolId: widget.schoolId,
+            yearName: _name.text.trim(),
+            startDate: start,
+            endDate: end,
+            isCurrent: false, // use the dedicated "Set as Current" action instead
+          );
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'.replaceFirst('Exception: ', ''))));
@@ -667,7 +786,7 @@ class _AcademicYearDialogState extends ConsumerState<_AcademicYearDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       backgroundColor: const Color(0xFF1E293B),
-      title: const Text('Add Academic Year', style: TextStyle(color: Colors.white)),
+      title: Text(widget.existing == null ? 'Add Academic Year' : 'Edit Academic Year', style: const TextStyle(color: Colors.white)),
       content: SizedBox(
         width: 380,
         child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -678,7 +797,7 @@ class _AcademicYearDialogState extends ConsumerState<_AcademicYearDialog> {
               final p = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime(2020), lastDate: DateTime(2100));
               if (p != null) setState(() => _start = p);
             },
-            child: Text(_start == null ? 'Start date' : '${_start!.day}/${_start!.month}/${_start!.year}'),
+            child: Text(_start == null ? 'Start date${widget.existing != null ? ' (unchanged if not picked)' : ''}' : '${_start!.day}/${_start!.month}/${_start!.year}'),
           ),
           const SizedBox(height: 10),
           OutlinedButton(
@@ -686,9 +805,8 @@ class _AcademicYearDialogState extends ConsumerState<_AcademicYearDialog> {
               final p = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime(2020), lastDate: DateTime(2100));
               if (p != null) setState(() => _end = p);
             },
-            child: Text(_end == null ? 'End date' : '${_end!.day}/${_end!.month}/${_end!.year}'),
+            child: Text(_end == null ? 'End date${widget.existing != null ? ' (unchanged if not picked)' : ''}' : '${_end!.day}/${_end!.month}/${_end!.year}'),
           ),
-          Row(children: [const Text('Set as current year', style: TextStyle(color: Colors.white70)), Switch(value: _isCurrent, onChanged: (v) => setState(() => _isCurrent = v))]),
         ]),
       ),
       actions: [
@@ -702,16 +820,22 @@ class _AcademicYearDialogState extends ConsumerState<_AcademicYearDialog> {
 class _AcademicTermDialog extends ConsumerStatefulWidget {
   final String academicYearId;
   final int nextOrder;
-  const _AcademicTermDialog({required this.academicYearId, required this.nextOrder});
+  final AsAcademicTerm? existing;
+  const _AcademicTermDialog({required this.academicYearId, required this.nextOrder, this.existing});
 
   @override
   ConsumerState<_AcademicTermDialog> createState() => _AcademicTermDialogState();
 }
 
 class _AcademicTermDialogState extends ConsumerState<_AcademicTermDialog> {
-  final _name = TextEditingController();
-  bool _isCurrent = false;
+  late final TextEditingController _name;
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _name = TextEditingController(text: widget.existing?.termName ?? '');
+  }
 
   @override
   void dispose() {
@@ -723,7 +847,13 @@ class _AcademicTermDialogState extends ConsumerState<_AcademicTermDialog> {
     if (_name.text.trim().isEmpty) return;
     setState(() => _saving = true);
     try {
-      await ref.read(superAdminRepositoryProvider).saveAcademicTerm(academicYearId: widget.academicYearId, termName: _name.text.trim(), termOrder: widget.nextOrder, isCurrent: _isCurrent);
+      await ref.read(superAdminRepositoryProvider).saveAcademicTerm(
+            id: widget.existing?.id,
+            academicYearId: widget.academicYearId,
+            termName: _name.text.trim(),
+            termOrder: widget.existing?.termOrder ?? widget.nextOrder,
+            isCurrent: false, // use the dedicated "Set Current" action instead
+          );
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'.replaceFirst('Exception: ', ''))));
@@ -736,14 +866,8 @@ class _AcademicTermDialogState extends ConsumerState<_AcademicTermDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       backgroundColor: const Color(0xFF1E293B),
-      title: const Text('Add Term', style: TextStyle(color: Colors.white)),
-      content: SizedBox(
-        width: 340,
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          _darkField(_name, 'Term name (e.g. First Term)'),
-          Row(children: [const Text('Set as current term', style: TextStyle(color: Colors.white70)), Switch(value: _isCurrent, onChanged: (v) => setState(() => _isCurrent = v))]),
-        ]),
-      ),
+      title: Text(widget.existing == null ? 'Add Term' : 'Edit Term', style: const TextStyle(color: Colors.white)),
+      content: SizedBox(width: 340, child: _darkField(_name, 'Term name (e.g. First Term)')),
       actions: [
         TextButton(onPressed: _saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
         FilledButton(onPressed: _saving ? null : _save, child: _saving ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Save')),
@@ -886,7 +1010,7 @@ class _FeesTabState extends ConsumerState<_FeesTab> {
           dropdownColor: const Color(0xFF1E293B),
           style: const TextStyle(color: Colors.white),
           decoration: const InputDecoration(labelText: 'Academic year', labelStyle: TextStyle(color: Colors.white38)),
-          items: structure.academicYears.map((y) => DropdownMenuItem(value: y, child: Text(y.yearName))).toList(),
+          items: structure.academicYears.map((y) => DropdownMenuItem(value: y, child: Text('${y.yearName}${y.isCurrent ? ' (Current)' : ''}'))).toList(),
           onChanged: (v) => setState(() {
             _selectedYear = v;
             _loaded = false;

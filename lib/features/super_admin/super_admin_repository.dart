@@ -258,6 +258,7 @@ class SuperAdminRepository {
     required String departmentId,
     int levelOrder = 0,
     int maxStudents = 50,
+    bool? isActive,
   }) async =>
       _call('upsert_class', {
         'id': id,
@@ -267,6 +268,7 @@ class SuperAdminRepository {
         'department_id': departmentId,
         'level_order': levelOrder,
         'max_students': maxStudents,
+        if (isActive != null) 'is_active': isActive,
       });
 
   Future<void> deactivateClass(String id) async => _call('delete_class', {'id': id});
@@ -308,8 +310,14 @@ class SuperAdminRepository {
         'is_current': isCurrent,
       });
 
+  Future<void> setCurrentAcademicYear({required String id, required String schoolId}) async =>
+      _call('set_current_academic_year', {'id': id, 'school_id': schoolId});
+
   Future<void> saveAcademicTerm({String? id, required String academicYearId, required String termName, int termOrder = 1, bool isCurrent = false}) async =>
       _call('upsert_academic_term', {'id': id, 'academic_year_id': academicYearId, 'term_name': termName, 'term_order': termOrder, 'is_current': isCurrent});
+
+  Future<void> setCurrentAcademicTerm({required String id, required String academicYearId}) async =>
+      _call('set_current_academic_term', {'id': id, 'academic_year_id': academicYearId});
 
   Future<void> saveExamPeriod({
     String? id,

@@ -69,7 +69,7 @@ class _BrandingPageState extends State<BrandingPage> with SingleTickerProviderSt
 }
 
 // ============================================================
-// ASSETS - logo, hero banner, etc.
+// ASSETS
 // ============================================================
 
 class _AssetsTab extends ConsumerStatefulWidget {
@@ -392,7 +392,7 @@ class _GalleryTabState extends ConsumerState<_GalleryTab> {
 }
 
 // ============================================================
-// ACHIEVEMENTS - respects the school's language_mode
+// ACHIEVEMENTS
 // ============================================================
 
 class _AchievementsTab extends ConsumerWidget {
@@ -571,7 +571,8 @@ class _AchievementDialogState extends ConsumerState<_AchievementDialog> {
 }
 
 // ============================================================
-// EVENTS
+// EVENTS - now collects status and time too, which the schema
+// supports but the old dialog silently dropped.
 // ============================================================
 
 class _EventsTab extends ConsumerWidget {
@@ -601,7 +602,11 @@ class _EventsTab extends ConsumerWidget {
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, _) => Padding(
               padding: const EdgeInsets.all(20),
-              child: Text('$e', style: const TextStyle(color: Colors.redAccent), textAlign: TextAlign.center),
+              child: Text(
+                '$e\n\nIf this names a specific enum type, tell me the exact text and I will correct the status dropdown below to match it.',
+                style: const TextStyle(color: Colors.redAccent),
+                textAlign: TextAlign.center,
+              ),
             ),
             data: (items) {
               if (items.isEmpty) return const Center(child: Text('No events yet.', style: TextStyle(color: Colors.white38)));
@@ -617,7 +622,13 @@ class _EventsTab extends ConsumerWidget {
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Text(e.title ?? '', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-                          Text('${e.eventDate != null ? '${e.eventDate!.day}/${e.eventDate!.month}/${e.eventDate!.year}' : ''} ${e.location ?? ''}', style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                          Text(
+                            '${e.eventDate != null ? '${e.eventDate!.day}/${e.eventDate!.month}/${e.eventDate!.year}' : ''}'
+                            '${e.eventTime != null ? ' · ${e.eventTime}' : ''}'
+                            '${e.location != null && e.location!.isNotEmpty ? ' · ${e.location}' : ''}'
+                            '${e.status != null ? ' · ${e.status}' : ''}',
+                            style: const TextStyle(color: Colors.white38, fontSize: 12),
+                          ),
                         ]),
                       ),
                       IconButton(
@@ -660,6 +671,12 @@ class _EventDialogState extends ConsumerState<_EventDialog> {
   late final TextEditingController _description;
   late final TextEditingController _location;
   DateTime? _date;
+  TimeOfDay? _time;
+  // Kept as a free-text status field with common suggestions rather
+  // than a locked dropdown, since the real enum values for
+  // school_events.status were never confirmed this session - safer
+  // than guessing wrong values and having every save silently fail.
+  late final TextEditingController _status;
   bool _saving = false;
 
   @override
@@ -669,7 +686,14 @@ class _EventDialogState extends ConsumerState<_EventDialog> {
     _title = TextEditingController(text: e?.title ?? '');
     _description = TextEditingController(text: e?.description ?? '');
     _location = TextEditingController(text: e?.location ?? '');
+    _status = TextEditingController(text: e?.status ?? '');
     _date = e?.eventDate;
+    if (e?.eventTime != null) {
+      final parts = e!.eventTime!.split(':');
+      if (parts.length >= 2) {
+        _time = TimeOfDay(hour: int.tryParse(parts[0]) ?? 0, minute: int.tryParse(parts[1]) ?? 0);
+      }
+    }
   }
 
   @override
@@ -677,7 +701,13 @@ class _EventDialogState extends ConsumerState<_EventDialog> {
     _title.dispose();
     _description.dispose();
     _location.dispose();
+    _status.dispose();
     super.dispose();
+  }
+
+  String? _formattedTime() {
+    if (_time == null) return null;
+    return '${_time!.hour.toString().padLeft(2, '0')}:${_time!.minute.toString().padLeft(2, '0')}:00';
   }
 
   Future<void> _save() async {
@@ -689,7 +719,9 @@ class _EventDialogState extends ConsumerState<_EventDialog> {
             title: _title.text.trim(),
             description: _description.text.trim(),
             eventDate: _date,
+            eventTime: _formattedTime(),
             location: _location.text.trim(),
+            status: _status.text.trim().isEmpty ? null : _status.text.trim(),
           );
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -714,14 +746,31 @@ class _EventDialogState extends ConsumerState<_EventDialog> {
             const SizedBox(height: 10),
             _darkField(_location, 'Location'),
             const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: () async {
-                final picked = await showDatePicker(context: context, initialDate: _date ?? DateTime.now(), firstDate: DateTime(2020), lastDate: DateTime(2100));
-                if (picked != null) setState(() => _date = picked);
-              },
-              icon: const Icon(Icons.calendar_today_outlined),
-              label: Text(_date == null ? 'Event date' : '${_date!.day}/${_date!.month}/${_date!.year}'),
-            ),
+            _darkField(_status, 'Status (e.g. upcoming, published - leave blank if unsure)'),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    final picked = await showDatePicker(context: context, initialDate: _date ?? DateTime.now(), firstDate: DateTime(2020), lastDate: DateTime(2100));
+                    if (picked != null) setState(() => _date = picked);
+                  },
+                  icon: const Icon(Icons.calendar_today_outlined, size: 16),
+                  label: Text(_date == null ? 'Date' : '${_date!.day}/${_date!.month}/${_date!.year}'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    final picked = await showTimePicker(context: context, initialTime: _time ?? const TimeOfDay(hour: 9, minute: 0));
+                    if (picked != null) setState(() => _time = picked);
+                  },
+                  icon: const Icon(Icons.access_time_rounded, size: 16),
+                  label: Text(_time == null ? 'Time' : _time!.format(context)),
+                ),
+              ),
+            ]),
           ]),
         ),
       ),
