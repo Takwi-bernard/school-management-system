@@ -15,8 +15,16 @@ final enrollClassesProvider = FutureProvider.family<List<EnrollClass>, String>((
   return ref.watch(secretaryRepositoryProvider).getClasses(schoolId);
 });
 
-// schoolId is only a cache key here - the Edge Function derives the real
-// school from the signed-in user.
+// schoolId is only a cache key here - the Edge Function derives the
+// real school from the signed-in user.
 final awaitingRegistrationsProvider = FutureProvider.family<List<AwaitingRegistration>, String>((ref, schoolId) {
   return ref.watch(secretaryRepositoryProvider).listAwaitingRegistrations();
+});
+
+final secretaryDashboardProvider = FutureProvider.family<SecretaryDashboard, String>((ref, schoolId) {
+  return ref.watch(secretaryRepositoryProvider).getDashboard();
+});
+
+final myPaymentsProvider = FutureProvider.family<List<MyPayment>, String>((ref, schoolId) {
+  return ref.watch(secretaryRepositoryProvider).listMyPayments();
 });
