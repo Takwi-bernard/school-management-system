@@ -3,18 +3,27 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'secretary_models.dart';
 
 class SecretaryRepository {
-  SecretaryRepository(this._client);
+  SecretaryRepository(this._client, {this.lang = 'en'});
   final SupabaseClient _client;
+
+  /// 'en' or 'fr' - sent with every call so the Edge Function answers
+  /// (and writes receipts / account metadata) in the school's language.
+  final String lang;
+
+  bool get _fr => lang == 'fr';
 
   Future<Map<String, dynamic>> _call(String action, Map<String, dynamic> payload) async {
     try {
-      final res = await _client.functions.invoke('secretary-actions', body: {'action': action, ...payload});
-      final data = Map<String, dynamic>.from(res.data as Map);
-      if (data['success'] != true) throw Exception(data['message'] ?? 'Request failed.');
+      final res = await _client.functions.invoke('secretary-actions', body: {'action': action, 'lang': lang, ...payload});
+      final raw = res.data;
+      if (raw is! Map) throw Exception(_fr ? 'Réponse inattendue du serveur.' : 'Unexpected response from the server.');
+      final data = Map<String, dynamic>.from(raw);
+      if (data['success'] != true) throw Exception(data['message'] ?? (_fr ? 'La requête a échoué.' : 'Request failed.'));
       return data;
     } on FunctionException catch (e) {
       final details = e.details;
-      final message = (details is Map ? details['message'] : null) ?? 'Request failed (status ${e.status}).';
+      final message = (details is Map ? details['message'] : null) ??
+          (_fr ? 'La requête a échoué (statut ${e.status}).' : 'Request failed (status ${e.status}).');
       throw Exception(message);
     }
   }

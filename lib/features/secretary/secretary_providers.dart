@@ -1,10 +1,17 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/supabase_providers.dart';
+import '../landing/landing_providers.dart' show activeLocaleProvider;
 import 'secretary_models.dart';
 import 'secretary_repository.dart';
 
+/// Rebuilt whenever the active language changes, so every Edge Function
+/// call carries the language the secretary is currently reading.
 final secretaryRepositoryProvider = Provider<SecretaryRepository>((ref) {
-  return SecretaryRepository(ref.watch(supabaseClientProvider));
+  final locale = ref.watch(activeLocaleProvider);
+  return SecretaryRepository(
+    ref.watch(supabaseClientProvider),
+    lang: locale.languageCode == 'fr' ? 'fr' : 'en',
+  );
 });
 
 final secretaryProfileProvider = FutureProvider<SecretaryProfile?>((ref) {
