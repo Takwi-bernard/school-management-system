@@ -413,6 +413,31 @@ class _ClassReportCardsPaneState extends ConsumerState<_ClassReportCardsPane> {
     _refresh();
   }
 
+  Future<void> _delete(ReportCardStatus rc) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('Delete ${rc.studentName}\'s report card?'),
+        content: Text(
+          rc.isPublished
+              ? 'This report card is already published - the parent can currently see it. Deleting removes it immediately, including the parent\'s access to it. This cannot be undone.'
+              : 'This removes the generated report card and its subject results. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || rc.reportCardId == null) return;
+    await ref.read(principalRepositoryProvider).deleteReportCard(rc.reportCardId!);
+    _refresh();
+  }
+
   Future<void> _publishAll() async {
     final choice = await showDialog<String>(
       context: context,
@@ -537,6 +562,11 @@ class _ClassReportCardsPaneState extends ConsumerState<_ClassReportCardsPane> {
                                   const Chip(label: Text('Published'), backgroundColor: Color(0x1A4CAF50), labelStyle: TextStyle(color: Colors.green))
                                 else
                                   OutlinedButton(onPressed: () => _publish(rc), child: const Text('Publish')),
+                                IconButton(
+                                  icon: Icon(Icons.delete_outline_rounded, color: theme.colorScheme.error),
+                                  tooltip: 'Delete',
+                                  onPressed: () => _delete(rc),
+                                ),
                               ]),
                             );
                           },
