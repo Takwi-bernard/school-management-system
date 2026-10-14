@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'principal_core.dart' show pnIso;
 import 'principal_hub_models.dart';
+import 'principal_models.dart' show TimetableSlot;
 
 /// Data access for the Principal's calendar, ranking, promotion, money
 /// and overview features. Almost everything is a single database
@@ -519,5 +520,95 @@ class PrincipalHubRepository {
   Future<List<PnTrackerRow>> getMarksTracker(String periodId) async {
     final rows = await _list('principal_marks_tracker', {'p_exam_period_id': periodId});
     return rows.map(PnTrackerRow.fromMap).toList();
+  }
+
+  // ------------------------------------------------------------ marks review (second pass)
+
+  Future<List<Map<String, dynamic>>> getMarksReviewSummary(String periodId) async {
+    final res = await _client.rpc('principal_marks_review_summary', params: {'p_period': periodId});
+    return pnList(res);
+  }
+
+  Future<int> approveMarks({required String periodId, String? classId, String? subjectId, List<String>? ids}) async {
+    final res = await _client.rpc('principal_approve_marks', params: {
+      'p_period': periodId,
+      'p_class': classId,
+      'p_subject': subjectId,
+      'p_ids': ids,
+    });
+    return res is num ? res.toInt() : 0;
+  }
+
+  /// Non-destructive fee save: existing installments are updated in place
+  /// (so payments linked to them stay valid), new ones are inserted and
+  /// only the ones the principal removed are deleted.
+  Future<void> saveFeesSafe({
+    required String schoolId,
+    required String classId,
+    required String yearId,
+    required String? feeId,
+    required double registrationFee,
+    required List<({String? id, String name, double amount, DateTime? due})> installments,
+    required List<String> removedIds,
+  }) async {
+    final total = installments.fold<double>(0, (a, i) => a + i.amount);
+    String fid;
+    if (feeId == null) {
+      final inserted = await _client
+          .from('fees')
+          .insert({'school_id': schoolId, 'class_id': classId, 'academic_year_id': yearId, 'registration_fee': registrationFee, 'total_school_fee': total})
+          .select('id')
+          .single();
+      fid = inserted['id'] as String;
+    } else {
+      fid = feeId;
+      await _client.from('fees').update({'registration_fee': registrationFee, 'total_school_fee': total}).eq('id', fid);
+    }
+    for (var i = 0; i < installments.length; i++) {
+      final it = installments[i];
+      final row = {
+        'installment_name': it.name,
+        'amount': it.amount,
+        'due_date': it.due == null ? null : pnIso(it.due!),
+        'display_order': i + 1,
+      };
+      if (it.id == null) {
+        await _client.from('installments').insert({...row, 'fee_id': fid});
+      } else {
+        await _client.from('installments').update(row).eq('id', it.id!);
+      }
+    }
+    if (removedIds.isNotEmpty) {
+      await _client.from('installments').delete().inFilter('id', removedIds);
+    }
+  }
+
+  /// Every timetable slot of the given classes for a year, fetched in
+  /// pages of 1000 so a whole-school timetable is never silently cut off.
+  Future<Map<String, List<TimetableSlot>>> getTimetablePaged(List<String> classIds, String yearId) async {
+    if (classIds.isEmpty) return {};
+    final grouped = <String, List<TimetableSlot>>{};
+    const page = 1000;
+    var from = 0;
+    while (true) {
+      final rows = await _client
+          .from('timetable_items')
+          .select('''
+            id, class_id, day_of_week, start_time, end_time, room_name, needs_teacher,
+            teacher_assignments ( subjects(subject_name), teachers(full_name) ),
+            subjects ( subject_name ),
+            timetables!inner(academic_year_id)
+          ''')
+          .inFilter('class_id', classIds)
+          .eq('timetables.academic_year_id', yearId)
+          .order('id')
+          .range(from, from + page - 1);
+      for (final r in rows) {
+        grouped.putIfAbsent(r['class_id'] as String, () => []).add(TimetableSlot.fromMap(r));
+      }
+      if (rows.length < page) break;
+      from += page;
+    }
+    return grouped;
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/l10n/app_strings.dart';
 import '../proprietor/proprietor_format.dart';
 import '../proprietor/proprietor_ui.dart';
+import 'principal_admissions.dart' show CreateStudentByPrincipalPage, pnShowStudentDetail;
 import 'principal_core.dart';
 import 'principal_hub_models.dart';
 import 'principal_hub_providers.dart';
@@ -171,7 +172,14 @@ class _PrincipalStudentsPageState extends ConsumerState<PrincipalStudentsPage> {
         PrHeader(
           title: s.pn('Students', 'Élèves'),
           subtitle: s.pn('All enrolled students of the current year.', 'Tous les élèves inscrits de l\'année en cours.'),
-          trailing: _loading ? null : PnChip(label: '$_total ${s.pn('students', 'élèves')}', color: cs.primary),
+          trailing: Wrap(spacing: 10, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            if (!_loading) PnChip(label: '$_total ${s.pn('students', 'élèves')}', color: cs.primary),
+            FilledButton.tonalIcon(
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CreateStudentByPrincipalPage(schoolId: widget.schoolId, strings: s))),
+              icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+              label: Text(s.pn('Enroll a student', 'Inscrire un élève')),
+            ),
+          ]),
         ),
         LayoutBuilder(builder: (context, c) {
           final search = PnSearch(
@@ -229,7 +237,9 @@ class _PrincipalStudentsPageState extends ConsumerState<PrincipalStudentsPage> {
   Widget _row(PnStudentRow st, ThemeData theme) {
     final s = _s;
     final cs = theme.colorScheme;
-    return Padding(
+    return InkWell(
+      onTap: () => pnShowStudentDetail(context, s, st.id),
+      child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Row(children: [
         PrAvatar(photoUrl: st.photo, name: st.fullName, radius: 20),
@@ -261,7 +271,7 @@ class _PrincipalStudentsPageState extends ConsumerState<PrincipalStudentsPage> {
           ],
         ),
       ]),
-    );
+    ));
   }
 }
 

@@ -1,461 +1,574 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/responsive.dart';
-import '../../shared/official_document_branding.dart';
+import '../../core/l10n/app_strings.dart';
 import '../landing/landing_model.dart';
+import '../parent/parent_providers.dart' show officialBrandingProvider;
+import '../proprietor/proprietor_format.dart';
+import '../proprietor/proprietor_ui.dart';
+import 'principal_card_art.dart';
+import 'principal_core.dart';
+import 'principal_kit.dart';
 import 'principal_models.dart';
-import 'principal_providers.dart';
+import 'principal_providers.dart' hide officialBrandingProvider;
 
-// Physical CR80 card size, used for LAYOUT sizing on the A4 sheet -
-// not as the page format itself anymore.
-const _cardW = 85.6 * PdfPageFormat.mm;
-const _cardH = 54.0 * PdfPageFormat.mm;
+// CR80 physical size, used to lay the cards out on the A4 sheet.
+const _cardWpdf = 85.6 * PdfPageFormat.mm;
+const _cardHpdf = 54.0 * PdfPageFormat.mm;
+
+final _classCardDataProvider = FutureProvider.family<List<IdCardStudentData>, String>((ref, classId) {
+  return ref.watch(principalRepositoryProvider).getIdCardDataForClass(classId);
+});
 
 class IdCardManagementPage extends ConsumerStatefulWidget {
   final String schoolId;
   final LandingModel landing;
-  const IdCardManagementPage({super.key, required this.schoolId, required this.landing});
+  final AppStrings strings;
+  const IdCardManagementPage({super.key, required this.schoolId, required this.landing, required this.strings});
 
   @override
   ConsumerState<IdCardManagementPage> createState() => _IdCardManagementPageState();
 }
 
 class _IdCardManagementPageState extends ConsumerState<IdCardManagementPage> {
-  DepartmentFull? _department;
   ManagedClass? _class;
-  bool _generating = false;
+  bool _showHistory = false;
+  String _query = '';
+  final _search = TextEditingController();
+  final _classSearch = TextEditingController();
+  String _classQuery = '';
 
-  PdfColor _parseColor(String hex) {
-    var v = hex.replaceAll('#', '');
-    if (v.length == 6) v = 'FF$v';
-    return PdfColor.fromInt(int.tryParse(v, radix: 16) ?? 0xFF1A73E8);
+  Future<PnCardSchool>? _schoolFuture;
+  final _photos = PnCardPhotoCache();
+  final ValueNotifier<String?> _progress = ValueNotifier<String?>(null);
+
+  AppStrings get _s => widget.strings;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    _classSearch.dispose();
+    _progress.dispose();
+    super.dispose();
   }
 
-  Future<void> _generateAndStore({
-    required List<IdCardStudentData> students,
-    required String label,
-  }) async {
-    final bytes = await _buildIdCardPdf(students);
-    final pdfUrl = await ref.read(principalRepositoryProvider).uploadGeneratedPdf(
-          schoolId: widget.schoolId,
-          bytes: bytes,
-          filenamePrefix: 'id_cards_${_class!.className.replaceAll(' ', '_')}',
-        );
-
-    final principal = await ref.read(principalProfileProvider.future);
-    if (principal != null) {
-      await ref.read(principalRepositoryProvider).recordIdCardGeneration(
-            schoolId: widget.schoolId,
-            classId: _class!.id,
-            label: label,
-            studentCount: students.length,
-            pdfUrl: pdfUrl,
-            principalId: principal.principalId,
-          );
-      ref.invalidate(generatedIdCardBatchesProvider(_class!.id));
-    }
-
-    if (mounted) {
-      await Printing.sharePdf(bytes: bytes, filename: '${label.replaceAll(' ', '_')}.pdf');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Saved. You can reopen or redownload this from "Already Generated" at any time.')),
-      );
-    }
+  Future<PnCardSchool> _school() {
+    return _schoolFuture ??= _loadSchool();
   }
 
-    Future<void> _generateSingle(SchoolStudent s) async {
-    setState(() => _generating = true);
+  Future<PnCardSchool> _loadSchool() async {
+    final l = widget.landing;
+    Map<String, String> assets = const {};
     try {
-      final data = await ref.read(principalRepositoryProvider).getIdCardData(s.id);
-      await _generateAndStore(students: [data], label: '${data.fullName} ID Card');
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-    } finally {
-      if (mounted) setState(() => _generating = false);
-    }
-  }
-    Future<void> _generateWholeClass() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text('Generate ID cards for all of ${_class!.className}?'),
-        content: const Text('One combined PDF will be created with every enrolled student\'s card, front and back, laid out for printing.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Generate')),
-        ],
-      ),
+      assets = await ref.read(officialBrandingProvider(widget.schoolId).future);
+    } catch (_) {}
+    final logo = await PnCardSchool.fetchImage(l.logoUrl, maxWidth: 400);
+    final stamp = await PnCardSchool.fetchImage(assets['principal_stamp'], maxWidth: 400);
+    return PnCardSchool(
+      name: l.schoolName,
+      motto: l.motto,
+      address: l.address,
+      phone: l.phone,
+      email: l.email,
+      academicYear: l.currentAcademicYear ?? '',
+      languageMode: l.languageMode,
+      primary: pnHex(l.primaryColor, const Color(0xFF1A73E8)),
+      secondary: pnHex(l.secondaryColor, const Color(0xFFF59E0B)),
+      logo: logo,
+      stamp: stamp,
+      seed: l.schoolId.hashCode & 0xFFFF,
     );
-    if (confirmed != true) return;
-
-    // setState BEFORE the first await, so the spinner appears the
-    // instant the button is pressed - not only once a query happens
-    // to return. Previously the fetch below ran outside _generating
-    // entirely, so a slow/hung query showed nothing at all.
-    setState(() => _generating = true);
-    try {
-      final allData = await ref.read(principalRepositoryProvider).getIdCardDataForClass(_class!.id);
-      if (allData.isEmpty) {
-        throw Exception('No enrolled students found in this class.');
-      }
-      await _generateAndStore(students: allData, label: '${_class!.className} - Whole Class');
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-    } finally {
-      if (mounted) setState(() => _generating = false);
-    }
-  }
-  Future<void> _delete(IdCardBatch batch) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text('Delete "${batch.label}"?'),
-        content: const Text('This permanently removes the saved PDF. This cannot be undone.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error), onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    await ref.read(principalRepositoryProvider).deleteIdCardBatch(batch.id, batch.pdfUrl);
-    ref.invalidate(generatedIdCardBatchesProvider(_class!.id));
   }
 
-  /// Front + back side by side, per student, several rows stacked on
-  /// an A4 sheet - not one tiny CR80-sized page per side anymore.
-  Future<Uint8List> _buildIdCardPdf(List<IdCardStudentData> students) async {
-    final assets = await ref.read(officialBrandingProvider(widget.schoolId).future);
-    final branding = await OfficialBranding.fetch(assets);
+  // ------------------------------------------------------------ PDF
 
-    pw.MemoryImage? logo;
-    if (widget.landing.logoUrl.isNotEmpty) {
-      try {
-        final res = await http.get(Uri.parse(widget.landing.logoUrl));
-        if (res.statusCode == 200) logo = pw.MemoryImage(res.bodyBytes);
-      } catch (_) {}
-    }
-
-    final primary = _parseColor(widget.landing.primaryColor);
-    final secondary = _parseColor(widget.landing.secondaryColor);
-
+  Future<Uint8List> _buildPdf(List<IdCardStudentData> students) async {
+    final school = await _school();
     final doc = pw.Document();
-    const rowsPerPage = 4; // fits comfortably on A4 with margins
+    const rowsPerPage = 4;
+    final rows = <pw.Widget>[];
+    var done = 0;
 
-    for (var pageStart = 0; pageStart < students.length; pageStart += rowsPerPage) {
-      final pageStudents = students.skip(pageStart).take(rowsPerPage).toList();
-      final rows = <pw.Widget>[];
-
-      for (final s in pageStudents) {
-        pw.MemoryImage? photo;
-        if (s.photoUrl != null) {
-          try {
-            final res = await http.get(Uri.parse(s.photoUrl!));
-            if (res.statusCode == 200) photo = pw.MemoryImage(res.bodyBytes);
-          } catch (_) {}
-        }
-
-        rows.add(
-          pw.Padding(
-            padding: const pw.EdgeInsets.only(bottom: 14),
-            child: pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.center,
-              children: [
-                _frontCard(s, photo, logo, primary, secondary),
-                pw.SizedBox(width: 12),
-                _backCard(s, primary, secondary, branding.principalStamp),
-              ],
-            ),
-          ),
-        );
-      }
-
+    Future<void> flush() async {
+      if (rows.isEmpty) return;
+      final pageRows = List<pw.Widget>.of(rows);
+      rows.clear();
       doc.addPage(
         pw.Page(
           pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(20),
-          build: (context) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.center, children: rows),
+          margin: const pw.EdgeInsets.fromLTRB(24, 24, 24, 20),
+          build: (_) => pw.Column(children: [
+            pw.Expanded(child: pw.Column(mainAxisAlignment: pw.MainAxisAlignment.spaceEvenly, children: pageRows)),
+            pw.Text(school.label('Cut along the grey borders.', 'Découper le long des bordures grises.'), style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey600)),
+          ]),
         ),
       );
     }
 
+    for (final st in students) {
+      _progress.value = _s.pn('Drawing card ${done + 1} of ${students.length}…', 'Création de la carte ${done + 1} sur ${students.length}…');
+      final photo = await _photos.get(st.photoUrl);
+      final front = await pnRenderCard(school: school, student: st, photo: photo, front: true);
+      final back = await pnRenderCard(school: school, student: st, photo: photo, front: false);
+      pw.Widget card(Uint8List png) => pw.Container(
+            width: _cardWpdf,
+            height: _cardHpdf,
+            decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey400, width: 0.4)),
+            child: pw.Image(pw.MemoryImage(png), fit: pw.BoxFit.fill),
+          );
+      rows.add(pw.Row(mainAxisAlignment: pw.MainAxisAlignment.center, children: [card(front), pw.SizedBox(width: 10), card(back)]));
+      done++;
+      if (rows.length == rowsPerPage) await flush();
+      // let the UI breathe between cards
+      await Future<void>.delayed(Duration.zero);
+    }
+    await flush();
+    _progress.value = _s.pn('Building the PDF…', 'Assemblage du PDF…');
     return doc.save();
   }
 
-  pw.Widget _frontCard(IdCardStudentData s, pw.MemoryImage? photo, pw.MemoryImage? logo, PdfColor primary, PdfColor secondary) {
-    return pw.Container(
-      width: _cardW,
-      height: _cardH,
-      decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey400, width: 0.5)),
-      child: pw.Column(
-        children: [
-          pw.Container(
-            width: double.infinity,
-            padding: const pw.EdgeInsets.symmetric(vertical: 4),
-            color: primary,
-            child: buildCompactIdCardHeader(logo: logo, schoolName: widget.landing.schoolName, textColor: PdfColors.white),
-          ),
-          pw.Expanded(
-            child: pw.Padding(
-              padding: const pw.EdgeInsets.all(8),
-              child: pw.Row(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Container(
-                    width: 55,
-                    height: 65,
-                    decoration: pw.BoxDecoration(border: pw.Border.all(color: primary, width: 1)),
-                    child: photo != null
-                        ? pw.Image(photo, fit: pw.BoxFit.cover)
-                        : pw.Center(child: pw.Text('PHOTO', style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey))),
-                  ),
-                  pw.SizedBox(width: 8),
-                  pw.Expanded(
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      mainAxisAlignment: pw.MainAxisAlignment.center,
-                      children: [
-                        pw.Text(s.fullName.toUpperCase(), style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                        pw.SizedBox(height: 4),
-                        _cardField('Class', s.className),
-                        _cardField('D.O.B', s.dateOfBirth != null ? _fmtDate(s.dateOfBirth!) : '-'),
-                        _cardField('Adm. No', s.admissionNumber),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          pw.Container(width: double.infinity, height: 5, color: secondary),
-        ],
+  Future<void> _generate(List<IdCardStudentData> students, String label, {bool whole = false}) async {
+    final s = _s;
+    if (_progress.value != null) return;
+    _progress.value = s.pn('Preparing…', 'Préparation…');
+    try {
+      final bytes = await _buildPdf(students);
+      final repo = ref.read(principalRepositoryProvider);
+      String? url;
+      try {
+        url = await repo.uploadGeneratedPdf(schoolId: widget.schoolId, bytes: bytes, filenamePrefix: 'id_cards_${_class!.className.replaceAll(' ', '_')}');
+        final principal = await ref.read(principalProfileProvider.future);
+        if (principal != null) {
+          await repo.recordIdCardGeneration(schoolId: widget.schoolId, classId: _class!.id, label: label, studentCount: students.length, pdfUrl: url, principalId: principal.principalId);
+          ref.invalidate(generatedIdCardBatchesProvider(_class!.id));
+        }
+      } catch (_) {
+        // saving to history is a bonus; the PDF itself is still delivered
+        url = null;
+      }
+      await Printing.sharePdf(bytes: bytes, filename: '${label.replaceAll(RegExp(r'[^A-Za-z0-9_\-]+'), '_')}.pdf');
+      if (mounted) {
+        prSnack(
+          context,
+          url != null
+              ? s.pn('Cards ready. You can reopen them anytime under “Generated”.', 'Cartes prêtes. Vous pouvez les rouvrir à tout moment dans « Générées ».')
+              : s.pn('Cards ready, but they could not be saved to the history.', 'Cartes prêtes, mais elles n’ont pas pu être enregistrées dans l’historique.'),
+        );
+      }
+    } catch (e) {
+      if (mounted) prSnack(context, pnErr(s, e));
+    } finally {
+      _progress.value = null;
+    }
+  }
+
+  Future<void> _generateClass(List<IdCardStudentData> all) async {
+    final s = _s;
+    final ok = await pnConfirm(
+      context,
+      s,
+      title: s.pn('Generate ${all.length} cards for ${_class!.className}?', 'Générer ${all.length} cartes pour ${_class!.className} ?'),
+      message: s.pn('One PDF is created with every student’s card, front and back, laid out four per sheet.', 'Un PDF est créé avec la carte de chaque élève, recto et verso, quatre par feuille.'),
+      confirmLabel: s.pn('Generate', 'Générer'),
+    );
+    if (!ok || !mounted) return;
+    await _generate(all, '${_class!.className} - ${s.pn('Whole class', 'Classe entière')}', whole: true);
+  }
+
+  Future<void> _deleteBatch(IdCardBatch b) async {
+    final s = _s;
+    final ok = await pnConfirm(
+      context,
+      s,
+      title: s.pn('Delete “${b.label}”?', 'Supprimer « ${b.label} » ?'),
+      message: s.pn('The saved PDF is permanently removed.', 'Le PDF enregistré sera définitivement supprimé.'),
+      confirmLabel: s.pn('Delete', 'Supprimer'),
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    try {
+      await ref.read(principalRepositoryProvider).deleteIdCardBatch(b.id, b.pdfUrl);
+      ref.invalidate(generatedIdCardBatchesProvider(_class!.id));
+    } catch (e) {
+      if (mounted) prSnack(context, pnErr(s, e));
+    }
+  }
+
+  void _preview(IdCardStudentData st) {
+    pnSheet<void>(
+      context,
+      (_) => _PreviewSheet(
+        strings: _s,
+        student: st,
+        schoolFuture: _school(),
+        photos: _photos,
+        onPdf: () {
+          Navigator.pop(context);
+          _generate([st], '${st.fullName} - ID');
+        },
       ),
     );
   }
 
-  pw.Widget _backCard(IdCardStudentData s, PdfColor primary, PdfColor secondary, pw.MemoryImage? stamp) {
-    return pw.Container(
-      width: _cardW,
-      height: _cardH,
-      decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey400, width: 0.5)),
-      child: pw.Column(
-        children: [
-          pw.Container(width: double.infinity, height: 5, color: secondary),
-          pw.Expanded(
-            child: pw.Padding(
-              padding: const pw.EdgeInsets.all(10),
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                mainAxisAlignment: pw.MainAxisAlignment.center,
-                children: [
-                  _cardField('Guardian', s.guardianName ?? 'Not on file'),
-                  _cardField('Guardian Phone', s.guardianPhone ?? '-'),
-                  _cardField('Admitted', s.admissionDate != null ? _fmtDate(s.admissionDate!) : '-'),
-                  pw.SizedBox(height: 8),
-                  pw.Text('If found, please return to ${widget.landing.schoolName}.', style: pw.TextStyle(fontSize: 6, color: PdfColors.grey700, fontStyle: pw.FontStyle.italic)),
-                ],
-              ),
-            ),
-          ),
-          if (stamp != null)
-            pw.Padding(
-              padding: const pw.EdgeInsets.only(bottom: 6, right: 8),
-              child: pw.Align(alignment: pw.Alignment.bottomRight, child: pw.SizedBox(width: 28, height: 28, child: pw.Image(stamp))),
-            ),
-        ],
-      ),
-    );
-  }
-
-  pw.Widget _cardField(String label, String value) =>
-      pw.Padding(padding: const pw.EdgeInsets.symmetric(vertical: 2), child: pw.Text('$label: $value', style: const pw.TextStyle(fontSize: 7)));
-
-  String _fmtDate(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  // ------------------------------------------------------------ UI
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    if (_class != null) {
-      return Padding(
-        padding: EdgeInsets.all(Responsive.pagePadding(context)),
-        child: DefaultTabController(
-          length: 2,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(children: [
-                IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: () => setState(() => _class = null)),
-                Text('${_class!.className} · ${_department!.departmentName}', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-              ]),
-              const SizedBox(height: 8),
-              FilledButton.icon(
-                onPressed: _generating ? null : _generateWholeClass,
-                icon: _generating ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.badge_outlined),
-                label: Text(_generating ? 'Generating...' : 'Generate All Cards for This Class'),
-              ),
-              const SizedBox(height: 12),
-              const TabBar(tabs: [Tab(text: 'Students'), Tab(text: 'Already Generated')]),
-              Expanded(
-                child: TabBarView(
-                  children: [
-                    Consumer(
-                      builder: (context, ref, _) {
-                        final studentsAsync = ref.watch(studentsForClassProvider(_class!.id));
-                        return studentsAsync.when(
-                          loading: () => const Center(child: CircularProgressIndicator()),
-                          error: (e, _) => Text('$e'),
-                          data: (students) {
-                            if (students.isEmpty) return const Center(child: Text('No students enrolled in this class.'));
-                            return ListView.separated(
-                              itemCount: students.length,
-                              separatorBuilder: (_, __) => const SizedBox(height: 8),
-                              itemBuilder: (context, i) {
-                                final s = students[i];
-                                return Container(
-                                  padding: const EdgeInsets.all(14),
-                                  decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
-                                  child: Row(children: [
-                                    CircleAvatar(backgroundImage: s.photoUrl != null ? NetworkImage(s.photoUrl!) : null, child: s.photoUrl == null ? Text(s.firstName.isNotEmpty ? s.firstName[0] : '?') : null),
-                                    const SizedBox(width: 12),
-                                    Expanded(child: Text(s.fullName, style: const TextStyle(fontWeight: FontWeight.w700))),
-                                    OutlinedButton.icon(onPressed: _generating ? null : () => _generateSingle(s), icon: const Icon(Icons.badge_outlined, size: 16), label: const Text('Generate Card')),
-                                  ]),
-                                );
-                              },
-                            );
-                          },
-                        );
-                      },
-                    ),
-                    Consumer(
-                      builder: (context, ref, _) {
-                        final batchesAsync = ref.watch(generatedIdCardBatchesProvider(_class!.id));
-                        return batchesAsync.when(
-                          loading: () => const Center(child: CircularProgressIndicator()),
-                          error: (e, _) => Text('$e'),
-                          data: (batches) {
-                            if (batches.isEmpty) return const Center(child: Text('No ID cards generated for this class yet.'));
-                            return ListView.separated(
-                              itemCount: batches.length,
-                              separatorBuilder: (_, __) => const SizedBox(height: 8),
-                              itemBuilder: (context, i) {
-                                final b = batches[i];
-                                return Container(
-                                  padding: const EdgeInsets.all(14),
-                                  decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
-                                  child: Row(children: [
-                                    Expanded(
-                                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                        Text(b.label, style: const TextStyle(fontWeight: FontWeight.w700)),
-                                        Text('${b.studentCount} card${b.studentCount == 1 ? '' : 's'} · ${_fmtDate(b.generatedAt)}', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-                                      ]),
-                                    ),
-                                    IconButton(icon: const Icon(Icons.open_in_new_rounded), tooltip: 'Open', onPressed: () => launchUrl(Uri.parse(b.pdfUrl), mode: LaunchMode.externalApplication)),
-                                    IconButton(icon: Icon(Icons.delete_outline_rounded, color: theme.colorScheme.error), tooltip: 'Delete', onPressed: () => _delete(b)),
-                                  ]),
-                                );
-                              },
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (_department != null) {
-      return Padding(
-        padding: EdgeInsets.all(Responsive.pagePadding(context)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: () => setState(() => _department = null)),
-              Text(_department!.departmentName, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-            ]),
-            const SizedBox(height: 12),
-            Expanded(
-              child: Consumer(
-                builder: (context, ref, _) {
-                  final classesAsync = ref.watch(managedClassesProvider(widget.schoolId));
-                  return classesAsync.when(
-                    loading: () => const Center(child: CircularProgressIndicator()),
-                    error: (e, _) => Text('$e'),
-                    data: (classes) {
-                      final filtered = classes.where((c) => c.departmentId == _department!.id).toList();
-                      if (filtered.isEmpty) return const Center(child: Text('No classes in this department.'));
-                      return ListView.separated(
-                        itemCount: filtered.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, i) => _drillTile(filtered[i].className, () => setState(() => _class = filtered[i])),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Padding(
-      padding: EdgeInsets.all(Responsive.pagePadding(context)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('ID Card Generation', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 6),
-          Text('Choose a department, then a class, then generate cards for one student or the whole class.', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-          const SizedBox(height: 16),
-          Expanded(
-            child: Consumer(
-              builder: (context, ref, _) {
-                final departmentsAsync = ref.watch(departmentsFullProvider(widget.schoolId));
-                return departmentsAsync.when(
-                  loading: () => const Center(child: CircularProgressIndicator()),
-                  error: (e, _) => Text('$e'),
-                  data: (departments) {
-                    if (departments.isEmpty) return const Center(child: Text('No departments configured yet.'));
-                    return ListView.separated(
-                      itemCount: departments.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (context, i) => _drillTile(departments[i].departmentName, () => setState(() => _department = departments[i])),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
-      ),
+    final s = _s;
+    return PrPage(
+      maxWidth: 960,
+      children: [
+        PnStage(stageKey: _class?.id ?? 'classes', child: _class == null ? _classes(s) : _classStage(s, _class!)),
+      ],
     );
   }
 
-  Widget _drillTile(String title, VoidCallback onTap) {
-    final theme = Theme.of(context);
-    return Material(
-      color: theme.colorScheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w700))), const Icon(Icons.chevron_right_rounded)])),
+  Widget _classes(AppStrings s) {
+    final classes = ref.watch(managedClassesProvider(widget.schoolId));
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      PrHeader(
+        title: s.pn('ID cards', 'Cartes d’élève'),
+        subtitle: s.pn('Choose a class, preview the card, then print one student or the whole class.', 'Choisissez une classe, prévisualisez la carte, puis imprimez pour un élève ou toute la classe.'),
       ),
+      const SizedBox(height: 14),
+      PnSearch(controller: _classSearch, hint: s.pn('Search a class', 'Rechercher une classe'), onChanged: (v) => setState(() => _classQuery = v)),
+      const SizedBox(height: 14),
+      PnAsync<List<ManagedClass>>(
+        value: classes,
+        strings: s,
+        onRetry: () => ref.invalidate(managedClassesProvider(widget.schoolId)),
+        isEmpty: (d) => d.isEmpty,
+        empty: PnEmpty(icon: Icons.badge_outlined, title: s.pn('No classes yet', 'Aucune classe')),
+        builder: (all) {
+          final q = _classQuery.trim().toLowerCase();
+          final list = all.where((c) => c.isActive && (q.isEmpty || c.className.toLowerCase().contains(q))).toList();
+          if (list.isEmpty) return PnEmpty(icon: Icons.search_off_rounded, title: s.pn('No match', 'Aucun résultat'));
+          return Column(children: [
+            for (var i = 0; i < list.length; i++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: PnPickTile(
+                  index: i,
+                  icon: Icons.badge_rounded,
+                  title: list[i].className,
+                  subtitle: list[i].departmentName,
+                  onTap: () => setState(() {
+                    _class = list[i];
+                    _showHistory = false;
+                    _query = '';
+                    _search.clear();
+                  }),
+                ),
+              ),
+          ]);
+        },
+      ),
+    ]);
+  }
+
+  Widget _classStage(AppStrings s, ManagedClass cls) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final data = ref.watch(_classCardDataProvider(cls.id));
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      PnCrumbs(labels: [s.pn('ID cards', 'Cartes d’élève'), cls.className], onTap: (_) => setState(() => _class = null)),
+      const SizedBox(height: 10),
+      PnAsync<List<IdCardStudentData>>(
+        value: data,
+        strings: s,
+        onRetry: () => ref.invalidate(_classCardDataProvider(cls.id)),
+        isEmpty: (d) => d.isEmpty,
+        empty: PnEmpty(icon: Icons.person_off_rounded, title: s.pn('No students enrolled', 'Aucun élève inscrit'), text: s.pn('Enrolled students of this class appear here.', 'Les élèves inscrits de cette classe apparaissent ici.')),
+        builder: (all) {
+          final noPhoto = all.where((x) => (x.photoUrl ?? '').isEmpty).length;
+          final q = _query.trim().toLowerCase();
+          final list = all.where((x) => q.isEmpty || x.fullName.toLowerCase().contains(q) || x.admissionNumber.toLowerCase().contains(q)).toList();
+          return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            PrReveal(
+              child: PrCard(
+                padding: const EdgeInsets.all(16),
+                child: LayoutBuilder(builder: (context, c) {
+                  final wide = c.maxWidth > 640;
+                  final preview = SizedBox(
+                    width: wide ? 340 : double.infinity,
+                    child: _SamplePreview(schoolFuture: _school(), student: all.first, photos: _photos, strings: s),
+                  );
+                  final info = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(cls.className, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 4),
+                    Text(s.pn('${all.length} student${all.length == 1 ? '' : 's'}', '${all.length} élève${all.length == 1 ? '' : 's'}'), style: theme.textTheme.bodyMedium?.copyWith(color: cs.outline)),
+                    const SizedBox(height: 12),
+                    if (noPhoto > 0) PnNotice(icon: Icons.photo_camera_back_rounded, color: pnWarn(), text: s.pn('$noPhoto student${noPhoto == 1 ? ' has' : 's have'} no photo yet. Their card prints with a placeholder.', '$noPhoto élève${noPhoto == 1 ? ' n’a' : 's n’ont'} pas encore de photo. Leur carte s’imprime avec un espace réservé.')),
+                    if (noPhoto > 0) const SizedBox(height: 12),
+                    ValueListenableBuilder<String?>(
+                      valueListenable: _progress,
+                      builder: (_, p, __) => FilledButton.icon(
+                        onPressed: p != null ? null : () => _generateClass(all),
+                        icon: p != null ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.print_rounded, size: 18),
+                        label: Text(p ?? s.pn('Generate all ${all.length} cards', 'Générer les ${all.length} cartes')),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(s.pn('Tap the card to flip it. Print on thick paper and cut along the grey borders.', 'Touchez la carte pour la retourner. Imprimez sur papier épais et découpez le long des bordures grises.'), style: theme.textTheme.bodySmall?.copyWith(color: cs.outline, height: 1.4)),
+                  ]);
+                  return wide ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [preview, const SizedBox(width: 22), Expanded(child: info)]) : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [preview, const SizedBox(height: 16), info]);
+                }),
+              ),
+            ),
+            const SizedBox(height: 16),
+            PrPills<bool>(values: const [false, true], selected: _showHistory, label: (v) => v ? s.pn('Generated', 'Générées') : s.pn('Students', 'Élèves'), onChanged: (v) => setState(() => _showHistory = v)),
+            const SizedBox(height: 12),
+            if (_showHistory) _history(s, cls) else ...[
+              PnSearch(controller: _search, hint: s.pn('Search by name or number', 'Rechercher par nom ou numéro'), onChanged: (v) => setState(() => _query = v)),
+              const SizedBox(height: 12),
+              if (list.isEmpty)
+                PnEmpty(icon: Icons.search_off_rounded, title: s.pn('No match', 'Aucun résultat'))
+              else
+                for (var i = 0; i < list.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: PrReveal(
+                      index: i > 8 ? 8 : i,
+                      child: PrCard(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        child: Row(children: [
+                          PrAvatar(photoUrl: list[i].photoUrl, name: list[i].fullName, radius: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text(list[i].fullName, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800), maxLines: 1, overflow: TextOverflow.ellipsis),
+                              Text(list[i].admissionNumber, style: theme.textTheme.bodySmall?.copyWith(color: cs.outline)),
+                            ]),
+                          ),
+                          if ((list[i].photoUrl ?? '').isEmpty) Padding(padding: const EdgeInsets.only(right: 6), child: PnChip(label: s.pn('No photo', 'Sans photo'), color: pnWarn())),
+                          IconButton(icon: const Icon(Icons.visibility_rounded, size: 20), tooltip: s.pn('Preview', 'Aperçu'), onPressed: () => _preview(list[i])),
+                          ValueListenableBuilder<String?>(
+                            valueListenable: _progress,
+                            builder: (_, p, __) => IconButton(icon: const Icon(Icons.picture_as_pdf_rounded, size: 20), tooltip: s.pn('Generate PDF', 'Générer le PDF'), onPressed: p != null ? null : () => _generate([list[i]], '${list[i].fullName} - ID')),
+                          ),
+                        ]),
+                      ),
+                    ),
+                  ),
+            ],
+          ]);
+        },
+      ),
+    ]);
+  }
+
+  Widget _history(AppStrings s, ManagedClass cls) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final async = ref.watch(generatedIdCardBatchesProvider(cls.id));
+    return PnAsync<List<IdCardBatch>>(
+      value: async,
+      strings: s,
+      onRetry: () => ref.invalidate(generatedIdCardBatchesProvider(cls.id)),
+      isEmpty: (d) => d.isEmpty,
+      empty: PnEmpty(icon: Icons.history_rounded, title: s.pn('Nothing generated yet', 'Rien de généré'), text: s.pn('PDFs you generate for this class are kept here.', 'Les PDF générés pour cette classe sont conservés ici.')),
+      builder: (list) => Column(children: [
+        for (var i = 0; i < list.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: PrReveal(
+              index: i > 8 ? 8 : i,
+              child: PrCard(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                child: Row(children: [
+                  Icon(Icons.picture_as_pdf_rounded, color: cs.primary),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(list[i].label, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+                      Text('${s.pn('${list[i].studentCount} card${list[i].studentCount == 1 ? '' : 's'}', '${list[i].studentCount} carte${list[i].studentCount == 1 ? '' : 's'}')} · ${pDateTime(list[i].generatedAt)}', style: theme.textTheme.bodySmall?.copyWith(color: cs.outline)),
+                    ]),
+                  ),
+                  IconButton(icon: const Icon(Icons.open_in_new_rounded, size: 20), tooltip: s.pn('Open', 'Ouvrir'), onPressed: () => launchUrl(Uri.parse(list[i].pdfUrl), mode: LaunchMode.externalApplication)),
+                  IconButton(icon: Icon(Icons.delete_outline_rounded, size: 20, color: cs.error), tooltip: s.pn('Delete', 'Supprimer'), onPressed: () => _deleteBatch(list[i])),
+                ]),
+              ),
+            ),
+          ),
+      ]),
+    );
+  }
+}
+
+// ============================================================
+// Card rendering widgets
+// ============================================================
+
+class _Faces {
+  final Uint8List front;
+  final Uint8List back;
+  const _Faces(this.front, this.back);
+}
+
+Future<_Faces> _renderFaces(PnCardSchool school, IdCardStudentData st, PnCardPhotoCache photos) async {
+  final photo = await photos.get(st.photoUrl);
+  final front = await pnRenderCard(school: school, student: st, photo: photo, front: true);
+  final back = await pnRenderCard(school: school, student: st, photo: photo, front: false);
+  return _Faces(front, back);
+}
+
+class _SamplePreview extends StatefulWidget {
+  final Future<PnCardSchool> schoolFuture;
+  final IdCardStudentData student;
+  final PnCardPhotoCache photos;
+  final AppStrings strings;
+  const _SamplePreview({required this.schoolFuture, required this.student, required this.photos, required this.strings});
+
+  @override
+  State<_SamplePreview> createState() => _SamplePreviewState();
+}
+
+class _SamplePreviewState extends State<_SamplePreview> {
+  late Future<_Faces> _faces;
+
+  @override
+  void initState() {
+    super.initState();
+    _faces = widget.schoolFuture.then((s) => _renderFaces(s, widget.student, widget.photos));
+  }
+
+  @override
+  void didUpdateWidget(covariant _SamplePreview old) {
+    super.didUpdateWidget(old);
+    if (old.student.studentId != widget.student.studentId) {
+      _faces = widget.schoolFuture.then((s) => _renderFaces(s, widget.student, widget.photos));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _FacesView(future: _faces, strings: widget.strings, onRetry: () => setState(() => _faces = widget.schoolFuture.then((s) => _renderFaces(s, widget.student, widget.photos))));
+  }
+}
+
+class _FacesView extends StatelessWidget {
+  final Future<_Faces> future;
+  final AppStrings strings;
+  final VoidCallback onRetry;
+  const _FacesView({required this.future, required this.strings, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<_Faces>(
+      future: future,
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return AspectRatio(aspectRatio: pnCardW / pnCardH, child: PnErrorBox(strings: strings, error: snap.error!, onRetry: onRetry));
+        }
+        if (!snap.hasData) return const AspectRatio(aspectRatio: pnCardW / pnCardH, child: PrSkeleton(height: double.infinity, radius: 18));
+        return _FlipCard(front: snap.data!.front, back: snap.data!.back);
+      },
+    );
+  }
+}
+
+class _FlipCard extends StatefulWidget {
+  final Uint8List front;
+  final Uint8List back;
+  const _FlipCard({required this.front, required this.back});
+
+  @override
+  State<_FlipCard> createState() => _FlipCardState();
+}
+
+class _FlipCardState extends State<_FlipCard> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 620));
+  bool _back = false;
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  void _flip() {
+    _back = !_back;
+    _back ? _c.forward() : _c.reverse();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: _flip,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: AnimatedBuilder(
+          animation: _c,
+          builder: (context, _) {
+            final t = Curves.easeInOutCubic.transform(_c.value);
+            final angle = t * math.pi;
+            final showBack = angle > math.pi / 2;
+            final img = Image.memory(showBack ? widget.back : widget.front, fit: BoxFit.contain, gaplessPlayback: true, filterQuality: FilterQuality.medium);
+            return Transform(
+              alignment: Alignment.center,
+              transform: Matrix4.identity()
+                ..setEntry(3, 2, 0.0012)
+                ..rotateY(angle),
+              child: Transform(
+                alignment: Alignment.center,
+                transform: Matrix4.identity()..rotateY(showBack ? math.pi : 0),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 22, offset: const Offset(0, 10))],
+                  ),
+                  child: ClipRRect(borderRadius: BorderRadius.circular(16), child: AspectRatio(aspectRatio: pnCardW / pnCardH, child: img)),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _PreviewSheet extends StatefulWidget {
+  final AppStrings strings;
+  final IdCardStudentData student;
+  final Future<PnCardSchool> schoolFuture;
+  final PnCardPhotoCache photos;
+  final VoidCallback onPdf;
+  const _PreviewSheet({required this.strings, required this.student, required this.schoolFuture, required this.photos, required this.onPdf});
+
+  @override
+  State<_PreviewSheet> createState() => _PreviewSheetState();
+}
+
+class _PreviewSheetState extends State<_PreviewSheet> {
+  late Future<_Faces> _faces;
+
+  @override
+  void initState() {
+    super.initState();
+    _faces = widget.schoolFuture.then((s) => _renderFaces(s, widget.student, widget.photos));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.strings;
+    return PnSheetBody(
+      title: widget.student.fullName,
+      subtitle: s.pn('Tap the card to flip it.', 'Touchez la carte pour la retourner.'),
+      children: [
+        _FacesView(future: _faces, strings: s, onRetry: () => setState(() => _faces = widget.schoolFuture.then((x) => _renderFaces(x, widget.student, widget.photos)))),
+      ],
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(s.pn('Close', 'Fermer'))),
+        FilledButton.icon(onPressed: widget.onPdf, icon: const Icon(Icons.picture_as_pdf_rounded, size: 18), label: Text(s.pn('Generate PDF', 'Générer le PDF'))),
+      ],
     );
   }
 }

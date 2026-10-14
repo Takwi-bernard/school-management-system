@@ -66,6 +66,10 @@ final pnTrackerProvider = FutureProvider.family<List<PnTrackerRow>, String>((ref
   return ref.watch(principalHubRepositoryProvider).getMarksTracker(periodId);
 });
 
+final pnReviewSummaryProvider = FutureProvider.family<List<Map<String, dynamic>>, String>((ref, periodId) {
+  return ref.watch(principalHubRepositoryProvider).getMarksReviewSummary(periodId);
+});
+
 /// One realtime channel for the whole Principal shell. Bursts of changes
 /// are coalesced (800 ms) into a single refresh of the live numbers.
 final pnRealtimeProvider = Provider.family<void, String>((ref, schoolId) {

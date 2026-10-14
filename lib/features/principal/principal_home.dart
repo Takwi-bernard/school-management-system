@@ -153,13 +153,13 @@ class _PrincipalShellState extends ConsumerState<_PrincipalShell> {
       case PnNav.calendar:
         return PrincipalCalendarPage(schoolId: _schoolId, strings: _s);
       case PnNav.marksWindow:
-        return MarksWindowPage(schoolId: _schoolId);
+        return MarksWindowPage(schoolId: _schoolId, strings: _s);
       case PnNav.tracker:
         return PrincipalTrackerPage(strings: _s);
       case PnNav.marksReview:
-        return MarksReviewPage(schoolId: _schoolId);
+        return MarksReviewPage(schoolId: _schoolId, strings: _s);
       case PnNav.comments:
-        return PendingCommentsPage(schoolId: _schoolId);
+        return PendingCommentsPage(schoolId: _schoolId, strings: _s);
       case PnNav.cards:
         return PrincipalCardsPage(schoolId: _schoolId, landing: widget.landing, strings: _s);
       case PnNav.promotion:
@@ -167,25 +167,25 @@ class _PrincipalShellState extends ConsumerState<_PrincipalShell> {
       case PnNav.students:
         return PrincipalStudentsPage(schoolId: _schoolId, strings: _s);
       case PnNav.admissions:
-        return AdmissionsReviewPage(schoolId: _schoolId);
+        return AdmissionsReviewPage(schoolId: _schoolId, strings: _s);
       case PnNav.teachers:
-        return TeacherOverviewPage(schoolId: _schoolId);
+        return TeacherOverviewPage(schoolId: _schoolId, strings: _s);
       case PnNav.slots:
-        return CreateTeachingSlotPage(schoolId: _schoolId);
+        return CreateTeachingSlotPage(schoolId: _schoolId, strings: _s);
       case PnNav.classes:
-        return ManageClassesPage(schoolId: _schoolId);
+        return ManageClassesPage(schoolId: _schoolId, strings: _s);
       case PnNav.subjects:
-        return SubjectBrowsePage(schoolId: _schoolId);
+        return SubjectBrowsePage(schoolId: _schoolId, strings: _s);
       case PnNav.fees:
-        return ManageFeesEntryPage(schoolId: _schoolId);
+        return ManageFeesEntryPage(schoolId: _schoolId, strings: _s);
       case PnNav.idCards:
-        return IdCardManagementPage(schoolId: _schoolId, landing: widget.landing);
+        return IdCardManagementPage(schoolId: _schoolId, landing: widget.landing, strings: _s);
       case PnNav.ttSettings:
-        return TimetableSettingsPage(schoolId: _schoolId);
+        return TimetableSettingsPage(schoolId: _schoolId, strings: _s);
       case PnNav.ttGenerate:
-        return GenerateTimetablePage(schoolId: _schoolId);
+        return GenerateTimetablePage(schoolId: _schoolId, strings: _s);
       case PnNav.ttView:
-        return ViewTimetablePage(schoolId: _schoolId, landing: widget.landing);
+        return ViewTimetablePage(schoolId: _schoolId, landing: widget.landing, strings: _s);
       case PnNav.corrections:
         return PrincipalCorrectionsPage(strings: _s);
       case PnNav.arrears:
