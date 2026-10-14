@@ -225,6 +225,11 @@ class ProprietorRepository {
     await _client.from('expenses').delete().eq('id', id);
   }
 
+  /// Acknowledges an expense the principal flagged for being large.
+  Future<void> reviewExpense(String id) async {
+    await _client.rpc('proprietor_review_expense', params: {'p_expense_id': id});
+  }
+
   // ------------------------------------------------------------ budgets
 
   Future<List<ExpenseBudget>> getBudgets(String schoolId) async {

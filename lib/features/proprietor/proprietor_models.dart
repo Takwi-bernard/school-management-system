@@ -307,6 +307,9 @@ class ExpenseRecord {
   final String? paidTo;
   final String? receiptRef;
   final String recordedBy;
+  final String source; // 'proprietor' | 'principal' | 'teacher_payment' ...
+  final String? place;
+  final bool needsReview; // flagged by the principal's approval threshold
 
   const ExpenseRecord({
     required this.id,
@@ -318,6 +321,9 @@ class ExpenseRecord {
     this.paidTo,
     this.receiptRef,
     required this.recordedBy,
+    this.source = '',
+    this.place,
+    this.needsReview = false,
   });
 
   factory ExpenseRecord.fromMap(Map<String, dynamic> m) {
@@ -332,6 +338,9 @@ class ExpenseRecord {
       paidTo: m['paid_to'] as String?,
       receiptRef: m['receipt_url'] as String?,
       recordedBy: (recorder?['email'] as String?) ?? '',
+      source: m['source'] as String? ?? '',
+      place: m['place'] as String?,
+      needsReview: m['needs_review'] == true,
     );
   }
 }

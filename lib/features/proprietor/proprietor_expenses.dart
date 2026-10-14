@@ -394,6 +394,7 @@ class _ExpenseRow extends StatelessWidget {
             Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.labelSmall?.copyWith(color: cs.outline)),
           ]),
         ),
+        if (expense.needsReview) Padding(padding: const EdgeInsets.only(right: 8), child: Icon(Icons.flag_rounded, size: 18, color: kPending)),
         if (expense.receiptRef != null && expense.receiptRef!.isNotEmpty) Padding(padding: const EdgeInsets.only(right: 8), child: Icon(Icons.attach_file_rounded, size: 16, color: cs.outline)),
         Text(pMoney(expense.amount), style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900)),
       ]),
@@ -467,6 +468,21 @@ class _ExpenseDetailsState extends ConsumerState<_ExpenseDetails> {
     }
   }
 
+  Future<void> _review() async {
+    setState(() => _busy = true);
+    try {
+      await ref.read(proprietorRepositoryProvider).reviewExpense(widget.expense.id);
+      if (!mounted) return;
+      prSnack(context, _s.isFrench ? 'Dépense marquée comme examinée.' : 'Expense marked as reviewed.');
+      Navigator.pop(context, true);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _busy = false);
+        prSnack(context, _s.prExpenseSaveError);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -495,10 +511,28 @@ class _ExpenseDetailsState extends ConsumerState<_ExpenseDetails> {
             ]),
             const SizedBox(height: 6),
             Text(pMoney(e.amount), style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900, color: cs.primary)),
+            if (e.needsReview) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: kPending.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(12), border: Border.all(color: kPending.withValues(alpha: 0.35))),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Icon(Icons.flag_rounded, size: 18, color: kPending),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      s.isFrench ? 'Le Directeur a signalé cette dépense car son montant dépasse le seuil d\'alerte. Vérifiez-la, puis marquez-la comme examinée.' : 'The principal flagged this expense because it is above the alert amount. Check it, then mark it as reviewed.',
+                      style: theme.textTheme.bodySmall?.copyWith(height: 1.4),
+                    ),
+                  ),
+                ]),
+              ),
+            ],
             const SizedBox(height: 12),
             line(s.prExpenseDate, pDate(e.date)),
             line(s.prPaymentMethod, pMethodLabel(s, e.method)),
             if (e.paidTo != null && e.paidTo!.isNotEmpty) line(s.prColPaidTo, e.paidTo!),
+            if (e.place != null && e.place!.isNotEmpty) line(s.isFrench ? 'Lieu' : 'Place', e.place!),
             if (e.description != null && e.description!.isNotEmpty) line(s.prColNote, e.description!),
             if (e.recordedBy.isNotEmpty) line(s.prRecordedBy, e.recordedBy),
             if (e.receiptRef != null && e.receiptRef!.isNotEmpty) ...[
@@ -524,15 +558,28 @@ class _ExpenseDetailsState extends ConsumerState<_ExpenseDetails> {
             const SizedBox(height: 18),
             Row(children: [
               Expanded(child: OutlinedButton(onPressed: _busy ? null : () => Navigator.pop(context, false), child: Text(s.prClose))),
-              const SizedBox(width: 10),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _busy ? null : _delete,
-                  style: FilledButton.styleFrom(backgroundColor: cs.error, foregroundColor: cs.onError),
-                  icon: _busy ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.delete_outline_rounded, size: 18),
-                  label: Text(s.prDelete),
+              if (e.needsReview) ...[
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _busy ? null : _review,
+                    icon: _busy ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.check_rounded, size: 18),
+                    label: Text(s.isFrench ? 'Marquer examinée' : 'Mark reviewed'),
+                  ),
                 ),
-              ),
+              ],
+              // a teacher payment is cancelled by the principal, never deleted here
+              if (e.source != 'teacher_payment') ...[
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _busy ? null : _delete,
+                    style: FilledButton.styleFrom(backgroundColor: cs.error, foregroundColor: cs.onError),
+                    icon: _busy && !e.needsReview ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.delete_outline_rounded, size: 18),
+                    label: Text(s.prDelete),
+                  ),
+                ),
+              ],
             ]),
           ]),
         ),
