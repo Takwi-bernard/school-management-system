@@ -35,6 +35,7 @@ class PnNav {
   static const ttGenerate = 'tt_generate';
   static const ttView = 'tt_view';
   static const settings = 'settings';
+  static const insights = 'insights';
 }
 
 class PrincipalOverviewPage extends ConsumerWidget {

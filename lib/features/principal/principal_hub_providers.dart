@@ -18,6 +18,21 @@ final pnOverviewProvider = FutureProvider<PnOverview>((ref) {
   return ref.watch(principalHubRepositoryProvider).getOverview();
 });
 
+/// Teachers with their assignments; the key is the academic year (null =
+/// the current one).
+final pnTeachersProvider = FutureProvider.family<List<PnTeacher>, String?>((ref, yearId) {
+  return ref.watch(principalHubRepositoryProvider).getTeachers(yearId);
+});
+
+/// Performance analytics for a sequence (null = the latest one with marks).
+final pnAnalyticsProvider = FutureProvider.family<PnAnalytics, String?>((ref, periodId) {
+  return ref.watch(principalHubRepositoryProvider).getAnalytics(periodId);
+});
+
+final pnAiReportProvider = FutureProvider.family<PnAiReport?, String>((ref, schoolId) {
+  return ref.watch(principalHubRepositoryProvider).getLatestAiReport(schoolId);
+});
+
 final pnCalendarProvider = FutureProvider<List<PnYear>>((ref) {
   return ref.watch(principalHubRepositoryProvider).getCalendar();
 });

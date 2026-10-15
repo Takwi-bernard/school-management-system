@@ -141,7 +141,7 @@ class _AdmissionsReviewPageState extends ConsumerState<AdmissionsReviewPage> {
                       child: PrCard(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Row(children: [
-                            PrAvatar(photoUrl: list[i].photoUrl, name: list[i].fullName, radius: 24),
+                            PnAvatar(stored: list[i].photoUrl, name: list[i].fullName, radius: 24),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -251,7 +251,7 @@ class _StudentDetailSheet extends ConsumerWidget {
           builder: (d) {
             final st = d.student;
             return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Center(child: PrAvatar(photoUrl: st.photoUrl, name: st.fullName, radius: 38)),
+              Center(child: PnAvatar(stored: st.photoUrl, name: st.fullName, radius: 38)),
               const SizedBox(height: 10),
               Text(st.fullName, textAlign: TextAlign.center, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
               Text(st.admissionNumber, textAlign: TextAlign.center, style: theme.textTheme.bodyMedium?.copyWith(color: cs.outline)),

@@ -9,6 +9,7 @@ import 'package:printing/printing.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/l10n/app_strings.dart';
+import '../../core/supabase_providers.dart';
 import '../landing/landing_model.dart';
 import '../parent/parent_providers.dart' show officialBrandingProvider;
 import '../proprietor/proprietor_format.dart';
@@ -46,7 +47,9 @@ class _IdCardManagementPageState extends ConsumerState<IdCardManagementPage> {
   String _classQuery = '';
 
   Future<PnCardSchool>? _schoolFuture;
-  final _photos = PnCardPhotoCache();
+  late final PnCardPhotoCache _photos = PnCardPhotoCache(
+    resolve: (v) => pnSignPhoto(ref.read(supabaseClientProvider), pnStudentPhotos, v),
+  );
   final ValueNotifier<String?> _progress = ValueNotifier<String?>(null);
 
   AppStrings get _s => widget.strings;
@@ -339,7 +342,7 @@ class _IdCardManagementPageState extends ConsumerState<IdCardManagementPage> {
                       child: PrCard(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         child: Row(children: [
-                          PrAvatar(photoUrl: list[i].photoUrl, name: list[i].fullName, radius: 20),
+                          PnAvatar(stored: list[i].photoUrl, name: list[i].fullName, radius: 20),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

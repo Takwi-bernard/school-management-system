@@ -12,6 +12,7 @@ import '../proprietor/proprietor_export.dart';
 import '../proprietor/proprietor_ui.dart';
 import 'principal_card_pdf.dart';
 import 'principal_core.dart';
+import 'principal_kit.dart';
 import 'principal_hub_models.dart';
 import 'principal_hub_providers.dart';
 
@@ -578,7 +579,7 @@ class _Row extends StatelessWidget {
       child: Row(children: [
         SizedBox(width: 62, child: PnRank(rank: row.rank, total: row.total)),
         const SizedBox(width: 8),
-        PrAvatar(photoUrl: row.photo, name: row.fullName, radius: 19),
+        PnAvatar(stored: row.photo, name: row.fullName, radius: 19),
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

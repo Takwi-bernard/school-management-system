@@ -28,6 +28,56 @@ class PrincipalHubRepository {
 
   Future<PnOverview> getOverview() async => PnOverview.fromMap(await _map('principal_overview'));
 
+  // ------------------------------------------------------------ teachers
+
+  /// Every teacher at the school with email, photo and the assignments of
+  /// the given year (the current year when null).
+  Future<List<PnTeacher>> getTeachers(String? yearId) async {
+    final res = await _client.rpc('principal_teachers', params: {'p_year': yearId});
+    return pnList(res).map(PnTeacher.fromMap).toList();
+  }
+
+  // ------------------------------------------------------------ analytics
+
+  Future<PnAnalytics> getAnalytics(String? periodId) async =>
+      PnAnalytics.fromMap(await _map('principal_analytics', {'p_period': periodId}));
+
+  Future<PnAiReport?> getLatestAiReport(String schoolId) async {
+    final row = await _client
+        .from('principal_ai_reports')
+        .select()
+        .eq('school_id', schoolId)
+        .order('generated_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
+    return row == null ? null : PnAiReport.fromMap(Map<String, dynamic>.from(row));
+  }
+
+  Future<Map<String, dynamic>> _invokeAi(Map<String, dynamic> body) async {
+    try {
+      final res = await _client.functions.invoke('analyze-principal-insights', body: body);
+      final data = res.data;
+      if (data is! Map) throw Exception('Bad response');
+      final map = Map<String, dynamic>.from(data);
+      if (map['success'] != true) throw Exception(map['message'] ?? 'Request failed');
+      return map;
+    } on FunctionException catch (e) {
+      final d = e.details;
+      final msg = d is Map ? d['message'] : null;
+      throw Exception(msg ?? 'Request failed (${e.status})');
+    }
+  }
+
+  Future<PnAiReport> generateAiReport({required String lang, String? periodId}) async {
+    final map = await _invokeAi({'mode': 'report', 'lang': lang, 'period_id': periodId});
+    return PnAiReport.fromMap(Map<String, dynamic>.from(map['report'] as Map));
+  }
+
+  Future<String> askAi({required String lang, required String question, String? periodId}) async {
+    final map = await _invokeAi({'mode': 'ask', 'lang': lang, 'question': question, 'period_id': periodId});
+    return '${map['answer'] ?? ''}';
+  }
+
   // ------------------------------------------------------------ settings
 
   Future<PnSettings> getSettings(String schoolId) async {

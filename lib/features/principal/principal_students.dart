@@ -6,6 +6,7 @@ import '../proprietor/proprietor_format.dart';
 import '../proprietor/proprietor_ui.dart';
 import 'principal_admissions.dart' show CreateStudentByPrincipalPage, pnShowStudentDetail;
 import 'principal_core.dart';
+import 'principal_kit.dart';
 import 'principal_hub_models.dart';
 import 'principal_hub_providers.dart';
 
@@ -242,7 +243,7 @@ class _PrincipalStudentsPageState extends ConsumerState<PrincipalStudentsPage> {
       child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Row(children: [
-        PrAvatar(photoUrl: st.photo, name: st.fullName, radius: 20),
+        PnAvatar(stored: st.photo, name: st.fullName, radius: 20),
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

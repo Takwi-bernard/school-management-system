@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/l10n/app_strings.dart';
+import '../../core/supabase_providers.dart';
 import '../proprietor/proprietor_ui.dart';
 import 'principal_core.dart';
 
@@ -60,6 +62,12 @@ class PnSkeletonList extends StatelessWidget {
   }
 }
 
+/// Short technical description of an error, shown under the friendly text.
+String pnErrorDetail(Object e) {
+  final raw = e.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+  return raw.length > 300 ? '${raw.substring(0, 300)}…' : raw;
+}
+
 /// A friendly, bilingual error card with a retry button.
 class PnErrorBox extends StatelessWidget {
   final AppStrings strings;
@@ -81,6 +89,8 @@ class PnErrorBox extends StatelessWidget {
         Text(strings.pn('We could not load this', 'Impossible de charger ceci'), style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
         const SizedBox(height: 6),
         Text(pnErr(strings, error), textAlign: TextAlign.center, style: theme.textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant, height: 1.4)),
+        const SizedBox(height: 8),
+        SelectableText(pnErrorDetail(error), textAlign: TextAlign.center, style: theme.textTheme.labelSmall?.copyWith(color: cs.outline, fontFamily: 'monospace')),
         if (onRetry != null) ...[
           const SizedBox(height: 16),
           FilledButton.tonalIcon(onPressed: onRetry, icon: const Icon(Icons.refresh_rounded, size: 18), label: Text(strings.pn('Try again', 'Réessayer'))),
@@ -326,4 +336,66 @@ Color pnSubjectInk(String name, Brightness b) {
 /// Watches the live tick so a page can reload quietly.
 void pnListenTick(WidgetRef ref, void Function() onTick, StateProvider<int> tick) {
   ref.listen<int>(tick, (_, __) => onTick());
+}
+
+
+// ================================================================ photos
+//
+// Student photos live in a PRIVATE bucket and staff photos in a bucket
+// that may also be private, so a stored value can never be shown as a
+// plain link: it has to be exchanged for a short-lived signed link first
+// (the parent screens do exactly this). The stored value is either a bare
+// path or an older full URL; both are understood.
+
+const pnStudentPhotos = 'student-photos';
+const pnStaffPhotos = 'staff-photos';
+
+String? pnPhotoPath(String bucket, String stored) {
+  final v = stored.trim();
+  if (v.isEmpty) return null;
+  if (!v.startsWith('http')) {
+    return v.startsWith('$bucket/') ? v.substring(bucket.length + 1) : v;
+  }
+  final marker = '/$bucket/';
+  final i = v.indexOf(marker);
+  if (i == -1) return null;
+  return Uri.decodeComponent(v.substring(i + marker.length).split('?').first);
+}
+
+/// Returns a link that can actually be loaded, or null when there is no
+/// photo (or it cannot be reached).
+Future<String?> pnSignPhoto(SupabaseClient client, String bucket, String? stored) async {
+  if (stored == null || stored.trim().isEmpty) return null;
+  final fallback = stored.startsWith('http') ? stored : null;
+  final path = pnPhotoPath(bucket, stored);
+  if (path == null) return fallback;
+  try {
+    return await client.storage.from(bucket).createSignedUrl(path, 6 * 60 * 60);
+  } catch (_) {
+    return fallback;
+  }
+}
+
+typedef PnPhotoKey = ({String bucket, String stored});
+
+final pnPhotoUrlProvider = FutureProvider.family<String?, PnPhotoKey>((ref, k) {
+  return pnSignPhoto(ref.watch(supabaseClientProvider), k.bucket, k.stored);
+});
+
+/// Round photo that signs its link first and falls back to initials.
+class PnAvatar extends ConsumerWidget {
+  final String? stored;
+  final String name;
+  final double radius;
+  final String bucket;
+  final bool onDark;
+  const PnAvatar({super.key, required this.stored, required this.name, this.radius = 20, this.bucket = pnStudentPhotos, this.onDark = false});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final v = stored;
+    if (v == null || v.trim().isEmpty) return PrAvatar(name: name, radius: radius, onDark: onDark);
+    final url = ref.watch(pnPhotoUrlProvider((bucket: bucket, stored: v)));
+    return PrAvatar(photoUrl: url.valueOrNull, name: name, radius: radius, onDark: onDark);
+  }
 }

@@ -22,6 +22,7 @@ import 'principal_expenses.dart';
 import 'principal_hub_models.dart' show PnOverview;
 import 'principal_hub_providers.dart';
 import 'principal_id_cards.dart';
+import 'principal_insights.dart';
 import 'principal_marks.dart';
 import 'principal_overview.dart';
 import 'principal_promotion.dart';
@@ -110,6 +111,7 @@ class _PrincipalShellState extends ConsumerState<_PrincipalShell> {
   List<_NavGroup> _groups() => [
         _NavGroup(title: '', items: [
           _NavItem(key: PnNav.overview, icon: Icons.space_dashboard_outlined, activeIcon: Icons.space_dashboard_rounded, title: _s.pn('Overview', 'Vue d\'ensemble')),
+          _NavItem(key: PnNav.insights, icon: Icons.insights_outlined, activeIcon: Icons.insights_rounded, title: _s.pn('Performance & AI', 'Performance et IA')),
         ]),
         _NavGroup(title: _s.pn('Academics', 'Scolarité'), items: [
           _NavItem(key: PnNav.calendar, icon: Icons.event_note_outlined, activeIcon: Icons.event_note_rounded, title: _s.pn('Academic calendar', 'Calendrier scolaire')),
@@ -150,6 +152,8 @@ class _PrincipalShellState extends ConsumerState<_PrincipalShell> {
 
   Widget _bodyFor(String key) {
     switch (key) {
+      case PnNav.insights:
+        return PrincipalInsightsPage(schoolId: _schoolId, strings: _s);
       case PnNav.calendar:
         return PrincipalCalendarPage(schoolId: _schoolId, strings: _s);
       case PnNav.marksWindow:

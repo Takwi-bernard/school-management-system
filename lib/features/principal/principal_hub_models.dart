@@ -1039,3 +1039,251 @@ class PnPeriodOption {
   final int order;
   const PnPeriodOption({required this.id, required this.name, required this.termId, required this.termName, required this.order});
 }
+
+
+// ============================================================ teachers
+
+class PnTeacherSlot {
+  final String id;
+  final String className;
+  final String subjectName;
+  final int periodsPerWeek;
+  const PnTeacherSlot({required this.id, required this.className, required this.subjectName, required this.periodsPerWeek});
+
+  factory PnTeacherSlot.fromMap(Map<String, dynamic> m) => PnTeacherSlot(
+        id: pnS(m['id']),
+        className: pnS(m['class_name']),
+        subjectName: pnS(m['subject_name']),
+        periodsPerWeek: pnI(m['periods_per_week']),
+      );
+}
+
+class PnTeacher {
+  final String id;
+  final String userId;
+  final String fullName;
+  final String? phone;
+  final String? email;
+  final bool isApproved;
+  final String? photo;
+  final List<PnTeacherSlot> assignments;
+  const PnTeacher({
+    required this.id,
+    required this.userId,
+    required this.fullName,
+    this.phone,
+    this.email,
+    required this.isApproved,
+    this.photo,
+    this.assignments = const [],
+  });
+
+  bool get isAssigned => assignments.isNotEmpty;
+
+  factory PnTeacher.fromMap(Map<String, dynamic> m) => PnTeacher(
+        id: pnS(m['id']),
+        userId: pnS(m['user_id']),
+        fullName: pnS(m['full_name']),
+        phone: pnSn(m['phone']),
+        email: pnSn(m['email']),
+        isApproved: pnB(m['is_approved']),
+        photo: pnSn(m['photo_url']),
+        assignments: pnList(m['assignments']).map(PnTeacherSlot.fromMap).toList(),
+      );
+}
+
+
+// ============================================================ analytics
+
+class PnAnPeriod {
+  final String id;
+  final String name;
+  final int order;
+  final bool hasMarks;
+  const PnAnPeriod({required this.id, required this.name, required this.order, required this.hasMarks});
+  factory PnAnPeriod.fromMap(Map<String, dynamic> m) =>
+      PnAnPeriod(id: pnS(m['id']), name: pnS(m['name']), order: pnI(m['order']), hasMarks: pnB(m['has_marks']));
+}
+
+class PnAnTrend {
+  final String id;
+  final String name;
+  final double? average;
+  final double? passRate;
+  final int students;
+  const PnAnTrend({required this.id, required this.name, this.average, this.passRate, required this.students});
+  factory PnAnTrend.fromMap(Map<String, dynamic> m) => PnAnTrend(
+        id: pnS(m['id']),
+        name: pnS(m['name']),
+        average: pnDn(m['average']),
+        passRate: pnDn(m['pass_rate']),
+        students: pnI(m['students']),
+      );
+}
+
+/// A class, subject or teacher row: a name with an average and pass rate.
+class PnAnRow {
+  final String id;
+  final String name;
+  final String? photo;
+  final int count; // students (class), marks (subject / teacher)
+  final int extra; // classes taught (teacher)
+  final double? average;
+  final double? passRate;
+  const PnAnRow({required this.id, required this.name, this.photo, required this.count, this.extra = 0, this.average, this.passRate});
+
+  factory PnAnRow.fromMap(Map<String, dynamic> m) => PnAnRow(
+        id: pnS(m['id']),
+        name: pnS(m['name']),
+        photo: pnSn(m['photo']),
+        count: pnI(m['students'] ?? m['marks']),
+        extra: pnI(m['classes']),
+        average: pnDn(m['average']),
+        passRate: pnDn(m['pass_rate']),
+      );
+}
+
+class PnAnPerson {
+  final String id;
+  final String name;
+  final String? photo;
+  final String className;
+  final double average;
+  const PnAnPerson({required this.id, required this.name, this.photo, required this.className, required this.average});
+  factory PnAnPerson.fromMap(Map<String, dynamic> m) => PnAnPerson(
+        id: pnS(m['id']),
+        name: pnS(m['name']),
+        photo: pnSn(m['photo']),
+        className: pnS(m['class']),
+        average: pnD(m['average']),
+      );
+}
+
+class PnAnGender {
+  final String gender;
+  final int students;
+  final double? average;
+  final double? passRate;
+  const PnAnGender({required this.gender, required this.students, this.average, this.passRate});
+  factory PnAnGender.fromMap(Map<String, dynamic> m) => PnAnGender(
+        gender: pnS(m['gender']),
+        students: pnI(m['students']),
+        average: pnDn(m['average']),
+        passRate: pnDn(m['pass_rate']),
+      );
+}
+
+class PnAnalytics {
+  final double passMark;
+  final String? periodId;
+  final List<PnAnPeriod> periods;
+  final int students;
+  final double? average;
+  final double? passRate;
+  final double? best;
+  final double? lowest;
+  final int marksApproved;
+  final int marksWaiting;
+  final int enrolled;
+  final List<PnAnTrend> trend;
+  final List<PnAnRow> classes;
+  final List<PnAnRow> subjects;
+  final List<PnAnRow> teachers;
+  final List<MapEntry<String, int>> distribution;
+  final List<PnAnGender> gender;
+  final int atRiskCount;
+  final List<PnAnPerson> atRisk;
+  final List<PnAnPerson> top;
+  final double due;
+  final double paid;
+  final int debtors;
+  final double? collectionRate;
+
+  const PnAnalytics({
+    required this.passMark,
+    required this.periodId,
+    required this.periods,
+    required this.students,
+    required this.average,
+    required this.passRate,
+    required this.best,
+    required this.lowest,
+    required this.marksApproved,
+    required this.marksWaiting,
+    required this.enrolled,
+    required this.trend,
+    required this.classes,
+    required this.subjects,
+    required this.teachers,
+    required this.distribution,
+    required this.gender,
+    required this.atRiskCount,
+    required this.atRisk,
+    required this.top,
+    required this.due,
+    required this.paid,
+    required this.debtors,
+    required this.collectionRate,
+  });
+
+  bool get hasMarks => students > 0;
+
+  factory PnAnalytics.fromMap(Map<String, dynamic> m) {
+    final h = pnMap(m['headline']);
+    final f = pnMap(m['finance']);
+    return PnAnalytics(
+      passMark: pnD(m['pass_mark']),
+      periodId: pnSn(m['period_id']),
+      periods: pnList(m['periods']).map(PnAnPeriod.fromMap).toList(),
+      students: pnI(h['students']),
+      average: pnDn(h['average']),
+      passRate: pnDn(h['pass_rate']),
+      best: pnDn(h['best']),
+      lowest: pnDn(h['lowest']),
+      marksApproved: pnI(h['marks_approved']),
+      marksWaiting: pnI(h['marks_waiting']),
+      enrolled: pnI(h['enrolled']),
+      trend: pnList(m['trend']).map(PnAnTrend.fromMap).toList(),
+      classes: pnList(m['classes']).map(PnAnRow.fromMap).toList(),
+      subjects: pnList(m['subjects']).map(PnAnRow.fromMap).toList(),
+      teachers: pnList(m['teachers']).map(PnAnRow.fromMap).toList(),
+      distribution: pnList(m['distribution']).map((e) => MapEntry(pnS(e['label']), pnI(e['count']))).toList(),
+      gender: pnList(m['gender']).map(PnAnGender.fromMap).toList(),
+      atRiskCount: pnI(m['at_risk_count']),
+      atRisk: pnList(m['at_risk']).map(PnAnPerson.fromMap).toList(),
+      top: pnList(m['top']).map(PnAnPerson.fromMap).toList(),
+      due: pnD(f['due']),
+      paid: pnD(f['paid']),
+      debtors: pnI(f['debtors']),
+      collectionRate: pnDn(f['collection_rate']),
+    );
+  }
+}
+
+class PnAiReport {
+  final String id;
+  final String summary;
+  final List<String> strengths;
+  final List<String> concerns;
+  final List<String> recommendations;
+  final DateTime generatedAt;
+  const PnAiReport({
+    required this.id,
+    required this.summary,
+    required this.strengths,
+    required this.concerns,
+    required this.recommendations,
+    required this.generatedAt,
+  });
+
+  static List<String> _strings(Object? v) => v is List ? v.map((e) => '$e').where((e) => e.trim().isNotEmpty).toList() : <String>[];
+
+  factory PnAiReport.fromMap(Map<String, dynamic> m) => PnAiReport(
+        id: pnS(m['id']),
+        summary: pnS(m['summary']),
+        strengths: _strings(m['strengths']),
+        concerns: _strings(m['concerns']),
+        recommendations: _strings(m['recommendations']),
+        generatedAt: pnDt(m['generated_at'])?.toLocal() ?? DateTime.now(),
+      );
+}

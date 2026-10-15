@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/l10n/app_strings.dart';
 import '../proprietor/proprietor_ui.dart';
 import 'principal_core.dart';
+import 'principal_hub_models.dart';
 import 'principal_hub_providers.dart';
 import 'principal_kit.dart';
 import 'principal_models.dart';
@@ -262,7 +263,7 @@ class _SelectTeacherDialogState extends ConsumerState<SelectTeacherDialog> {
 
   AppStrings get _s => widget.strings;
 
-  Future<void> _confirm(AllTeacherProfile t) async {
+  Future<void> _confirm(PnTeacher t) async {
     final s = _s;
     final ok = await pnConfirm(
       context,
@@ -276,7 +277,7 @@ class _SelectTeacherDialogState extends ConsumerState<SelectTeacherDialog> {
       confirmLabel: t.isApproved ? s.pn('Assign', 'Affecter') : s.pn('Approve & assign', 'Approuver et affecter'),
     );
     if (!ok || !mounted) return;
-    setState(() => _busyId = t.teacherId);
+    setState(() => _busyId = t.id);
     try {
       final repo = ref.read(principalRepositoryProvider);
       final yearId = await repo.getCurrentAcademicYearId(widget.schoolId);
@@ -286,7 +287,7 @@ class _SelectTeacherDialogState extends ConsumerState<SelectTeacherDialog> {
       await repo.approveAndAssign(
         schoolId: widget.schoolId,
         academicYearId: yearId,
-        teacherId: t.teacherId,
+        teacherId: t.id,
         wasAlreadyApproved: t.isApproved,
         principalId: principal.principalId,
         classId: widget.classId,
@@ -296,7 +297,7 @@ class _SelectTeacherDialogState extends ConsumerState<SelectTeacherDialog> {
         preferredStartTime: widget.preferredStartTime,
         preferredEndTime: widget.preferredEndTime,
       );
-      ref.invalidate(allTeachersProvider(widget.schoolId));
+      ref.invalidate(pnTeachersProvider);
       ref.invalidate(pnOverviewProvider);
       if (mounted) {
         final nav = Navigator.of(context);
@@ -311,7 +312,7 @@ class _SelectTeacherDialogState extends ConsumerState<SelectTeacherDialog> {
     }
   }
 
-  Future<void> _reject(AllTeacherProfile t) async {
+  Future<void> _reject(PnTeacher t) async {
     final s = _s;
     final ok = await pnConfirm(
       context,
@@ -325,8 +326,8 @@ class _SelectTeacherDialogState extends ConsumerState<SelectTeacherDialog> {
     try {
       final principal = await ref.read(principalProfileProvider.future);
       if (principal == null) throw Exception('profile');
-      await ref.read(principalRepositoryProvider).rejectTeacher(t.teacherId, principal.principalId);
-      ref.invalidate(allTeachersProvider(widget.schoolId));
+      await ref.read(principalRepositoryProvider).rejectTeacher(t.id, principal.principalId);
+      ref.invalidate(pnTeachersProvider);
       ref.invalidate(pnOverviewProvider);
     } catch (e) {
       if (mounted) prSnack(context, pnErr(s, e));
@@ -338,7 +339,7 @@ class _SelectTeacherDialogState extends ConsumerState<SelectTeacherDialog> {
     final s = _s;
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final async = ref.watch(allTeachersProvider(widget.schoolId));
+    final async = ref.watch(pnTeachersProvider(null));
     return SizedBox(
       height: MediaQuery.sizeOf(context).height * 0.8,
       child: Padding(
@@ -352,10 +353,10 @@ class _SelectTeacherDialogState extends ConsumerState<SelectTeacherDialog> {
           const SizedBox(height: 12),
           Expanded(
             child: SingleChildScrollView(
-              child: PnAsync<List<AllTeacherProfile>>(
+              child: PnAsync<List<PnTeacher>>(
                 value: async,
                 strings: s,
-                onRetry: () => ref.invalidate(allTeachersProvider(widget.schoolId)),
+                onRetry: () => ref.invalidate(pnTeachersProvider),
                 isEmpty: (d) => d.isEmpty,
                 empty: PnEmpty(icon: Icons.person_off_rounded, title: s.pn('No teachers yet', 'Aucun enseignant'), text: s.pn('Teachers who sign up at this school will appear here.', 'Les enseignants qui s’inscrivent dans cet établissement apparaîtront ici.')),
                 builder: (all) {
@@ -370,7 +371,7 @@ class _SelectTeacherDialogState extends ConsumerState<SelectTeacherDialog> {
                           child: PrCard(
                             padding: const EdgeInsets.all(12),
                             child: Row(children: [
-                              PrAvatar(name: list[i].fullName, radius: 20),
+                              PnAvatar(stored: list[i].photo, bucket: pnStaffPhotos, name: list[i].fullName, radius: 20),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -384,7 +385,7 @@ class _SelectTeacherDialogState extends ConsumerState<SelectTeacherDialog> {
                               if (!list[i].isApproved) IconButton(icon: Icon(Icons.close_rounded, color: cs.error), tooltip: s.pn('Reject', 'Refuser'), onPressed: _busyId != null ? null : () => _reject(list[i])),
                               FilledButton(
                                 onPressed: _busyId != null ? null : () => _confirm(list[i]),
-                                child: _busyId == list[i].teacherId ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : Text(list[i].isApproved ? s.pn('Assign', 'Affecter') : s.pn('Approve & assign', 'Approuver')),
+                                child: _busyId == list[i].id ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : Text(list[i].isApproved ? s.pn('Assign', 'Affecter') : s.pn('Approve & assign', 'Approuver')),
                               ),
                             ]),
                           ),
@@ -448,13 +449,11 @@ class _TeacherOverviewPageState extends ConsumerState<TeacherOverviewPage> {
     final s = _s;
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final yearAsync = ref.watch(principalCurrentAcademicYearIdProvider(widget.schoolId));
+    final async = ref.watch(pnTeachersProvider(null));
     return PrPage(
       maxWidth: 900,
       onRefresh: () async {
-        ref.invalidate(principalCurrentAcademicYearIdProvider(widget.schoolId));
-        final y = await ref.read(principalCurrentAcademicYearIdProvider(widget.schoolId).future);
-        if (y != null) await ref.refresh(teacherOverviewProvider((schoolId: widget.schoolId, academicYearId: y)).future);
+        await ref.refresh(pnTeachersProvider(null).future);
       },
       children: [
         PrHeader(
@@ -462,33 +461,25 @@ class _TeacherOverviewPageState extends ConsumerState<TeacherOverviewPage> {
           subtitle: s.pn('Every teacher who signed up at this school, assigned or not.', 'Tous les enseignants inscrits dans cet établissement, affectés ou non.'),
         ),
         const SizedBox(height: 16),
-        PnAsync<String?>(
-          value: yearAsync,
-          strings: s,
-          onRetry: () => ref.invalidate(principalCurrentAcademicYearIdProvider(widget.schoolId)),
-          isEmpty: (y) => y == null,
-          empty: PnEmpty(icon: Icons.event_busy_rounded, title: s.pn('No current academic year', 'Aucune année scolaire en cours'), text: s.pn('Set the current year in the Calendar.', 'Définissez l’année en cours dans le Calendrier.')),
-          builder: (yearId) {
-            final key = (schoolId: widget.schoolId, academicYearId: yearId!);
-            final async = ref.watch(teacherOverviewProvider(key));
-            return PnAsync<List<TeacherOverviewInfo>>(
+        Builder(builder: (context) {
+            return PnAsync<List<PnTeacher>>(
               value: async,
               strings: s,
-              onRetry: () => ref.invalidate(teacherOverviewProvider(key)),
+              onRetry: () => ref.invalidate(pnTeachersProvider),
               isEmpty: (d) => d.isEmpty,
               empty: PnEmpty(icon: Icons.school_rounded, title: s.pn('No teachers yet', 'Aucun enseignant'), text: s.pn('Teachers who sign up will appear here.', 'Les enseignants inscrits apparaîtront ici.')),
               builder: (all) {
-                final assigned = all.where((t) => t.profile.isApproved && t.isAssigned).length;
-                final pending = all.where((t) => !t.profile.isApproved).length;
-                final free = all.where((t) => t.profile.isApproved && !t.isAssigned).length;
+                final assigned = all.where((t) => t.isApproved && t.isAssigned).length;
+                final pending = all.where((t) => !t.isApproved).length;
+                final free = all.where((t) => t.isApproved && !t.isAssigned).length;
                 final q = _query.trim().toLowerCase();
                 final list = all.where((t) {
-                  final matchQ = q.isEmpty || t.profile.fullName.toLowerCase().contains(q);
+                  final matchQ = q.isEmpty || t.fullName.toLowerCase().contains(q);
                   final matchF = switch (_filter) {
                     _TeacherFilter.all => true,
-                    _TeacherFilter.assigned => t.profile.isApproved && t.isAssigned,
-                    _TeacherFilter.unassigned => t.profile.isApproved && !t.isAssigned,
-                    _TeacherFilter.pending => !t.profile.isApproved,
+                    _TeacherFilter.assigned => t.isApproved && t.isAssigned,
+                    _TeacherFilter.unassigned => t.isApproved && !t.isAssigned,
+                    _TeacherFilter.pending => !t.isApproved,
                   };
                   return matchQ && matchF;
                 }).toList();
@@ -516,8 +507,7 @@ class _TeacherOverviewPageState extends ConsumerState<TeacherOverviewPage> {
                 ]);
               },
             );
-          },
-        ),
+        }),
       ],
     );
   }
@@ -525,7 +515,7 @@ class _TeacherOverviewPageState extends ConsumerState<TeacherOverviewPage> {
 
 class _TeacherTile extends StatelessWidget {
   final AppStrings strings;
-  final TeacherOverviewInfo info;
+  final PnTeacher info;
   const _TeacherTile({required this.strings, required this.info});
 
   @override
@@ -533,7 +523,7 @@ class _TeacherTile extends StatelessWidget {
     final s = strings;
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final t = info.profile;
+    final t = info;
     final periods = info.assignments.fold<int>(0, (a, x) => a + x.periodsPerWeek);
     return PrCard(
       padding: EdgeInsets.zero,
@@ -543,7 +533,7 @@ class _TeacherTile extends StatelessWidget {
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           expandedCrossAxisAlignment: CrossAxisAlignment.start,
-          leading: PrAvatar(name: t.fullName, radius: 20),
+          leading: PnAvatar(stored: t.photo, bucket: pnStaffPhotos, name: t.fullName, radius: 20),
           title: Text(t.fullName, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 4),

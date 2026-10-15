@@ -81,13 +81,21 @@ class PnCardSchool {
 }
 
 class PnCardPhotoCache {
+  /// Turns a stored photo value into a link that can be downloaded (the
+  /// photos are in a private bucket, so they must be signed first).
+  final Future<String?> Function(String stored)? resolve;
+  PnCardPhotoCache({this.resolve});
+
   final Map<String, ui.Image?> _cache = {};
 
-  Future<ui.Image?> get(String? url) async {
-    if (url == null || url.isEmpty) return null;
-    if (_cache.containsKey(url)) return _cache[url];
+  Future<ui.Image?> get(String? stored) async {
+    if (stored == null || stored.isEmpty) return null;
+    if (_cache.containsKey(stored)) return _cache[stored];
+    String? url = stored;
+    if (resolve != null) url = await resolve!(stored);
     final img = await PnCardSchool.fetchImage(url, maxWidth: 480);
-    _cache[url] = img;
+    // A failed download is not remembered, so a retry can succeed.
+    if (img != null) _cache[stored] = img;
     return img;
   }
 }
