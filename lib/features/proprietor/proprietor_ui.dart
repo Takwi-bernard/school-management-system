@@ -625,6 +625,12 @@ class PrEmpty extends StatelessWidget {
   }
 }
 
+/// Short technical description of an error (database message, code, hint).
+String prErrorDetail(Object e) {
+  final raw = e.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+  return raw.length > 300 ? '${raw.substring(0, 300)}…' : raw;
+}
+
 class PrError extends StatelessWidget {
   final Object error;
   final AppStrings strings;
@@ -643,6 +649,17 @@ class PrError extends StatelessWidget {
           Text(strings.prSomethingWrong, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
           const SizedBox(height: 6),
           Text(strings.prCheckConnection, textAlign: TextAlign.center, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+          const SizedBox(height: 10),
+          // Technical detail so a real database problem is not mistaken for
+          // a connection problem.
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: SelectableText(
+              prErrorDetail(error),
+              textAlign: TextAlign.center,
+              style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.outline.withValues(alpha: 0.8), fontFamily: 'monospace'),
+            ),
+          ),
           const SizedBox(height: 16),
           OutlinedButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh_rounded, size: 18), label: Text(strings.prRetry)),
         ]),
