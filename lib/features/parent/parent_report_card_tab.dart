@@ -5,23 +5,17 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
-import '../../core/error_state.dart';
 import '../../core/l10n/app_strings.dart';
-import '../../core/responsive.dart';
 import '../../shared/official_document_branding.dart';
 import '../landing/landing_model.dart';
+import '../proprietor/proprietor_ui.dart';
 import 'parent_models.dart';
 import 'parent_providers.dart';
+import 'parent_ui.dart';
 
-/// In-shell report card viewer: term picker, a summary hero (average
-/// and, once the school's data provides it, class position), one card
-/// per subject, the Principal's remark, and a PDF download. Same
-/// visual language as the rest of the module - brand-color tints only,
-/// no invented hues.
-///
-/// Assumption worth knowing: the per-subject bars treat marks as being
-/// out of 20 (marks.score is constrained to 0-20 in the database, and
-/// subject_results are derived from it).
+/// In-shell report card viewer: term picker, a summary hero (average and
+/// class position), one card per subject, the Principal's remark, and a
+/// PDF download. Marks are treated as out of 20.
 class ParentReportCardTab extends ConsumerStatefulWidget {
   final EnrolledChild child;
   final LandingModel landing;
@@ -63,9 +57,7 @@ class _ParentReportCardTabState extends ConsumerState<ParentReportCardTab> {
       );
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
-          widget.strings.isFrench ? 'Échec du téléchargement. Veuillez réessayer.' : 'Download failed. Please try again.',
-        )));
+        prSnack(context, widget.strings.isFrench ? 'Échec du téléchargement. Veuillez réessayer.' : 'Download failed. Please try again.');
       }
     } finally {
       if (mounted) setState(() => _downloading = false);
@@ -76,145 +68,73 @@ class _ParentReportCardTabState extends ConsumerState<ParentReportCardTab> {
   Widget build(BuildContext context) {
     final strings = widget.strings;
     final child = widget.child;
-    final theme = Theme.of(context);
-    final yearIdAsync = ref.watch(currentAcademicYearIdProvider(child.schoolId));
+    final fr = strings.isFrench;
+    final cs = Theme.of(context).colorScheme;
+    final yearAsync = ref.watch(currentAcademicYearIdProvider(child.schoolId));
 
-    return SingleChildScrollView(
-      padding: EdgeInsets.all(Responsive.pagePadding(context)),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(strings.reportCards, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 4),
-              Text(
-                strings.isFrench
-                    ? 'Les résultats publiés de ${child.firstName}. L\'école peut publier par séquence ou pour tout le trimestre - choisissez une période ci-dessous.'
-                    : '${child.firstName}\'s published results. The school can publish per sequence or for the whole term - choose a period below.',
-                style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+    Widget body;
+    if (yearAsync.isLoading && !yearAsync.hasValue) {
+      body = const PaSkeletonList(rows: 3, height: 90);
+    } else if (yearAsync.hasError) {
+      body = PaError(error: yearAsync.error!, strings: strings, onRetry: () => ref.invalidate(currentAcademicYearIdProvider(child.schoolId)));
+    } else if (yearAsync.valueOrNull == null) {
+      body = PrCard(child: PaEmpty(icon: Icons.event_busy_rounded, title: strings.academicYearNotSet));
+    } else {
+      final yearId = yearAsync.valueOrNull!;
+      body = PaAsync<List<ReportPeriodOption>>(
+        value: ref.watch(reportPeriodsForYearProvider(yearId)),
+        strings: strings,
+        onRetry: () => ref.invalidate(reportPeriodsForYearProvider(yearId)),
+        isEmpty: (l) => l.isEmpty,
+        empty: PaEmpty(icon: Icons.event_busy_rounded, title: strings.academicYearNotSet),
+        builder: (periods) {
+          // Default to the current term's own "Full Term" entry (highest
+          // sortKey within that term), else whichever sorts last.
+          _selectedPeriodId ??= periods.lastWhere((p) => p.isCurrentTerm, orElse: () => periods.last).id;
+          final selected = periods.firstWhere((p) => p.id == _selectedPeriodId, orElse: () => periods.last);
+          final key = (studentId: child.studentId, scope: selected.scope, termId: selected.termId, examPeriodId: selected.examPeriodId);
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            DropdownButtonFormField<String>(
+              initialValue: selected.id,
+              isExpanded: true,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: cs.surfaceContainerHighest,
+                prefixIcon: Icon(Icons.event_note_rounded, size: 20, color: cs.primary),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
               ),
-              const SizedBox(height: 18),
-              yearIdAsync.when(
-                loading: () => const _Loading(),
-                error: (e, _) => ErrorStateView(
-                  error: e,
-                  onRetry: () => ref.invalidate(currentAcademicYearIdProvider(child.schoolId)),
-                ),
-                data: (yearId) {
-                  if (yearId == null) {
-                    return _InfoState(icon: Icons.event_busy_rounded, message: strings.academicYearNotSet);
-                  }
-                  final periodsAsync = ref.watch(reportPeriodsForYearProvider(yearId));
-                  return periodsAsync.when(
-                    loading: () => const _Loading(),
-                    error: (e, _) => ErrorStateView(
-                      error: e,
-                      onRetry: () => ref.invalidate(reportPeriodsForYearProvider(yearId)),
-                    ),
-                    data: (periods) {
-                      if (periods.isEmpty) {
-                        return _InfoState(icon: Icons.event_busy_rounded, message: strings.academicYearNotSet);
-                      }
-                      // Default to the current term's own "Full Term"
-                      // entry (highest sortKey within that term); fall
-                      // back to whichever entry sorts last overall if
-                      // no term is marked current yet.
-                      _selectedPeriodId ??= periods.lastWhere((p) => p.isCurrentTerm, orElse: () => periods.last).id;
-
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          DropdownButtonFormField<String>(
-                            initialValue: _selectedPeriodId,
-                            decoration: InputDecoration(
-                              filled: true,
-                              fillColor: theme.colorScheme.surfaceContainerHighest,
-                              prefixIcon: Icon(Icons.event_note_rounded, size: 20, color: theme.colorScheme.primary),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                            ),
-                            items: periods.map((p) => DropdownMenuItem(value: p.id, child: Text(p.label))).toList(),
-                            onChanged: (value) => setState(() => _selectedPeriodId = value),
-                          ),
-                          const SizedBox(height: 18),
-                          Consumer(
-                            builder: (context, ref, _) {
-                              final selected = periods.firstWhere((p) => p.id == _selectedPeriodId);
-                              final key = (
-                                studentId: child.studentId,
-                                scope: selected.scope,
-                                termId: selected.termId,
-                                examPeriodId: selected.examPeriodId,
-                              );
-                              final reportAsync = ref.watch(reportCardProvider(key));
-                              return reportAsync.when(
-                                loading: () => const _Loading(),
-                                error: (e, _) => ErrorStateView(
-                                  error: e,
-                                  onRetry: () => ref.invalidate(reportCardProvider(key)),
-                                ),
-                                data: (report) {
-                                  if (report == null) return _NotPublishedView(strings: strings);
-                                  return _ReportCardView(
-                                    report: report,
-                                    strings: strings,
-                                    downloading: _downloading,
-                                    onDownload: () => _download(report),
-                                  );
-                                },
-                              );
-                            },
-                          ),
-                        ],
-                      );
-                    },
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Loading extends StatelessWidget {
-  const _Loading();
-  @override
-  Widget build(BuildContext context) => const Padding(
-        padding: EdgeInsets.symmetric(vertical: 48),
-        child: Center(child: CircularProgressIndicator()),
-      );
-}
-
-class _InfoState extends StatelessWidget {
-  final IconData icon;
-  final String message;
-  const _InfoState({required this.icon, required this.message});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 40),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(color: scheme.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
-              child: Icon(icon, size: 30, color: scheme.primary),
+              items: periods.map((p) => DropdownMenuItem(value: p.id, child: Text(p.label, overflow: TextOverflow.ellipsis))).toList(),
+              onChanged: (v) => setState(() => _selectedPeriodId = v),
             ),
             const SizedBox(height: 16),
-            Text(message, textAlign: TextAlign.center, style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
-          ],
+            PaAsync<ReportCardSummary?>(
+              value: ref.watch(reportCardProvider(key)),
+              strings: strings,
+              onRetry: () => ref.invalidate(reportCardProvider(key)),
+              rows: 3,
+              rowHeight: 90,
+              builder: (report) {
+                if (report == null) return _NotPublishedView(strings: strings);
+                return _ReportCardView(report: report, strings: strings, downloading: _downloading, onDownload: () => _download(report));
+              },
+            ),
+          ]);
+        },
+      );
+    }
+
+    return PrPage(
+      maxWidth: 760,
+      children: [
+        PrHeader(
+          title: strings.reportCards,
+          subtitle: fr
+              ? 'Les résultats publiés de ${child.firstName}. Choisissez une séquence ou un trimestre.'
+              : '${child.firstName}\'s published results. Choose a sequence or a term.',
         ),
-      ),
+        const SizedBox(height: 16),
+        body,
+      ],
     );
   }
 }
@@ -225,42 +145,19 @@ class _NotPublishedView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 44, horizontal: 24),
-      decoration: BoxDecoration(color: scheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(20)),
-      child: Column(
-        children: [
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(color: scheme.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
-            child: Icon(Icons.hourglass_empty_rounded, size: 30, color: scheme.primary),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            strings.reportCardNotPublishedTitle,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            strings.reportCardNotPublishedDescription,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
-          ),
-          const SizedBox(height: 16),
-          Container(
+    final cs = Theme.of(context).colorScheme;
+    return PrReveal(
+      child: PrCard(
+        child: PaEmpty(
+          icon: Icons.hourglass_empty_rounded,
+          title: strings.reportCardNotPublishedTitle,
+          text: strings.reportCardNotPublishedDescription,
+          action: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(color: scheme.primary.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(30)),
-            child: Text(
-              strings.checkAgainLater,
-              style: theme.textTheme.bodySmall?.copyWith(color: scheme.primary, fontWeight: FontWeight.w600),
-            ),
+            decoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(30)),
+            child: Text(strings.checkAgainLater, style: TextStyle(color: cs.primary, fontWeight: FontWeight.w700, fontSize: 12.5)),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -271,139 +168,65 @@ class _ReportCardView extends StatelessWidget {
   final AppStrings strings;
   final bool downloading;
   final VoidCallback onDownload;
-  const _ReportCardView({
-    required this.report,
-    required this.strings,
-    required this.downloading,
-    required this.onDownload,
-  });
+  const _ReportCardView({required this.report, required this.strings, required this.downloading, required this.onDownload});
 
   static const double _maxMark = 20;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final cs = theme.colorScheme;
+    final fr = strings.isFrench;
     final hasRank = report.classRank != null && report.totalStudents != null;
     final comment = report.principalComment?.trim();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(color: scheme.primary, borderRadius: BorderRadius.circular(20)),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                strings.studentReportCard,
-                style: TextStyle(color: scheme.onPrimary.withValues(alpha: 0.8), fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.6),
-              ),
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      PaHero(
+        eyebrow: strings.studentReportCard,
+        title: report.studentName,
+        subtitle: '${report.className} · ${report.termName}',
+        bottom: (report.overallAverage != null || hasRank)
+            ? Row(children: [
+                if (report.overallAverage != null) Expanded(child: PaHeroStat(label: strings.average, value: report.overallAverage!.toStringAsFixed(2))),
+                if (hasRank) Expanded(child: PaHeroStat(label: 'Position', value: '${report.classRank} / ${report.totalStudents}')),
+              ])
+            : null,
+      ),
+      const SizedBox(height: 14),
+      SizedBox(
+        width: double.infinity,
+        child: FilledButton.tonalIcon(
+          onPressed: downloading ? null : onDownload,
+          icon: downloading ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.download_rounded, size: 18),
+          label: Text(fr ? 'Télécharger le bulletin (PDF)' : 'Download report card (PDF)'),
+        ),
+      ),
+      const SizedBox(height: 24),
+      PrSectionTitle(
+        title: fr ? 'Résultats par matière' : 'Results by subject',
+        subtitle: fr ? 'Le coefficient indique le poids de chaque matière dans la moyenne.' : 'The coefficient shows how much each subject counts toward the average.',
+      ),
+      const SizedBox(height: 12),
+      for (var i = 0; i < report.subjects.length; i++)
+        PrReveal(index: i, child: Padding(padding: const EdgeInsets.only(bottom: 10), child: _SubjectCard(result: report.subjects[i], strings: strings, maxMark: _maxMark))),
+      if (comment != null && comment.isNotEmpty) ...[
+        const SizedBox(height: 6),
+        PrReveal(
+          child: PrCard(
+            color: cs.primary.withValues(alpha: 0.06),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Icon(Icons.format_quote_rounded, size: 20, color: cs.primary),
+                const SizedBox(width: 6),
+                Text(fr ? 'Mot du Directeur' : 'Principal\'s remark', style: TextStyle(color: cs.primary, fontWeight: FontWeight.w800, fontSize: 13)),
+              ]),
               const SizedBox(height: 8),
-              Text(
-                report.studentName,
-                style: TextStyle(color: scheme.onPrimary, fontSize: 20, fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                '${report.className} \u00b7 ${report.termName}',
-                style: TextStyle(color: scheme.onPrimary.withValues(alpha: 0.85), fontSize: 13),
-              ),
-              if (report.overallAverage != null || hasRank) ...[
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    if (report.overallAverage != null)
-                      Expanded(
-                        child: _HeroStat(label: strings.average, value: report.overallAverage!.toStringAsFixed(2), color: scheme.onPrimary),
-                      ),
-                    if (hasRank)
-                      Expanded(
-                        child: _HeroStat(
-                          label: 'Position',
-                          value: '${report.classRank} / ${report.totalStudents}',
-                          color: scheme.onPrimary,
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-            ],
+              Text(comment, style: theme.textTheme.bodyMedium?.copyWith(height: 1.45)),
+            ]),
           ),
         ),
-        const SizedBox(height: 14),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.tonalIcon(
-            onPressed: downloading ? null : onDownload,
-            icon: downloading
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.download_rounded, size: 18),
-            label: Text(strings.isFrench ? 'Télécharger le bulletin (PDF)' : 'Download report card (PDF)'),
-          ),
-        ),
-        const SizedBox(height: 26),
-        Text(
-          strings.isFrench ? 'Résultats par matière' : 'Results by subject',
-          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          strings.isFrench
-              ? 'Le coefficient indique le poids de chaque matière dans la moyenne.'
-              : 'The coefficient shows how much each subject counts toward the average.',
-          style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-        ),
-        const SizedBox(height: 14),
-        for (final s in report.subjects) _SubjectCard(result: s, strings: strings, maxMark: _maxMark),
-        if (comment != null && comment.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(color: scheme.primary.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(16)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.format_quote_rounded, size: 20, color: scheme.primary),
-                    const SizedBox(width: 6),
-                    Text(
-                      strings.isFrench ? 'Mot du Directeur' : 'Principal\'s remark',
-                      style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w800, fontSize: 13),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(comment, style: theme.textTheme.bodyMedium),
-              ],
-            ),
-          ),
-        ],
       ],
-    );
-  }
-}
-
-class _HeroStat extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-  const _HeroStat({required this.label, required this.value, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: TextStyle(color: color.withValues(alpha: 0.8), fontSize: 12, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 2),
-        Text(value, style: TextStyle(color: color, fontSize: 26, fontWeight: FontWeight.w800)),
-      ],
-    );
+    ]);
   }
 }
 
@@ -416,66 +239,36 @@ class _SubjectCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final progress = (result.score / maxMark).clamp(0.0, 1.0);
+    final cs = theme.colorScheme;
+    final progress = (result.score / maxMark).clamp(0.0, 1.0).toDouble();
     final remark = result.remark?.trim();
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
+    return PrCard(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: scheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(16)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(result.subjectName, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-              ),
-              Text(
-                result.score.toStringAsFixed(1),
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800, color: scheme.primary),
-              ),
-              if (result.grade != null && result.grade!.isNotEmpty) ...[
-                const SizedBox(width: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                  decoration: BoxDecoration(color: scheme.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
-                  child: Text(result.grade!, style: TextStyle(color: scheme.primary, fontSize: 12, fontWeight: FontWeight.w800)),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 6,
-              backgroundColor: scheme.primary.withValues(alpha: 0.1),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(child: Text(result.subjectName, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800))),
+          Text(result.score.toStringAsFixed(1), style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900, color: cs.primary)),
+          if (result.grade != null && result.grade!.isNotEmpty) ...[
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+              decoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
+              child: Text(result.grade!, style: TextStyle(color: cs.primary, fontSize: 12, fontWeight: FontWeight.w800)),
             ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Text(
-                '${strings.coefficientShort} ${result.coefficient}',
-                style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-              ),
-              if (remark != null && remark.isNotEmpty) ...[
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    remark,
-                    textAlign: TextAlign.right,
-                    style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant, fontStyle: FontStyle.italic),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ],
-      ),
+          ],
+        ]),
+        const SizedBox(height: 10),
+        PrProgressBar(value: progress, height: 6),
+        const SizedBox(height: 8),
+        Row(children: [
+          Text('${strings.coefficientShort} ${result.coefficient}', style: theme.textTheme.bodySmall?.copyWith(color: cs.outline)),
+          if (remark != null && remark.isNotEmpty) ...[
+            const SizedBox(width: 10),
+            Expanded(child: Text(remark, textAlign: TextAlign.right, style: theme.textTheme.bodySmall?.copyWith(color: cs.outline, fontStyle: FontStyle.italic))),
+          ],
+        ]),
+      ]),
     );
   }
 }

@@ -2,63 +2,79 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:school_management_system/features/landing/landing_providers.dart';
 
-import '../../core/error_state.dart';
 import '../../core/l10n/app_strings.dart';
 import '../../shared/sign_out_button.dart';
+import '../principal/principal_core.dart';
+import '../proprietor/proprietor_ui.dart';
 import 'parent_models.dart';
 import 'parent_providers.dart';
 import 'parent_repository.dart' show WrongPasswordException;
+import 'parent_ui.dart';
 
-/// Migrated from ParentProfilePage - no own Scaffold/AppBar/Theme
-/// wrap anymore, ParentShell provides all three. Sign-out row
-/// changed from a bare instant `signOut()` call to the shared
-/// SignOutButton (confirm dialog + spinner, shared/sign_out_button.dart)
-/// - same reasoning as teacher's profile: an instant, unconfirmed
-/// sign-out was a real UX bug, not a style choice, so this fix
-/// applies here too, not just in the sidebar.
+/// Profile: personal information, password change (sheet) and sign out.
 class ParentProfileTab extends ConsumerWidget {
   const ParentProfileTab({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final strings = AppStrings(ref.watch(activeLocaleProvider));
+    final fr = strings.isFrench;
     final profileAsync = ref.watch(parentProfileProvider);
 
-    return profileAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => ErrorStateView(error: e, onRetry: () => ref.invalidate(parentProfileProvider)),
-      data: (profile) {
-        if (profile == null) return Center(child: Text(strings.profileNotFound));
-        final theme = Theme.of(context);
-        return ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            Text(strings.myProfile, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 4),
-            Text(
-              strings.isFrench
-                  ? 'Vos informations personnelles et la sécurité de votre compte.'
-                  : 'Your personal information and account security.',
-              style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 18),
-            _ProfileHeader(profile: profile),
-            const SizedBox(height: 20),
-            _EditableInfoCard(profile: profile, strings: strings),
-            const SizedBox(height: 16),
-            _ActionTile(
-              icon: Icons.lock_outline_rounded,
-              title: strings.changePassword,
-              subtitle: strings.isFrench
-                  ? 'Vous devrez confirmer votre mot de passe actuel.'
-                  : 'You will need to confirm your current password.',
-              onTap: () => showDialog(context: context, builder: (_) => const _ChangePasswordDialog()),
-            ),
-            const SizedBox(height: 20),
-            SignOutButton(strings: strings),
-          ],
-        );
+    return PrPage(
+      maxWidth: 640,
+      onRefresh: () async {
+        ref.invalidate(parentProfileProvider);
+        await ref.read(parentProfileProvider.future).catchError((_) => null);
       },
+      children: [
+        PrHeader(
+          title: strings.myProfile,
+          subtitle: fr ? 'Vos informations personnelles et la sécurité de votre compte.' : 'Your personal information and account security.',
+        ),
+        const SizedBox(height: 16),
+        PaAsync<ParentProfile?>(
+          value: profileAsync,
+          strings: strings,
+          onRetry: () => ref.invalidate(parentProfileProvider),
+          rows: 3,
+          rowHeight: 120,
+          isEmpty: (p) => p == null,
+          empty: PaEmpty(icon: Icons.person_off_outlined, title: strings.profileNotFound),
+          builder: (profile) {
+            final p = profile!;
+            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _ProfileHeader(profile: p),
+              const SizedBox(height: 16),
+              PrReveal(index: 1, child: _EditableInfoCard(key: ValueKey(p.fullName + (p.phone ?? '')), profile: p, strings: strings)),
+              const SizedBox(height: 14),
+              PrReveal(
+                index: 2,
+                child: PrCard(
+                  onTap: () => pnSheet<void>(context, (_) => const _ChangePasswordSheet()),
+                  child: Row(children: [
+                    const PaIconBadge(icon: Icons.lock_outline_rounded),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(strings.changePassword, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 2),
+                        Text(
+                          fr ? 'Vous devrez confirmer votre mot de passe actuel.' : 'You will need to confirm your current password.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.outline),
+                        ),
+                      ]),
+                    ),
+                    Icon(Icons.chevron_right_rounded, color: Theme.of(context).colorScheme.outline),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SignOutButton(strings: strings),
+            ]);
+          },
+        ),
+      ],
     );
   }
 }
@@ -70,26 +86,19 @@ class _ProfileHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final initials = profile.fullName.trim().isEmpty
-        ? 'P'
-        : profile.fullName.trim().split(RegExp(r'\s+')).map((p) => p[0]).take(2).join().toUpperCase();
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(22)),
-      child: Column(
-        children: [
-          CircleAvatar(
-            radius: 40,
-            backgroundColor: theme.colorScheme.primary,
-            child: Text(initials, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: theme.colorScheme.onPrimary)),
-          ),
-          const SizedBox(height: 14),
-          Text(profile.fullName, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
-          const SizedBox(height: 4),
-          Text(profile.email ?? '', style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.outline)),
-        ],
+    return PrReveal(
+      child: PrCard(
+        padding: const EdgeInsets.all(24),
+        child: SizedBox(
+          width: double.infinity,
+          child: Column(children: [
+            PrAvatar(name: profile.fullName, radius: 40),
+            const SizedBox(height: 14),
+            Text(profile.fullName, textAlign: TextAlign.center, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 4),
+            Text(profile.email ?? '', style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.outline)),
+          ]),
+        ),
       ),
     );
   }
@@ -98,53 +107,44 @@ class _ProfileHeader extends StatelessWidget {
 class _EditableInfoCard extends ConsumerStatefulWidget {
   final ParentProfile profile;
   final AppStrings strings;
-  const _EditableInfoCard({required this.profile, required this.strings});
+  const _EditableInfoCard({super.key, required this.profile, required this.strings});
 
   @override
   ConsumerState<_EditableInfoCard> createState() => _EditableInfoCardState();
 }
 
 class _EditableInfoCardState extends ConsumerState<_EditableInfoCard> {
-  late final TextEditingController _nameController;
-  late final TextEditingController _phoneController;
+  late final TextEditingController _name;
+  late final TextEditingController _phone;
   bool _saving = false;
-  bool _dirty = false;
 
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.profile.fullName);
-    _phoneController = TextEditingController(text: widget.profile.phone ?? '');
-    _nameController.addListener(() => setState(() => _dirty = true));
-    _phoneController.addListener(() => setState(() => _dirty = true));
+    _name = TextEditingController(text: widget.profile.fullName);
+    _phone = TextEditingController(text: widget.profile.phone ?? '');
+    _name.addListener(_changed);
+    _phone.addListener(_changed);
   }
+
+  void _changed() => setState(() {});
+
+  bool get _dirty => _name.text.trim() != widget.profile.fullName || _phone.text.trim() != (widget.profile.phone ?? '');
 
   @override
   void dispose() {
-    _nameController.dispose();
-    _phoneController.dispose();
+    _name.dispose();
+    _phone.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      await ref.read(parentProfileActionsProvider).updateProfile(
-            fullName: _nameController.text.trim(),
-            phone: _phoneController.text.trim(),
-          );
-      if (mounted) {
-        setState(() => _dirty = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(widget.strings.profileUpdatedMessage)),
-        );
-      }
+      await ref.read(parentProfileActionsProvider).updateProfile(fullName: _name.text.trim(), phone: _phone.text.trim());
+      if (mounted) prSnack(context, widget.strings.profileUpdatedMessage);
     } catch (e) {
-      if (mounted) {
-        final detail = e.toString().replaceFirst('Exception: ', '');
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('${widget.strings.profileSaveError} ($detail)')));
-      }
+      if (mounted) prSnack(context, '${widget.strings.profileSaveError} (${paMessage(e)})');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -153,110 +153,51 @@ class _EditableInfoCardState extends ConsumerState<_EditableInfoCard> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
+    final s = widget.strings;
+    return PrCard(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(22)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(widget.strings.personalInformation, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 4),
-          Text(
-            widget.strings.isFrench
-                ? 'Ces informations sont utilisées par l\'école pour vous contacter au sujet de votre enfant.'
-                : 'This information is used by the school to contact you about your child.',
-            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _nameController,
-            decoration: InputDecoration(
-              labelText: widget.strings.fullName,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-          ),
-          const SizedBox(height: 14),
-          TextField(
-            controller: _phoneController,
-            keyboardType: TextInputType.phone,
-            decoration: InputDecoration(
-              labelText: widget.strings.phoneNumber,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-          ),
-          if (_dirty) ...[
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: _saving ? null : _save,
-                child: _saving
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : Text(widget.strings.saveChanges),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _ActionTile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-  const _ActionTile({required this.icon, required this.title, required this.subtitle, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Material(
-      color: scheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(color: scheme.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
-                child: Icon(icon, color: scheme.primary, size: 19),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 3),
-                    Text(subtitle, style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right_rounded, color: scheme.outline),
-            ],
-          ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(s.personalInformation, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 4),
+        Text(
+          s.isFrench
+              ? 'Ces informations sont utilisées par l\'école pour vous contacter au sujet de votre enfant.'
+              : 'This information is used by the school to contact you about your child.',
+          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
         ),
-      ),
+        const SizedBox(height: 16),
+        TextField(controller: _name, textCapitalization: TextCapitalization.words, decoration: pnDeco(s.fullName, icon: Icons.person_outline_rounded)),
+        const SizedBox(height: 14),
+        TextField(controller: _phone, keyboardType: TextInputType.phone, decoration: pnDeco(s.phoneNumber, icon: Icons.phone_outlined)),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          alignment: Alignment.topCenter,
+          child: _dirty
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: _saving ? null : _save,
+                      child: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : Text(s.saveChanges),
+                    ),
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+      ]),
     );
   }
 }
 
-class _ChangePasswordDialog extends ConsumerStatefulWidget {
-  const _ChangePasswordDialog();
+class _ChangePasswordSheet extends ConsumerStatefulWidget {
+  const _ChangePasswordSheet();
 
   @override
-  ConsumerState<_ChangePasswordDialog> createState() => _ChangePasswordDialogState();
+  ConsumerState<_ChangePasswordSheet> createState() => _ChangePasswordSheetState();
 }
 
-class _ChangePasswordDialogState extends ConsumerState<_ChangePasswordDialog> {
+class _ChangePasswordSheetState extends ConsumerState<_ChangePasswordSheet> {
   final _formKey = GlobalKey<FormState>();
   final _current = TextEditingController();
   final _newPass = TextEditingController();
@@ -278,17 +219,17 @@ class _ChangePasswordDialogState extends ConsumerState<_ChangePasswordDialog> {
       _loading = true;
       _error = null;
     });
+    final strings = AppStrings(ref.read(activeLocaleProvider));
     try {
-      await ref.read(parentProfileActionsProvider).changePassword(
-            currentPassword: _current.text,
-            newPassword: _newPass.text,
-          );
-      if (mounted) Navigator.pop(context, true);
+      await ref.read(parentProfileActionsProvider).changePassword(currentPassword: _current.text, newPassword: _newPass.text);
+      if (mounted) {
+        Navigator.pop(context);
+        prSnack(context, strings.isFrench ? 'Mot de passe mis à jour.' : 'Password updated.');
+      }
     } on WrongPasswordException {
-      final strings = AppStrings(ref.read(activeLocaleProvider));
-      setState(() => _error = strings.isFrench ? 'Votre mot de passe actuel est incorrect.' : 'Your current password is incorrect.');
+      if (mounted) setState(() => _error = strings.isFrench ? 'Votre mot de passe actuel est incorrect.' : 'Your current password is incorrect.');
     } catch (e) {
-      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      if (mounted) setState(() => _error = paMessage(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -297,54 +238,46 @@ class _ChangePasswordDialogState extends ConsumerState<_ChangePasswordDialog> {
   @override
   Widget build(BuildContext context) {
     final strings = AppStrings(ref.watch(activeLocaleProvider));
-    return AlertDialog(
-      title: Text(strings.changePassword),
-      content: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              strings.isFrench
-                  ? 'Entrez votre mot de passe actuel, puis choisissez-en un nouveau.'
-                  : 'Enter your current password, then choose a new one.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.outline),
-            ),
-            const SizedBox(height: 16),
+    final cs = Theme.of(context).colorScheme;
+    return PnSheetBody(
+      title: strings.changePassword,
+      subtitle: strings.isFrench ? 'Entrez votre mot de passe actuel, puis choisissez-en un nouveau.' : 'Enter your current password, then choose a new one.',
+      children: [
+        Form(
+          key: _formKey,
+          child: Column(children: [
             TextFormField(
               controller: _current,
               obscureText: true,
-              decoration: InputDecoration(labelText: strings.currentPassword),
+              decoration: pnDeco(strings.currentPassword, icon: Icons.lock_outline_rounded),
               validator: (v) => (v == null || v.isEmpty) ? strings.required : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _newPass,
               obscureText: true,
-              decoration: InputDecoration(labelText: strings.newPassword),
+              decoration: pnDeco(strings.newPassword, icon: Icons.key_rounded),
               validator: (v) => (v == null || v.length < 8) ? strings.passwordTooShort : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _confirm,
               obscureText: true,
-              decoration: InputDecoration(labelText: strings.confirmPassword),
+              decoration: pnDeco(strings.confirmPassword, icon: Icons.key_rounded),
               validator: (v) => v != _newPass.text ? strings.passwordsDoNotMatch : null,
             ),
             if (_error != null) ...[
               const SizedBox(height: 10),
-              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12)),
+              Align(alignment: Alignment.centerLeft, child: Text(_error!, style: TextStyle(color: cs.error, fontSize: 12.5))),
             ],
-          ],
+          ]),
         ),
-      ),
+      ],
       actions: [
         TextButton(onPressed: _loading ? null : () => Navigator.pop(context), child: Text(strings.cancel)),
         FilledButton(
           onPressed: _loading ? null : _submit,
-          child: _loading
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-              : Text(strings.saveChanges),
+          child: _loading ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : Text(strings.saveChanges),
         ),
       ],
     );

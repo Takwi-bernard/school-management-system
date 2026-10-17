@@ -1,9 +1,7 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pdf/pdf.dart';
@@ -11,10 +9,12 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import '../../core/l10n/app_strings.dart';
-import '../../core/responsive.dart';
 import '../../shared/official_document_branding.dart';
 import '../landing/landing_model.dart';
 import '../parent/parent_providers.dart' show officialBrandingProvider;
+import '../principal/principal_core.dart';
+import '../principal/principal_kit.dart';
+import '../proprietor/proprietor_ui.dart';
 import 'secretary_flow_strings.dart';
 import 'secretary_format.dart';
 import 'secretary_models.dart';
@@ -23,9 +23,23 @@ import 'secretary_providers.dart';
 import 'secretary_strings.dart';
 import 'secretary_ui.dart';
 
-String _clean(Object e) => '$e'.replaceFirst('Exception: ', '');
-
 enum _Step { parent, child, classStep, guardian, review }
+
+/// Bottom sheet that ignores swipes and outside taps (for flows where
+/// closing by accident would lose something, such as the one-time
+/// password of a new parent account).
+Future<T?> _lockedSheet<T>(BuildContext context, Widget Function(BuildContext) builder) {
+  return showModalBottomSheet<T>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    isDismissible: false,
+    enableDrag: false,
+    showDragHandle: false,
+    constraints: const BoxConstraints(maxWidth: 560),
+    builder: builder,
+  );
+}
 
 /// Enrollment wizard. With [editing] set it becomes the edit-enrollment
 /// flow for a child whose registration fee has not been paid yet (the
@@ -53,6 +67,7 @@ class EnrollChildPage extends ConsumerStatefulWidget {
 class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
   int _index = 0;
   bool _submitting = false;
+  final _scroll = ScrollController();
 
   // parent
   ParentMatch? _parent;
@@ -148,13 +163,14 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
       });
       await _loadOfferings(match, keepSelection: true);
     } catch (err) {
-      _snack(_clean(err));
+      _snack(sxMessage(err));
     }
   }
 
   @override
   void dispose() {
     _debounce?.cancel();
+    _scroll.dispose();
     for (final c in [_searchController, _first, _last, _guardian, _emName, _emPhone, _address]) {
       c.dispose();
     }
@@ -162,7 +178,11 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
   }
 
   void _snack(String message) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    if (mounted) prSnack(context, message);
+  }
+
+  void _toTop() {
+    if (_scroll.hasClients) _scroll.animateTo(0, duration: const Duration(milliseconds: 260), curve: Curves.easeOutCubic);
   }
 
   void _reset() {
@@ -189,6 +209,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
       _emPhone.clear();
       _address.clear();
     });
+    _toTop();
   }
 
   // ---------------- parent search / create ----------------
@@ -204,6 +225,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
       });
       return;
     }
+    setState(() {});
     _debounce = Timer(const Duration(milliseconds: 400), () async {
       final token = ++_searchToken;
       if (!mounted) return;
@@ -216,7 +238,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
           _searchedOnce = true;
         });
       } catch (e) {
-        if (token == _searchToken) _snack(_clean(e));
+        if (token == _searchToken) _snack(sxMessage(e));
       } finally {
         if (mounted && token == _searchToken) setState(() => _searching = false);
       }
@@ -224,17 +246,10 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
   }
 
   Future<void> _createParent() async {
-    final creds = await showDialog<NewParentCredentials>(
-      context: context,
-      builder: (_) => _NewParentDialog(strings: _s),
-    );
+    final creds = await pnSheet<NewParentCredentials>(context, (_) => _NewParentSheet(strings: _s));
     if (creds == null || !mounted) return;
     setState(() => _parent = ParentMatch(parentId: creds.parentId, fullName: creds.fullName, phone: creds.phone, email: creds.email));
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _CredentialsDialog(credentials: creds, schoolId: widget.schoolId, landing: widget.landing, strings: _s),
-    );
+    await _lockedSheet<void>(context, (_) => _CredentialsSheet(credentials: creds, schoolId: widget.schoolId, landing: widget.landing, strings: _s));
   }
 
   // ---------------- child ----------------
@@ -287,13 +302,18 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
         }
       });
     } catch (err) {
-      if (token == _offeringsToken) _snack(_clean(err));
+      if (token == _offeringsToken) _snack(sxMessage(err));
     } finally {
       if (mounted && token == _offeringsToken) setState(() => _loadingOfferings = false);
     }
   }
 
   // ---------------- navigation ----------------
+
+  void _go(int to) {
+    setState(() => _index = to);
+    _toTop();
+  }
 
   void _next() {
     final step = _current;
@@ -303,7 +323,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
       if (_gender == null) return _snack(_s.fSelectGender);
     }
     if (step == _Step.classStep && _class == null) return _snack(_s.fSelectClass);
-    setState(() => _index++);
+    _go(_index + 1);
   }
 
   String _photoExtension() {
@@ -377,18 +397,15 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
         return;
       }
 
-      final paid = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => CollectPaymentDialog(
-          landing: widget.landing,
-          strings: _s,
-          kind: 'registration',
-          purpose: _s.fRegistrationFeePurpose,
-          childName: childName,
-          amount: fee,
-          admissionRequestId: result.admissionRequestId,
-        ),
+      final paid = await showCollectPayment(
+        context,
+        landing: widget.landing,
+        strings: _s,
+        kind: 'registration',
+        purpose: _s.fRegistrationFeePurpose,
+        childName: childName,
+        amount: fee,
+        admissionRequestId: result.admissionRequestId,
       );
       if (!mounted) return;
       _snack(paid == true ? _s.fRegistrationFeeRecorded(childName) : _s.sCollectLaterMessage);
@@ -396,7 +413,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
       ref.invalidate(secretaryDashboardProvider(widget.schoolId));
       _reset();
     } catch (e) {
-      _snack(_clean(e));
+      _snack(sxMessage(e));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -407,119 +424,70 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final classesAsync = ref.watch(enrollClassesProvider(widget.schoolId));
     final steps = _steps;
+    final pad = PrPage.padding(context);
 
-    return Padding(
-      padding: EdgeInsets.all(Responsive.pagePadding(context)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        if (!_isEdit) SecretaryPageHeader(title: _s.sEnrollChild, subtitle: _s.sEnrollChildDescription),
-        Text(
-          _s.fStepOf(_index + 1, steps.length, _stepTitle(_current)),
-          style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.primary, fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 10),
-        LayoutBuilder(builder: (context, c) => _stepBar(theme, c.maxWidth)),
-        const SizedBox(height: 18),
-        Expanded(
-          child: SingleChildScrollView(
-            child: Center(
+    return Column(children: [
+      Expanded(
+        child: ListView(
+          controller: _scroll,
+          padding: EdgeInsets.fromLTRB(pad, pad, pad, 24),
+          children: [
+            Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 680),
+                constraints: const BoxConstraints(maxWidth: 720),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  if (_isEdit) ...[
-                    SecretaryCard(
-                      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Icon(Icons.info_outline_rounded, color: theme.colorScheme.primary, size: 20),
-                        const SizedBox(width: 10),
-                        Expanded(child: Text(_s.fEditNote, style: theme.textTheme.bodySmall)),
-                      ]),
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                  _stepContent(theme, classesAsync),
-                  const SizedBox(height: 12),
+                  if (!_isEdit) PrHeader(title: _s.sEnrollChild, subtitle: _s.sEnrollChildDescription),
+                  PrReveal(child: SxStepper(titles: [for (final s in steps) _stepTitle(s)], current: _index)),
+                  const SizedBox(height: 20),
+                  if (_isEdit) ...[PnNotice(text: _s.fEditNote), const SizedBox(height: 14)],
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 260),
+                    switchInCurve: Curves.easeOutCubic,
+                    transitionBuilder: (child, a) => FadeTransition(opacity: a, child: SlideTransition(position: Tween<Offset>(begin: const Offset(0.02, 0), end: Offset.zero).animate(a), child: child)),
+                    child: KeyedSubtree(key: ValueKey(_current), child: _stepContent(theme, classesAsync)),
+                  ),
                 ]),
               ),
             ),
+          ],
+        ),
+      ),
+      Container(
+        padding: EdgeInsets.fromLTRB(pad, 12, pad, 12),
+        decoration: BoxDecoration(color: cs.surface, border: Border(top: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.6)))),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Row(children: [
+              if (_index > 0)
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                  onPressed: _submitting ? null : () => _go(_index - 1),
+                  icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                  label: Text(_s.sBack),
+                ),
+              const Spacer(),
+              if (_current != _Step.review)
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(minimumSize: const Size(0, 48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                  onPressed: _next,
+                  icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                  label: Text(_s.sNext),
+                )
+              else
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(minimumSize: const Size(0, 48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                  onPressed: _submitting ? null : _submit,
+                  icon: _submitting ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: cs.onPrimary)) : const Icon(Icons.check_rounded),
+                  label: Text(_submitting ? _s.sSavingLabel : (_isEdit ? _s.fSaveChanges : _s.sCreateEnrollmentButton)),
+                ),
+            ]),
           ),
         ),
-        const SizedBox(height: 8),
-        Row(children: [
-          if (_index > 0)
-            OutlinedButton.icon(
-              onPressed: _submitting ? null : () => setState(() => _index--),
-              icon: const Icon(Icons.arrow_back_rounded, size: 18),
-              label: Text(_s.sBack),
-            ),
-          const Spacer(),
-          if (_current != _Step.review)
-            FilledButton.icon(
-              onPressed: _next,
-              icon: const Icon(Icons.arrow_forward_rounded, size: 18),
-              label: Text(_s.sNext),
-            ),
-          if (_current == _Step.review)
-            FilledButton.icon(
-              onPressed: _submitting ? null : _submit,
-              icon: _submitting
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.check_rounded),
-              label: Text(_submitting ? _s.sSavingLabel : (_isEdit ? _s.fSaveChanges : _s.sCreateEnrollmentButton)),
-            ),
-        ]),
-      ]),
-    );
-  }
-
-  Widget _stepBar(ThemeData theme, double width) {
-    final steps = _steps;
-    final showLabels = width >= 560;
-    final active = theme.colorScheme.primary;
-    final idle = theme.colorScheme.outlineVariant;
-
-    Widget dot(int i) {
-      final done = i < _index;
-      final current = i == _index;
-      return Column(mainAxisSize: MainAxisSize.min, children: [
-        Container(
-          width: 24,
-          height: 24,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: (done || current) ? active : Colors.transparent,
-            border: Border.all(color: (done || current) ? active : idle, width: 2),
-          ),
-          child: done
-              ? Icon(Icons.check_rounded, size: 14, color: theme.colorScheme.onPrimary)
-              : Text('${i + 1}',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: current ? theme.colorScheme.onPrimary : theme.colorScheme.outline)),
-        ),
-        if (showLabels) ...[
-          const SizedBox(height: 4),
-          Text(
-            _stepTitle(steps[i]),
-            style: theme.textTheme.labelSmall?.copyWith(
-              fontWeight: current ? FontWeight.w800 : FontWeight.w500,
-              color: current ? active : theme.colorScheme.outline,
-            ),
-          ),
-        ],
-      ]);
-    }
-
-    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      for (var i = 0; i < steps.length; i++) ...[
-        if (i > 0)
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 11, left: 4, right: 4),
-              child: Container(height: 2, color: i <= _index ? active : idle),
-            ),
-          ),
-        dot(i),
-      ],
+      ),
     ]);
   }
 
@@ -531,11 +499,9 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
         return _childStep(theme);
       case _Step.classStep:
         return classesAsync.when(
-          loading: () => const Padding(padding: EdgeInsets.all(30), child: Center(child: CircularProgressIndicator())),
-          error: (e, _) => SizedBox(
-            height: 220,
-            child: SecretaryErrorView(error: e, strings: _s, onRetry: () => ref.invalidate(enrollClassesProvider(widget.schoolId))),
-          ),
+          skipLoadingOnReload: true,
+          loading: () => const SxSkeletonList(rows: 3, height: 64),
+          error: (e, _) => SxError(error: e, strings: _s, onRetry: () => ref.invalidate(enrollClassesProvider(widget.schoolId))),
           data: (classes) => _classStep(theme, classes),
         );
       case _Step.guardian:
@@ -553,165 +519,153 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
       padding: const EdgeInsets.only(top: 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(_s.sExistingChildren, style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.outline, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 4),
-        Wrap(spacing: 6, runSpacing: 4, children: [
+        const SizedBox(height: 6),
+        Wrap(spacing: 6, runSpacing: 6, children: [
           for (final c in children)
-            Chip(
-              label: Text(c.className == null || c.className!.isEmpty ? c.fullName : '${c.fullName} · ${c.className}', style: const TextStyle(fontSize: 11)),
-              visualDensity: VisualDensity.compact,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              avatar: const Icon(Icons.child_care_rounded, size: 14),
-            ),
+            PnChip(label: c.className == null || c.className!.isEmpty ? c.fullName : '${c.fullName} · ${c.className}', icon: Icons.child_care_rounded),
         ]),
       ]),
     );
   }
 
   Widget _parentStep(ThemeData theme) {
+    final cs = theme.colorScheme;
     if (_parent != null) {
       final p = _parent!;
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: theme.colorScheme.primary.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(16)),
+      return PrCard(
+        color: cs.primary.withValues(alpha: 0.06),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Icon(Icons.check_circle_rounded, color: Colors.green),
+          PrAvatar(name: p.fullName, radius: 24),
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(p.fullName, style: const TextStyle(fontWeight: FontWeight.w800)),
-              Text('${p.email ?? _s.fNoEmail} · ${p.phone ?? _s.fNoPhone}', style: theme.textTheme.bodySmall),
+              Row(children: [
+                Flexible(child: Text(p.fullName, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800))),
+                const SizedBox(width: 6),
+                Icon(Icons.check_circle_rounded, color: pnGood(), size: 18),
+              ]),
+              Text('${p.email ?? _s.fNoEmail} · ${p.phone ?? _s.fNoPhone}', style: theme.textTheme.bodySmall?.copyWith(color: cs.outline)),
               _childrenChips(theme, p.children),
+              const SizedBox(height: 6),
+              TextButton(
+                style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 32), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                onPressed: () => setState(() => _parent = null),
+                child: Text(_s.sChangeParent),
+              ),
             ]),
           ),
-          TextButton(onPressed: () => setState(() => _parent = null), child: Text(_s.sChangeParent)),
         ]),
       );
     }
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(_s.fParentStepHelp, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+      Text(_s.fParentStepHelp, style: theme.textTheme.bodySmall?.copyWith(color: cs.outline, height: 1.4)),
       const SizedBox(height: 12),
-      TextField(
-        controller: _searchController,
-        onChanged: _onSearchChanged,
-        decoration: InputDecoration(
-          prefixIcon: const Icon(Icons.search_rounded),
-          labelText: _s.sSearchParentLabel,
-          hintText: _s.sSearchParentHint,
-          border: const OutlineInputBorder(),
-        ),
+      PnSearch(controller: _searchController, hint: _s.sSearchParentHint, onChanged: _onSearchChanged),
+      AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        height: _searching ? 12 : 0,
+        padding: const EdgeInsets.only(top: 8),
+        child: _searching ? const LinearProgressIndicator(minHeight: 3) : null,
       ),
-      if (_searching) const Padding(padding: EdgeInsets.only(top: 8), child: LinearProgressIndicator()),
-      const SizedBox(height: 8),
-      ..._results.map((p) => Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: SecretaryCard(
-              onTap: () => setState(() => _parent = p),
-              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(p.fullName, style: const TextStyle(fontWeight: FontWeight.w700)),
-                    Text('${p.email ?? _s.fNoEmail} · ${p.phone ?? _s.fNoPhone}', style: theme.textTheme.bodySmall),
-                    _childrenChips(theme, p.children),
-                  ]),
-                ),
-                const Icon(Icons.chevron_right_rounded),
-              ]),
-            ),
-          )),
-      if (_searchedOnce && _results.isEmpty && !_searching)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Text(_s.sNoParentFound, style: theme.textTheme.bodySmall),
-        ),
       const SizedBox(height: 12),
-      OutlinedButton.icon(onPressed: _createParent, icon: const Icon(Icons.person_add_alt_1_rounded), label: Text(_s.sCreateNewParentAccount)),
+      for (var i = 0; i < _results.length; i++)
+        SxRow(
+          index: i,
+          leading: PrAvatar(name: _results[i].fullName, radius: 22),
+          title: _results[i].fullName,
+          lines: ['${_results[i].email ?? _s.fNoEmail} · ${_results[i].phone ?? _s.fNoPhone}'],
+          bottom: _results[i].children.isEmpty ? null : _childrenChips(theme, _results[i].children),
+          trailing: Icon(Icons.chevron_right_rounded, color: cs.outline),
+          onTap: () => setState(() => _parent = _results[i]),
+        ),
+      if (_searchedOnce && _results.isEmpty && !_searching)
+        Padding(padding: const EdgeInsets.only(bottom: 12), child: PnNotice(text: _s.sNoParentFound, icon: Icons.search_off_rounded)),
+      const SizedBox(height: 4),
+      OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+        onPressed: _createParent,
+        icon: const Icon(Icons.person_add_alt_1_rounded),
+        label: Text(_s.sCreateNewParentAccount),
+      ),
     ]);
   }
 
   // ---------------- step: child ----------------
 
-  Widget _photoPreview(ThemeData theme) {
-    Widget inner;
+  Widget _photoPreview(ThemeData theme, {double radius = 48}) {
+    final cs = theme.colorScheme;
     if (_photoBytes != null) {
-      inner = ClipOval(child: Image.memory(_photoBytes!, width: 92, height: 92, fit: BoxFit.cover));
-    } else if (_existingPhotoUrl != null && _existingPhotoUrl!.isNotEmpty) {
-      inner = ClipOval(
-        child: Image.network(
-          _existingPhotoUrl!,
-          width: 92,
-          height: 92,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Icon(Icons.add_a_photo_outlined, color: theme.colorScheme.primary, size: 28),
-        ),
-      );
-    } else {
-      inner = Icon(Icons.add_a_photo_outlined, color: theme.colorScheme.primary, size: 28);
+      return CircleAvatar(radius: radius, backgroundColor: cs.surfaceContainerHighest, backgroundImage: MemoryImage(_photoBytes!));
     }
-    return CircleAvatar(radius: 46, backgroundColor: theme.colorScheme.surfaceContainerHighest, child: inner);
+    if (_existingPhotoUrl != null && _existingPhotoUrl!.isNotEmpty) {
+      return PnAvatar(stored: _existingPhotoUrl, name: '${_first.text} ${_last.text}', radius: radius);
+    }
+    return CircleAvatar(radius: radius, backgroundColor: cs.primary.withValues(alpha: 0.10), child: Icon(Icons.add_a_photo_rounded, color: cs.primary, size: radius * 0.6));
   }
 
   Widget _childStep(ThemeData theme) {
+    final cs = theme.colorScheme;
     final hasPhoto = _photoBytes != null || (_existingPhotoUrl != null && _existingPhotoUrl!.isNotEmpty);
     return Form(
       key: _formKey,
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Center(child: GestureDetector(onTap: _pickPhoto, child: _photoPreview(theme))),
-        const SizedBox(height: 6),
-        Center(
-          child: Text(
-            hasPhoto ? _s.fKeepCurrentPhoto : _s.sChildPhotoHint,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+      child: PnPanel(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Center(
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: _pickPhoto,
+              child: Stack(children: [
+                _photoPreview(theme),
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(color: cs.primary, shape: BoxShape.circle, border: Border.all(color: cs.surface, width: 2.5)),
+                    child: Icon(Icons.camera_alt_rounded, size: 15, color: cs.onPrimary),
+                  ),
+                ),
+              ]),
+            ),
           ),
-        ),
-        const SizedBox(height: 20),
-        TextFormField(
-          controller: _first,
-          textCapitalization: TextCapitalization.words,
-          decoration: InputDecoration(labelText: _s.fFirstName, border: const OutlineInputBorder()),
-          validator: (v) => (v == null || v.trim().isEmpty) ? _s.required : null,
-        ),
-        const SizedBox(height: 12),
-        TextFormField(
-          controller: _last,
-          textCapitalization: TextCapitalization.words,
-          decoration: InputDecoration(labelText: _s.fLastName, border: const OutlineInputBorder()),
-          validator: (v) => (v == null || v.trim().isEmpty) ? _s.required : null,
-        ),
-        const SizedBox(height: 12),
-        Row(children: [
-          Expanded(child: _genderCard(_s.sMale, 'male', theme)),
-          const SizedBox(width: 10),
-          Expanded(child: _genderCard(_s.sFemale, 'female', theme)),
+          const SizedBox(height: 8),
+          Text(hasPhoto ? _s.fKeepCurrentPhoto : _s.sChildPhotoHint, textAlign: TextAlign.center, style: theme.textTheme.bodySmall?.copyWith(color: cs.outline)),
+          const SizedBox(height: 20),
+          LayoutBuilder(builder: (context, c) {
+            final firstField = TextFormField(
+              controller: _first,
+              textCapitalization: TextCapitalization.words,
+              decoration: pnDeco(_s.fFirstName),
+              validator: (v) => (v == null || v.trim().isEmpty) ? _s.required : null,
+            );
+            final lastField = TextFormField(
+              controller: _last,
+              textCapitalization: TextCapitalization.words,
+              decoration: pnDeco(_s.fLastName),
+              validator: (v) => (v == null || v.trim().isEmpty) ? _s.required : null,
+            );
+            if (c.maxWidth < 460) return Column(children: [firstField, const SizedBox(height: 12), lastField]);
+            return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: firstField), const SizedBox(width: 12), Expanded(child: lastField)]);
+          }),
+          const SizedBox(height: 14),
+          Text(_s.sGenderLabel, style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurfaceVariant)),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: SxOptionTile(icon: Icons.boy_rounded, title: _s.sMale, selected: _gender == 'male', onTap: () => setState(() => _gender = 'male'))),
+            const SizedBox(width: 10),
+            Expanded(child: SxOptionTile(icon: Icons.girl_rounded, title: _s.sFemale, selected: _gender == 'female', onTap: () => setState(() => _gender = 'female'))),
+          ]),
+          const SizedBox(height: 14),
+          InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: _pickDob,
+            child: InputDecorator(
+              decoration: pnDeco(_s.sDateOfBirthOptional, icon: Icons.cake_outlined),
+              child: Text(_dob == null ? ' ' : formatDate(_dob!), style: theme.textTheme.bodyLarge),
+            ),
+          ),
         ]),
-        const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: _pickDob,
-          icon: const Icon(Icons.cake_outlined),
-          label: Text(_dob == null ? _s.sDateOfBirthOptional : formatDate(_dob!)),
-        ),
-      ]),
-    );
-  }
-
-  Widget _genderCard(String label, String value, ThemeData theme) {
-    final selected = _gender == value;
-    return Material(
-      color: selected ? theme.colorScheme.primary.withValues(alpha: 0.1) : theme.colorScheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => setState(() => _gender = value),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: selected ? theme.colorScheme.primary : Colors.transparent, width: 1.5),
-          ),
-          child: Text(label, style: TextStyle(fontWeight: FontWeight.w700, color: selected ? theme.colorScheme.primary : null)),
-        ),
       ),
     );
   }
@@ -719,91 +673,81 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
   // ---------------- step: class + subjects ----------------
 
   Widget _classStep(ThemeData theme, List<EnrollClass> classes) {
+    final cs = theme.colorScheme;
     final departments = <String, String>{for (final c in classes) c.departmentId: c.departmentName};
     final filtered = classes.where((c) => c.departmentId == _departmentId).toList();
     final deptValue = departments.containsKey(_departmentId) ? _departmentId : null;
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(_s.fClassStepHelp, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-      const SizedBox(height: 12),
-      DropdownButtonFormField<String>(
-        key: ValueKey('dept-$deptValue'),
-        initialValue: deptValue,
-        isExpanded: true,
-        decoration: InputDecoration(labelText: _s.sDepartmentLabel, border: const OutlineInputBorder()),
-        items: departments.entries
-            .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value.isEmpty ? _s.sDepartmentLabel : e.value, overflow: TextOverflow.ellipsis)))
-            .toList(),
-        onChanged: (v) {
-          _offeringsToken++;
-          setState(() {
-            _departmentId = v;
-            _class = null;
-            _offerings = [];
-            _subjects.clear();
-            _loadingOfferings = false;
-          });
-        },
-      ),
-      const SizedBox(height: 12),
-      if (deptValue == null)
-        Text(_s.sSelectDepartmentFirst, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline))
-      else if (filtered.isEmpty)
-        Text(_s.sNoClassesInDepartment, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-      ...filtered.map((c) {
-        final selected = _class?.id == c.id;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Material(
-            color: selected ? theme.colorScheme.primary.withValues(alpha: 0.1) : theme.colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(12),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => _onClassSelected(c),
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: selected ? theme.colorScheme.primary : Colors.transparent, width: 1.5),
-                ),
-                child: Row(children: [
-                  Expanded(child: Text(c.className, style: const TextStyle(fontWeight: FontWeight.w700))),
-                  if (selected) Icon(Icons.check_circle_rounded, color: theme.colorScheme.primary),
-                ]),
-              ),
-            ),
+      PnPanel(
+        title: _s.sStepClass,
+        subtitle: _s.fClassStepHelp,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          DropdownButtonFormField<String>(
+            key: ValueKey('dept-$deptValue'),
+            initialValue: deptValue,
+            isExpanded: true,
+            decoration: pnDeco(_s.sDepartmentLabel, icon: Icons.account_tree_outlined),
+            items: departments.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value.isEmpty ? _s.sDepartmentLabel : e.value, overflow: TextOverflow.ellipsis))).toList(),
+            onChanged: (v) {
+              _offeringsToken++;
+              setState(() {
+                _departmentId = v;
+                _class = null;
+                _offerings = [];
+                _subjects.clear();
+                _loadingOfferings = false;
+              });
+            },
           ),
-        );
-      }),
+          const SizedBox(height: 14),
+          if (deptValue == null)
+            PnNotice(text: _s.sSelectDepartmentFirst)
+          else if (filtered.isEmpty)
+            PnNotice(text: _s.sNoClassesInDepartment, icon: Icons.info_outline_rounded, color: pnWarn())
+          else
+            LayoutBuilder(builder: (context, c) {
+              final cols = c.maxWidth >= 560 ? 2 : 1;
+              const gap = 10.0;
+              final w = (c.maxWidth - gap * (cols - 1)) / cols;
+              return Wrap(spacing: gap, runSpacing: gap, children: [
+                for (final cl in filtered)
+                  SizedBox(width: w, child: SxOptionTile(icon: Icons.class_rounded, title: cl.className, selected: _class?.id == cl.id, onTap: () => _onClassSelected(cl))),
+              ]);
+            }),
+        ]),
+      ),
       if (_class != null) ...[
         const SizedBox(height: 16),
-        Text(_s.fSubjectsTitle, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
-        if (_loadingOfferings)
-          const Padding(padding: EdgeInsets.only(top: 10), child: LinearProgressIndicator())
-        else if (_offerings.isEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(_s.fNoSubjectsConfigured, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-          )
-        else ...[
-          Text(_s.fCompulsoryLocked, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-          ..._offerings.map((o) => CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-                value: _subjects.contains(o.subjectId),
-                title: Text(o.name),
-                subtitle: Text(o.isCompulsory ? _s.fCompulsory : _s.fOptional),
-                onChanged: o.isCompulsory
-                    ? null
-                    : (v) => setState(() {
-                          if (v == true) {
-                            _subjects.add(o.subjectId);
-                          } else {
-                            _subjects.remove(o.subjectId);
-                          }
-                        }),
-              )),
-        ],
+        PnPanel(
+          title: _s.fSubjectsTitle,
+          subtitle: _offerings.isEmpty ? null : _s.fCompulsoryLocked,
+          child: _loadingOfferings
+              ? const SxSkeletonList(rows: 3, height: 58)
+              : _offerings.isEmpty
+                  ? Text(_s.fNoSubjectsConfigured, style: theme.textTheme.bodySmall?.copyWith(color: cs.outline))
+                  : Column(children: [
+                      for (final o in _offerings)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: SxOptionTile(
+                            icon: o.isCompulsory ? Icons.lock_outline_rounded : (_subjects.contains(o.subjectId) ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded),
+                            title: o.name,
+                            subtitle: o.isCompulsory ? _s.fCompulsory : _s.fOptional,
+                            selected: _subjects.contains(o.subjectId),
+                            onTap: o.isCompulsory
+                                ? null
+                                : () => setState(() {
+                                      if (_subjects.contains(o.subjectId)) {
+                                        _subjects.remove(o.subjectId);
+                                      } else {
+                                        _subjects.add(o.subjectId);
+                                      }
+                                    }),
+                          ),
+                        ),
+                    ]),
+        ),
       ],
     ]);
   }
@@ -811,84 +755,65 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
   // ---------------- step: guardian ----------------
 
   Widget _guardianStep(ThemeData theme) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(_s.sGuardianDetailsHint, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-      const SizedBox(height: 12),
-      TextField(
-        controller: _guardian,
-        textCapitalization: TextCapitalization.words,
-        decoration: InputDecoration(labelText: _s.fGuardianName, border: const OutlineInputBorder()),
-      ),
-      const SizedBox(height: 12),
-      TextField(
-        controller: _emName,
-        textCapitalization: TextCapitalization.words,
-        decoration: InputDecoration(labelText: _s.fEmergencyName, border: const OutlineInputBorder()),
-      ),
-      const SizedBox(height: 12),
-      TextField(
-        controller: _emPhone,
-        keyboardType: TextInputType.phone,
-        decoration: InputDecoration(labelText: _s.fEmergencyPhone, border: const OutlineInputBorder()),
-      ),
-      const SizedBox(height: 12),
-      TextField(
-        controller: _address,
-        maxLines: 2,
-        decoration: InputDecoration(labelText: _s.fAddress, border: const OutlineInputBorder()),
-      ),
-    ]);
+    return PnPanel(
+      title: _s.sStepGuardian,
+      subtitle: _s.sGuardianDetailsHint,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        TextField(controller: _guardian, textCapitalization: TextCapitalization.words, decoration: pnDeco(_s.fGuardianName, icon: Icons.person_outline_rounded)),
+        const SizedBox(height: 14),
+        TextField(controller: _emName, textCapitalization: TextCapitalization.words, decoration: pnDeco(_s.fEmergencyName, icon: Icons.emergency_outlined)),
+        const SizedBox(height: 14),
+        TextField(controller: _emPhone, keyboardType: TextInputType.phone, decoration: pnDeco(_s.fEmergencyPhone, icon: Icons.phone_outlined)),
+        const SizedBox(height: 14),
+        TextField(controller: _address, maxLines: 2, decoration: pnDeco(_s.fAddress, icon: Icons.home_outlined)),
+      ]),
+    );
   }
 
   // ---------------- step: review ----------------
 
   Widget _reviewStep(ThemeData theme) {
+    final cs = theme.colorScheme;
     final subjectNames = _offerings.where((o) => _subjects.contains(o.subjectId)).map((o) => o.name).toList();
     final parentName = _isEdit ? widget.editing!.parentName : (_parent?.fullName ?? '');
     final parentEmail = _isEdit ? '' : (_parent?.email ?? '');
+    final childName = '${_first.text.trim()} ${_last.text.trim()}'.trim();
 
-    Widget row(String label, String value) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            SizedBox(width: 120, child: Text(label, style: TextStyle(color: theme.colorScheme.outline))),
-            Expanded(child: Text(value, style: const TextStyle(fontWeight: FontWeight.w600))),
-          ]),
-        );
-
-    return SecretaryCard(
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Center(child: _photoPreview(theme)),
-        const SizedBox(height: 12),
-        row(_s.sReviewParentLabel, parentEmail.isEmpty ? parentName : '$parentName\n$parentEmail'),
-        row(_s.sReviewChildLabel, '${_first.text.trim()} ${_last.text.trim()}'),
-        row(_s.sReviewGenderLabel, genderLabel(_s, _gender)),
-        if (_dob != null) row(_s.sReviewBornLabel, formatDate(_dob!)),
-        row(_s.sReviewClassLabel, _class == null ? '-' : (_class!.departmentName.isEmpty ? _class!.className : '${_class!.className} · ${_class!.departmentName}')),
-        if (subjectNames.isNotEmpty) row(_s.sReviewSubjectsLabel, subjectNames.join(', ')),
-        if (_guardian.text.trim().isNotEmpty) row(_s.sReviewGuardianLabel, _guardian.text.trim()),
-        if (_emPhone.text.trim().isNotEmpty) row(_s.sReviewEmergencyPhoneLabel, _emPhone.text.trim()),
-        if (!_isEdit) ...[
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      PrCard(
+        child: Column(children: [
+          _photoPreview(theme, radius: 42),
           const SizedBox(height: 10),
-          Text(_s.sNextStepNote, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-        ],
-      ]),
-    );
+          Text(childName, textAlign: TextAlign.center, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 4),
+          Text(_class == null ? '-' : (_class!.departmentName.isEmpty ? _class!.className : '${_class!.className} · ${_class!.departmentName}'),
+              textAlign: TextAlign.center, style: theme.textTheme.bodySmall?.copyWith(color: cs.outline)),
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          SxKeyValue(label: _s.sReviewParentLabel, value: parentEmail.isEmpty ? parentName : '$parentName\n$parentEmail'),
+          SxKeyValue(label: _s.sReviewGenderLabel, value: genderLabel(_s, _gender)),
+          if (_dob != null) SxKeyValue(label: _s.sReviewBornLabel, value: formatDate(_dob!)),
+          if (subjectNames.isNotEmpty) SxKeyValue(label: _s.sReviewSubjectsLabel, value: subjectNames.join(', ')),
+          if (_guardian.text.trim().isNotEmpty) SxKeyValue(label: _s.sReviewGuardianLabel, value: _guardian.text.trim()),
+          if (_emPhone.text.trim().isNotEmpty) SxKeyValue(label: _s.sReviewEmergencyPhoneLabel, value: _emPhone.text.trim()),
+        ]),
+      ),
+      if (!_isEdit) ...[const SizedBox(height: 14), PnNotice(text: _s.sNextStepNote)],
+    ]);
   }
 }
 
-// ============================================================
-// NEW PARENT ACCOUNT
-// ============================================================
+// ============================================================ new parent
 
-class _NewParentDialog extends ConsumerStatefulWidget {
+class _NewParentSheet extends ConsumerStatefulWidget {
   final AppStrings strings;
-  const _NewParentDialog({required this.strings});
+  const _NewParentSheet({required this.strings});
 
   @override
-  ConsumerState<_NewParentDialog> createState() => _NewParentDialogState();
+  ConsumerState<_NewParentSheet> createState() => _NewParentSheetState();
 }
 
-class _NewParentDialogState extends ConsumerState<_NewParentDialog> {
+class _NewParentSheetState extends ConsumerState<_NewParentSheet> {
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _email = TextEditingController();
@@ -920,7 +845,7 @@ class _NewParentDialogState extends ConsumerState<_NewParentDialog> {
           );
       if (mounted) Navigator.pop(context, creds);
     } catch (e) {
-      if (mounted) setState(() => _error = _clean(e));
+      if (mounted) setState(() => _error = sxMessage(e));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -928,71 +853,60 @@ class _NewParentDialogState extends ConsumerState<_NewParentDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final width = math.min(400.0, MediaQuery.of(context).size.width - 80);
-    return AlertDialog(
-      title: Text(_s.sNewParentAccountTitle),
-      content: SizedBox(
-        width: width,
-        child: SingleChildScrollView(
-          child: Form(
-            key: _formKey,
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              TextFormField(
-                controller: _name,
-                textCapitalization: TextCapitalization.words,
-                decoration: InputDecoration(labelText: _s.fullName),
-                validator: (v) => (v == null || v.trim().isEmpty) ? _s.required : null,
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                controller: _email,
-                keyboardType: TextInputType.emailAddress,
-                decoration: InputDecoration(labelText: _s.fEmailLoginLabel),
-                validator: (v) => (v == null || !v.contains('@')) ? _s.fInvalidEmail : null,
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                controller: _phone,
-                keyboardType: TextInputType.phone,
-                decoration: InputDecoration(labelText: _s.fPhoneLabel),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 10),
-                Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12)),
-              ],
-            ]),
-          ),
+    return PnSheetBody(
+      title: _s.sNewParentAccountTitle,
+      children: [
+        Form(
+          key: _formKey,
+          child: Column(children: [
+            TextFormField(
+              controller: _name,
+              textCapitalization: TextCapitalization.words,
+              decoration: pnDeco(_s.fullName, icon: Icons.person_outline_rounded),
+              validator: (v) => (v == null || v.trim().isEmpty) ? _s.required : null,
+            ),
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _email,
+              keyboardType: TextInputType.emailAddress,
+              decoration: pnDeco(_s.fEmailLoginLabel, icon: Icons.mail_outline_rounded),
+              validator: (v) => (v == null || !v.contains('@')) ? _s.fInvalidEmail : null,
+            ),
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _phone,
+              keyboardType: TextInputType.phone,
+              decoration: pnDeco(_s.fPhoneLabel, icon: Icons.phone_outlined),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              PnNotice(text: _error!, icon: Icons.error_outline_rounded, color: Theme.of(context).colorScheme.error),
+            ],
+          ]),
         ),
-      ),
+      ],
       actions: [
         TextButton(onPressed: _saving ? null : () => Navigator.pop(context), child: Text(_s.cancel)),
-        FilledButton(
-          onPressed: _saving ? null : _save,
-          child: _saving
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-              : Text(_s.fCreateAccount),
-        ),
+        FilledButton(onPressed: _saving ? null : _save, child: PnBusyLabel(busy: _saving, label: _s.fCreateAccount)),
       ],
     );
   }
 }
 
-// ============================================================
-// CREDENTIALS (shown once) + printable slip
-// ============================================================
+// ============================================================ credentials
 
-class _CredentialsDialog extends ConsumerStatefulWidget {
+class _CredentialsSheet extends ConsumerStatefulWidget {
   final NewParentCredentials credentials;
   final String schoolId;
   final LandingModel landing;
   final AppStrings strings;
-  const _CredentialsDialog({required this.credentials, required this.schoolId, required this.landing, required this.strings});
+  const _CredentialsSheet({required this.credentials, required this.schoolId, required this.landing, required this.strings});
 
   @override
-  ConsumerState<_CredentialsDialog> createState() => _CredentialsDialogState();
+  ConsumerState<_CredentialsSheet> createState() => _CredentialsSheetState();
 }
 
-class _CredentialsDialogState extends ConsumerState<_CredentialsDialog> {
+class _CredentialsSheetState extends ConsumerState<_CredentialsSheet> {
   bool _printing = false;
 
   AppStrings get _s => widget.strings;
@@ -1037,7 +951,7 @@ class _CredentialsDialogState extends ConsumerState<_CredentialsDialog> {
       ));
       await Printing.sharePdf(bytes: await doc.save(), filename: 'parent_account_${_c.fullName.replaceAll(' ', '_')}.pdf');
     } catch (_) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_s.fSlipError)));
+      if (mounted) prSnack(context, _s.fSlipError);
     } finally {
       if (mounted) setState(() => _printing = false);
     }
@@ -1046,49 +960,62 @@ class _CredentialsDialogState extends ConsumerState<_CredentialsDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final width = math.min(420.0, MediaQuery.of(context).size.width - 80);
+    final cs = theme.colorScheme;
 
-    return AlertDialog(
-      title: Text(_s.fParentAccountCreatedTitle),
-      content: SizedBox(
-        width: width,
-        child: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
-              child: Text(_s.sAccountCreatedWarning, style: const TextStyle(fontSize: 12)),
-            ),
-            const SizedBox(height: 14),
-            Text(_s.sSignInAtLabel, style: theme.textTheme.bodySmall),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        const Center(child: SxSuccessBadge(size: 64)),
+        const SizedBox(height: 12),
+        Text(_s.fParentAccountCreatedTitle, textAlign: TextAlign.center, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+        const SizedBox(height: 14),
+        PnNotice(text: _s.sAccountCreatedWarning, icon: Icons.warning_amber_rounded, color: pnWarn()),
+        const SizedBox(height: 14),
+        PrCard(
+          color: cs.surface,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(_s.sSignInAtLabel, style: theme.textTheme.bodySmall?.copyWith(color: cs.outline)),
             SelectableText(_signInUrl, style: const TextStyle(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 8),
-            Text(_s.email, style: theme.textTheme.bodySmall),
+            const SizedBox(height: 12),
+            Text(_s.email, style: theme.textTheme.bodySmall?.copyWith(color: cs.outline)),
             SelectableText(_c.email, style: const TextStyle(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 8),
-            Text(_s.sTemporaryPasswordLabel, style: theme.textTheme.bodySmall),
-            SelectableText(_c.temporaryPassword, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, letterSpacing: 1)),
+            const SizedBox(height: 12),
+            Text(_s.sTemporaryPasswordLabel, style: theme.textTheme.bodySmall?.copyWith(color: cs.outline)),
+            const SizedBox(height: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(12)),
+              child: SelectableText(_c.temporaryPassword, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 20, letterSpacing: 1.2)),
+            ),
           ]),
         ),
-      ),
-      actions: [
-        TextButton.icon(
-          onPressed: () async {
-            await Clipboard.setData(ClipboardData(text: _plainText));
-            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_s.fCopiedMessage)));
-          },
-          icon: const Icon(Icons.copy_rounded, size: 16),
-          label: Text(_s.sCopy),
+        const SizedBox(height: 16),
+        Row(children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+              onPressed: () => prCopy(context, _plainText, _s.fCopiedMessage),
+              icon: const Icon(Icons.copy_rounded, size: 16),
+              label: Text(_s.sCopy),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+              onPressed: _printing ? null : _printSlip,
+              icon: _printing ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.print_outlined, size: 16),
+              label: Text(_s.sPrintSlip),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 10),
+        FilledButton(
+          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+          onPressed: () => Navigator.pop(context),
+          child: Text(_s.fDone),
         ),
-        TextButton.icon(
-          onPressed: _printing ? null : _printSlip,
-          icon: _printing
-              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Icon(Icons.print_outlined, size: 16),
-          label: Text(_s.sPrintSlip),
-        ),
-        FilledButton(onPressed: () => Navigator.pop(context), child: Text(_s.fDone)),
-      ],
+      ]),
     );
   }
 }

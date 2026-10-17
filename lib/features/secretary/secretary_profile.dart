@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/l10n/app_strings.dart';
-import '../../core/responsive.dart';
+import '../principal/principal_core.dart';
+import '../principal/principal_kit.dart';
+import '../proprietor/proprietor_ui.dart';
 import 'secretary_models.dart';
 import 'secretary_providers.dart';
 import 'secretary_strings.dart';
@@ -18,11 +20,12 @@ class SecretaryProfilePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profileAsync = ref.watch(secretaryProfileProvider);
     return profileAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => SecretaryErrorView(error: e, strings: strings, onRetry: () => ref.invalidate(secretaryProfileProvider)),
+      skipLoadingOnReload: true,
+      loading: () => const PrPageSkeleton(),
+      error: (e, _) => PrPage(maxWidth: 640, children: [SxError(error: e, strings: strings, onRetry: () => ref.invalidate(secretaryProfileProvider))]),
       data: (p) {
         if (p == null) {
-          return SecretaryEmptyState(icon: Icons.person_off_outlined, title: strings.profileNotFound);
+          return PrPage(maxWidth: 640, children: [PrCard(child: SxEmpty(icon: Icons.person_off_outlined, title: strings.profileNotFound))]);
         }
         return _ProfileForm(profile: p, strings: strings);
       },
@@ -63,7 +66,7 @@ class _ProfileFormState extends ConsumerState<_ProfileForm> {
   }
 
   void _snack(String message) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    if (mounted) prSnack(context, message);
   }
 
   Future<void> _changePhoto() async {
@@ -110,78 +113,81 @@ class _ProfileFormState extends ConsumerState<_ProfileForm> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final photo = widget.profile.photoUrl;
-    final initial = widget.profile.fullName.trim().isNotEmpty ? widget.profile.fullName.trim()[0].toUpperCase() : '?';
+    final cs = theme.colorScheme;
+    final p = widget.profile;
 
-    return ListView(
-      padding: EdgeInsets.all(Responsive.pagePadding(context)),
+    return PrPage(
+      maxWidth: 640,
       children: [
-        Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: Form(
-              key: _formKey,
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                SecretaryPageHeader(title: _s.myProfile, subtitle: _s.personalInformation),
-                Center(
-                  child: Stack(children: [
-                    CircleAvatar(
-                      radius: 52,
-                      backgroundColor: theme.colorScheme.primary,
-                      backgroundImage: photo != null && photo.isNotEmpty ? NetworkImage(photo) : null,
-                      child: photo == null || photo.isEmpty
-                          ? Text(initial, style: const TextStyle(color: Colors.white, fontSize: 38, fontWeight: FontWeight.w800))
-                          : null,
-                    ),
-                    Positioned(
-                      right: 0,
-                      bottom: 0,
-                      child: Material(
-                        color: theme.colorScheme.primary,
-                        shape: const CircleBorder(),
-                        child: InkWell(
-                          customBorder: const CircleBorder(),
-                          onTap: _uploading ? null : _changePhoto,
-                          child: Padding(
-                            padding: const EdgeInsets.all(8),
-                            child: _uploading
-                                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                : const Icon(Icons.camera_alt_rounded, size: 18, color: Colors.white),
-                          ),
-                        ),
+        PrHeader(title: _s.myProfile, subtitle: _s.personalInformation),
+        PrReveal(
+          index: 1,
+          child: PrCard(
+            padding: const EdgeInsets.all(22),
+            child: Column(children: [
+              Stack(children: [
+                PnAvatar(stored: p.photoUrl, name: p.fullName, radius: 54, bucket: pnStaffPhotos),
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Material(
+                    color: cs.primary,
+                    shape: CircleBorder(side: BorderSide(color: cs.surface, width: 3)),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: _uploading ? null : _changePhoto,
+                      child: Padding(
+                        padding: const EdgeInsets.all(9),
+                        child: _uploading
+                            ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: cs.onPrimary))
+                            : Icon(Icons.camera_alt_rounded, size: 18, color: cs.onPrimary),
                       ),
                     ),
-                  ]),
+                  ),
                 ),
-                const SizedBox(height: 6),
-                Center(child: Text(_s.sChangePhotoLabel, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline))),
-                const SizedBox(height: 24),
+              ]),
+              const SizedBox(height: 10),
+              Text(p.fullName, textAlign: TextAlign.center, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 4),
+              PnChip(label: _s.sSecretaryRole, color: cs.primary, icon: Icons.badge_rounded),
+              const SizedBox(height: 6),
+              Text(_s.sChangePhotoLabel, style: theme.textTheme.bodySmall?.copyWith(color: cs.outline)),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 16),
+        PrReveal(
+          index: 2,
+          child: PnPanel(
+            title: _s.personalInformation,
+            child: Form(
+              key: _formKey,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 TextFormField(
                   controller: _name,
-                  decoration: InputDecoration(labelText: _s.fullName, border: const OutlineInputBorder()),
+                  textCapitalization: TextCapitalization.words,
+                  decoration: pnDeco(_s.fullName, icon: Icons.person_outline_rounded),
                   validator: (v) => (v == null || v.trim().isEmpty) ? _s.required : null,
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: _phone,
                   keyboardType: TextInputType.phone,
-                  decoration: InputDecoration(labelText: _s.sPhoneOptionalLabel, border: const OutlineInputBorder()),
+                  decoration: pnDeco(_s.sPhoneOptionalLabel, icon: Icons.phone_outlined),
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
-                  initialValue: widget.profile.email ?? '',
+                  initialValue: p.email ?? '',
                   enabled: false,
-                  decoration: InputDecoration(labelText: _s.sAccountEmailLabel, border: const OutlineInputBorder()),
+                  decoration: pnDeco(_s.sAccountEmailLabel, icon: Icons.mail_outline_rounded),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 22),
                 SizedBox(
-                  width: double.infinity,
-                  height: 48,
+                  height: 50,
                   child: FilledButton(
+                    style: FilledButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                     onPressed: _saving ? null : _save,
-                    child: _saving
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : Text(_s.saveChanges),
+                    child: PnBusyLabel(busy: _saving, label: _s.saveChanges),
                   ),
                 ),
               ]),

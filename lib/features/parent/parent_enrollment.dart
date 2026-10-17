@@ -5,17 +5,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/l10n/app_strings.dart';
-import '../../core/motion.dart';
-import '../../core/responsive.dart';
 import '../landing/landing_providers.dart';
+import '../principal/principal_core.dart';
+import '../proprietor/proprietor_ui.dart';
 import 'parent_fees.dart';
 import 'parent_models.dart';
 import 'parent_navigation.dart';
 import 'parent_providers.dart';
+import 'parent_ui.dart';
 
 /// Relationship a guardian can have to the child - mirrors the
-/// guardian_relationship enum in the database exactly, so the value
-/// sent on submit is always one it accepts.
+/// guardian_relationship enum in the database exactly.
 const _relationshipValues = ['father', 'mother', 'guardian', 'uncle', 'aunt', 'grandparent', 'sibling', 'other'];
 
 String _relationshipLabel(String value, AppStrings strings) {
@@ -62,8 +62,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
   Uint8List? _photoBytes;
   String? _photoExtension;
 
-  // Shown only after an attempted Next with something missing - not
-  // nagged proactively before the parent has even tried.
+  // Shown only after an attempted Next with something missing.
   String? _childStepError;
 
   ClassOption? _selectedClass;
@@ -72,8 +71,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
   bool _offeringsLoaded = false;
   bool _loadingOfferings = false;
 
-  // null = not yet answered (the guardian step forces an explicit
-  // choice rather than defaulting silently either way).
+  // null = not yet answered (the guardian step forces an explicit choice).
   bool? _isGuardianSelf;
   String? _guardianRelationship;
   final _guardianName = TextEditingController();
@@ -84,9 +82,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
 
   final _childInfoKey = GlobalKey<FormState>();
 
-  // Sign-up-time draft reconciliation - a child name/photo the parent
-  // may have entered on the registration screen, before this full
-  // form existed for them to fill in. Offered once, not re-shown.
+  // Sign-up-time draft reconciliation, offered once.
   bool _draftPromptHandled = false;
   bool _draftClassMatchAttempted = false;
   String? _draftId;
@@ -99,9 +95,8 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
     super.dispose();
   }
 
-  /// Whether the subject-selection step should exist at all for the
-  /// currently selected class - decided dynamically per the school's
-  /// own subject_offerings configuration, never assumed.
+  /// Whether the subject step exists for the selected class, decided by
+  /// the school's own subject_offerings configuration.
   bool get _hasSubjectStep => _offeringsLoaded && _offerings.isNotEmpty;
 
   List<String> _stepTitles(AppStrings strings) => [
@@ -113,29 +108,20 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
       ];
 
   Future<void> _pickPhoto(AppStrings strings) async {
-    final picked = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 1024,
-      maxHeight: 1024,
-      imageQuality: 80,
-    );
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1024, maxHeight: 1024, imageQuality: 80);
     if (picked == null || !mounted) return;
 
     final ext = (picked.name.contains('.') ? picked.name.split('.').last : 'jpg').toLowerCase();
     const allowed = {'jpg', 'jpeg', 'png', 'webp'};
     if (!allowed.contains(ext)) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
-        strings.isFrench ? 'Format non pris en charge. Utilisez JPG, PNG ou WEBP.' : 'Unsupported format. Please use JPG, PNG or WEBP.',
-      )));
+      prSnack(context, strings.isFrench ? 'Format non pris en charge. Utilisez JPG, PNG ou WEBP.' : 'Unsupported format. Please use JPG, PNG or WEBP.');
       return;
     }
 
     final bytes = await picked.readAsBytes();
     if (!mounted) return;
     if (bytes.length > 5 * 1024 * 1024) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
-        strings.isFrench ? 'La photo est trop volumineuse (5 Mo maximum).' : 'That photo is too large (5 MB maximum).',
-      )));
+      prSnack(context, strings.isFrench ? 'La photo est trop volumineuse (5 Mo maximum).' : 'That photo is too large (5 MB maximum).');
       return;
     }
 
@@ -151,7 +137,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
     final now = DateTime.now();
     final picked = await showDatePicker(
       context: context,
-      initialDate: DateTime(now.year - 10),
+      initialDate: _dateOfBirth ?? DateTime(now.year - 10),
       firstDate: DateTime(now.year - 25),
       lastDate: now,
     );
@@ -166,9 +152,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
       _loadingOfferings = true;
     });
     try {
-      final offerings = await ref.read(
-        subjectOfferingsProvider((classId: option.id, departmentId: option.departmentId)).future,
-      );
+      final offerings = await ref.read(subjectOfferingsProvider((classId: option.id, departmentId: option.departmentId)).future);
       if (!mounted) return;
       setState(() {
         _offerings = offerings;
@@ -187,7 +171,6 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
   int get _guardianStepIndex => _hasSubjectStep ? 3 : 2;
 
   bool get _canGoNext {
-    if (_step == 0) return true; // validated explicitly in _goNext (needs a snackbar-worthy message, not just disabling)
     if (_step == 1) return _selectedClass != null && !_loadingOfferings;
     return true;
   }
@@ -228,24 +211,20 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
     if (name == null || name.isEmpty) return;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      final continueIt = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: Text(strings.isFrench ? 'Reprendre où vous en étiez ?' : 'Continue where you left off?'),
-          content: Text(
-            strings.isFrench
-                ? 'Vous aviez commencé à ajouter "$name" lors de votre inscription. Voulez-vous continuer avec ces informations ?'
-                : 'You started adding "$name" when you registered. Would you like to continue with that?',
-          ),
+      final continueIt = await pnSheet<bool>(
+        context,
+        (sheetContext) => PnSheetBody(
+          title: strings.isFrench ? 'Reprendre où vous en étiez ?' : 'Continue where you left off?',
+          children: [
+            Text(
+              strings.isFrench
+                  ? 'Vous aviez commencé à ajouter "$name" lors de votre inscription. Voulez-vous continuer avec ces informations ?'
+                  : 'You started adding "$name" when you registered. Would you like to continue with that?',
+            ),
+          ],
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(strings.isFrench ? 'Recommencer' : 'Start Fresh'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(strings.isFrench ? 'Continuer' : 'Continue'),
-            ),
+            TextButton(onPressed: () => Navigator.pop(sheetContext, false), child: Text(strings.isFrench ? 'Recommencer' : 'Start Fresh')),
+            FilledButton(onPressed: () => Navigator.pop(sheetContext, true), child: Text(strings.isFrench ? 'Continuer' : 'Continue')),
           ],
         ),
       );
@@ -264,9 +243,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
     try {
       final profile = await ref.read(parentProfileProvider.future);
       if (profile == null) {
-        throw StateError(strings.isFrench
-            ? 'Profil introuvable. Veuillez vous reconnecter.'
-            : 'Profile not found. Please sign in again.');
+        throw StateError(strings.isFrench ? 'Profil introuvable. Veuillez vous reconnecter.' : 'Profile not found. Please sign in again.');
       }
 
       final academicYearId = await ref.read(currentAcademicYearIdProvider(widget.schoolId).future);
@@ -299,9 +276,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
       ref.invalidate(pendingAdmissionsProvider);
 
       if (_draftId != null) {
-        // Best-effort - the enrollment itself already succeeded, so a
-        // failure to clean up the draft shouldn't block or alarm the
-        // parent.
+        // Best-effort - the enrollment already succeeded.
         unawaited(ref.read(parentRepositoryProvider).deleteChildDraft(_draftId!).catchError((e) {
           debugPrint('[EnrollChildPage] draft cleanup failed: $e');
         }));
@@ -317,36 +292,40 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
       final landing = ref.read(landingProvider).value;
 
       if (registrationFee == null || landing == null) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+        prSnack(
+          context,
           strings.isFrench
               ? 'Inscription soumise. L\'école n\'a pas encore défini de frais d\'inscription pour cette classe.'
               : 'Enrollment submitted. The school has not set a registration fee for this class yet.',
-        )));
+        );
         popParentContent(ref);
         return;
       }
 
-      final wantsToPayNow = await showDialog<bool>(
+      final wantsToPayNow = await showModalBottomSheet<bool>(
         context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) => AlertDialog(
-          title: Text(strings.isFrench ? 'Inscription soumise' : 'Enrollment Submitted'),
-          content: Text(
-            strings.isFrench
-                ? 'Des frais d\'inscription de ${registrationFee.toStringAsFixed(0)} FCFA sont requis pour finaliser cette inscription. '
-                    'Votre enfant restera en attente, et l\'école ne verra pas cette demande, tant qu\'ils ne sont pas payés.'
-                : 'A registration fee of ${registrationFee.toStringAsFixed(0)} FCFA is required to complete this enrollment. '
-                    'Your child will remain pending, and the school will not see this request, until it is paid.',
-          ),
+        isScrollControlled: true,
+        useSafeArea: true,
+        isDismissible: false,
+        enableDrag: false,
+        constraints: const BoxConstraints(maxWidth: 560),
+        builder: (sheetContext) => PnSheetBody(
+          title: strings.isFrench ? 'Inscription soumise' : 'Enrollment Submitted',
+          children: [
+            Center(child: PaStatusBadge(icon: Icons.check_rounded, color: Theme.of(sheetContext).colorScheme.primary)),
+            const SizedBox(height: 16),
+            Text(
+              strings.isFrench
+                  ? 'Des frais d\'inscription de ${paMoney(registrationFee)} sont requis pour finaliser cette inscription. '
+                      'Votre enfant restera en attente, et l\'école ne verra pas cette demande, tant qu\'ils ne sont pas payés.'
+                  : 'A registration fee of ${paMoney(registrationFee)} is required to complete this enrollment. '
+                      'Your child will remain pending, and the school will not see this request, until it is paid.',
+              style: Theme.of(sheetContext).textTheme.bodyMedium?.copyWith(height: 1.45),
+            ),
+          ],
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(strings.isFrench ? 'Payer plus tard' : 'Pay Later'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(strings.isFrench ? 'Payer maintenant' : 'Pay Now'),
-            ),
+            TextButton(onPressed: () => Navigator.pop(sheetContext, false), child: Text(strings.isFrench ? 'Payer plus tard' : 'Pay Later')),
+            FilledButton(onPressed: () => Navigator.pop(sheetContext, true), child: Text(strings.isFrench ? 'Payer maintenant' : 'Pay Now')),
           ],
         ),
       );
@@ -367,18 +346,16 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
           ),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+        prSnack(
+          context,
           strings.isFrench
               ? 'Vous pouvez régler les frais d\'inscription à tout moment depuis votre tableau de bord.'
               : 'You can complete the registration fee anytime from your dashboard.',
-        )));
+        );
         popParentContent(ref);
       }
     } catch (e) {
-      if (mounted) {
-        final message = e.toString().replaceFirst('Exception: ', '').replaceFirst('Bad state: ', '');
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-      }
+      if (mounted) prSnack(context, paMessage(e));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -387,9 +364,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final locale = ref.watch(activeLocaleProvider);
-    final strings = AppStrings(locale);
-    final landing = ref.watch(landingProvider).value;
+    final strings = AppStrings(ref.watch(activeLocaleProvider));
     final classesAsync = ref.watch(availableClassesProvider(widget.schoolId));
     final titles = _stepTitles(strings);
 
@@ -399,9 +374,7 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
       if (draft != null) _maybeOfferDraft(draft, strings);
     });
 
-    // Best-effort auto-match of the draft's requested class name, once
-    // classes have actually loaded - never overrides a class the
-    // parent already picked themselves.
+    // Best-effort auto-match of the draft's requested class name.
     if (!_draftClassMatchAttempted && _selectedClass == null) {
       final draft = ref.watch(childDraftProvider).valueOrNull;
       final classes = classesAsync.valueOrNull;
@@ -419,483 +392,355 @@ class _EnrollChildPageState extends ConsumerState<EnrollChildPage> {
       }
     }
 
-    // No own Scaffold/AppBar - this is in-shell content now (pushed
-    // onto ParentShell's own content stack), so ParentShell provides
-    // the surrounding chrome. A close button replaces the AppBar's
-    // back arrow.
-    return SafeArea(
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 640),
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (landing != null)
-                      Expanded(
-                        child: brandedSubpageHeader(context, schoolName: landing.schoolName, logoUrl: landing.logoUrl),
-                      )
-                    else
-                      const Spacer(),
-                    IconButton(
-                      onPressed: () => popParentContent(ref),
-                      icon: const Icon(Icons.close_rounded),
-                      tooltip: strings.isFrench ? 'Fermer' : 'Close',
-                    ),
-                  ],
-                ),
+    final pad = PrPage.padding(context);
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 680),
+        child: Column(children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(pad, pad, pad, 8),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: PaStepper(titles: titles, current: _step)),
+              IconButton(
+                onPressed: _submitting ? null : () => popParentContent(ref),
+                icon: const Icon(Icons.close_rounded),
+                tooltip: strings.isFrench ? 'Fermer' : 'Close',
               ),
-              _StepProgress(currentStep: _step, titles: titles),
-                Expanded(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    transitionBuilder: (child, animation) => FadeTransition(
-                      opacity: animation,
-                      child: SlideTransition(
-                        position: Tween<Offset>(begin: const Offset(0.05, 0), end: Offset.zero).animate(animation),
-                        child: child,
-                      ),
-                    ),
-                    child: SingleChildScrollView(
-                      key: ValueKey(_step),
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-                      child: _buildStepContent(context, theme, strings, classesAsync),
-                    ),
-                  ),
-                ),
-                _NavigationBar(
-                  step: _step,
-                  totalSteps: _totalSteps,
-                  submitting: _submitting,
-                  canGoNext: _canGoNext,
-                  onBack: _step > 0 ? _goBack : null,
-                  onNext: _step < _totalSteps - 1 ? () => _goNext(strings) : null,
-                  onSubmit: _step == _totalSteps - 1 ? () => _submit(strings) : null,
-                  strings: strings,
-                ),
-              ],
+            ]),
+          ),
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 280),
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SlideTransition(position: Tween<Offset>(begin: const Offset(0.04, 0), end: Offset.zero).animate(animation), child: child),
+              ),
+              child: SingleChildScrollView(
+                key: ValueKey(_step),
+                padding: EdgeInsets.fromLTRB(pad, 8, pad, 20),
+                child: _buildStepContent(theme, strings, classesAsync),
+              ),
             ),
           ),
-        ),
-      );
+          _NavigationBar(
+            step: _step,
+            totalSteps: _totalSteps,
+            submitting: _submitting,
+            canGoNext: _canGoNext,
+            onBack: _step > 0 ? _goBack : null,
+            onNext: _step < _totalSteps - 1 ? () => _goNext(strings) : null,
+            onSubmit: _step == _totalSteps - 1 ? () => _submit(strings) : null,
+            strings: strings,
+          ),
+        ]),
+      ),
+    );
   }
 
-  Widget _buildStepContent(BuildContext context, ThemeData theme, AppStrings strings, AsyncValue<List<ClassOption>> classesAsync) {
-    final subjectStepIndex = 2;
+  Widget _buildStepContent(ThemeData theme, AppStrings strings, AsyncValue<List<ClassOption>> classesAsync) {
     final reviewStepIndex = _hasSubjectStep ? 4 : 3;
-
     if (_step == 0) return _buildChildInfoStep(theme, strings);
     if (_step == 1) return _buildClassStep(theme, strings, classesAsync);
-    if (_hasSubjectStep && _step == subjectStepIndex) return _buildSubjectStep(theme, strings);
+    if (_hasSubjectStep && _step == 2) return _buildSubjectStep(theme, strings);
     if (_step == _guardianStepIndex) return _buildGuardianStep(theme, strings);
     if (_step == reviewStepIndex) return _buildReviewStep(theme, strings);
     return const SizedBox();
   }
 
+  Widget _intro(ThemeData theme, String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 18),
+        child: Text(text, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.outline, height: 1.45)),
+      );
+
   Widget _buildChildInfoStep(ThemeData theme, AppStrings strings) {
+    final cs = theme.colorScheme;
+    final fr = strings.isFrench;
     return Form(
       key: _childInfoKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            strings.isFrench
-                ? 'Commençons par les informations de base de votre enfant. Tous les champs de cette étape sont obligatoires - l\'école en a besoin pour créer le dossier de votre enfant, sa carte d\'identité et ses futurs bulletins.'
-                : 'Let\'s start with your child\'s basic information. Everything on this step is required - the school needs it to create your child\'s record, ID card, and future report cards.',
-            style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.outline),
-          ),
-          const SizedBox(height: 24),
-          Center(
-            child: GestureDetector(
-              onTap: () => _pickPhoto(strings),
-              child: Stack(
-                children: [
-                  CircleAvatar(
-                    radius: 48,
-                    backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                    child: _photoBytes == null
-                        ? Icon(Icons.add_a_photo_outlined, color: theme.colorScheme.primary, size: 28)
-                        : ClipOval(child: Image.memory(_photoBytes!, width: 96, height: 96, fit: BoxFit.cover)),
-                  ),
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(color: theme.colorScheme.primary, shape: BoxShape.circle),
-                      child: Icon(Icons.edit_rounded, size: 14, color: theme.colorScheme.onPrimary),
-                    ),
-                  ),
-                ],
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _intro(
+          theme,
+          fr
+              ? 'Commençons par les informations de base de votre enfant. Tous les champs de cette étape sont obligatoires - l\'école en a besoin pour créer le dossier de votre enfant, sa carte d\'identité et ses futurs bulletins.'
+              : 'Let\'s start with your child\'s basic information. Everything on this step is required - the school needs it to create your child\'s record, ID card, and future report cards.',
+        ),
+        Center(
+          child: GestureDetector(
+            onTap: () => _pickPhoto(strings),
+            child: Stack(children: [
+              CircleAvatar(
+                radius: 48,
+                backgroundColor: cs.surfaceContainerHighest,
+                child: _photoBytes == null
+                    ? Icon(Icons.add_a_photo_outlined, color: cs.primary, size: 28)
+                    : ClipOval(child: Image.memory(_photoBytes!, width: 96, height: 96, fit: BoxFit.cover)),
               ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Center(
-            child: Text(
-              strings.isFrench ? 'Photo (obligatoire)' : 'Photo (required)',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: _photoBytes == null ? theme.colorScheme.error : theme.colorScheme.outline,
-                fontWeight: _photoBytes == null ? FontWeight.w700 : FontWeight.normal,
-              ),
-            ),
-          ),
-          const SizedBox(height: 28),
-          _ModernField(
-            controller: _firstName,
-            label: strings.childFirstName,
-            icon: Icons.badge_outlined,
-            required: true,
-            validator: (v) => (v == null || v.trim().isEmpty) ? strings.required : null,
-          ),
-          const SizedBox(height: 14),
-          _ModernField(
-            controller: _lastName,
-            label: strings.childLastName,
-            icon: Icons.badge_outlined,
-            required: true,
-            validator: (v) => (v == null || v.trim().isEmpty) ? strings.required : null,
-          ),
-          const SizedBox(height: 14),
-          Material(
-            color: theme.colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(14),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: _pickDateOfBirth,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                child: Row(
-                  children: [
-                    Icon(Icons.cake_outlined, color: theme.colorScheme.outline, size: 20),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        _dateOfBirth == null
-                            ? (strings.isFrench ? 'Date de naissance (obligatoire)' : 'Date of birth (required)')
-                            : '${_dateOfBirth!.day}/${_dateOfBirth!.month}/${_dateOfBirth!.year}',
-                        style: TextStyle(
-                          color: _dateOfBirth == null ? theme.colorScheme.error : null,
-                          fontWeight: _dateOfBirth == null ? FontWeight.w600 : null,
-                        ),
-                      ),
-                    ),
-                    Icon(Icons.calendar_today_outlined, size: 18, color: theme.colorScheme.outline),
-                  ],
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(color: cs.primary, shape: BoxShape.circle),
+                  child: Icon(Icons.edit_rounded, size: 14, color: cs.onPrimary),
                 ),
               ),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Center(
+          child: Text(
+            fr ? 'Photo (obligatoire)' : 'Photo (required)',
+            style: theme.textTheme.bodySmall?.copyWith(color: _photoBytes == null ? cs.error : cs.outline, fontWeight: _photoBytes == null ? FontWeight.w700 : FontWeight.normal),
+          ),
+        ),
+        const SizedBox(height: 24),
+        TextFormField(
+          controller: _firstName,
+          textCapitalization: TextCapitalization.words,
+          decoration: pnDeco(strings.childFirstName, icon: Icons.badge_outlined),
+          validator: (v) => (v == null || v.trim().isEmpty) ? strings.required : null,
+        ),
+        const SizedBox(height: 14),
+        TextFormField(
+          controller: _lastName,
+          textCapitalization: TextCapitalization.words,
+          decoration: pnDeco(strings.childLastName, icon: Icons.badge_outlined),
+          validator: (v) => (v == null || v.trim().isEmpty) ? strings.required : null,
+        ),
+        const SizedBox(height: 14),
+        InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: _pickDateOfBirth,
+          child: InputDecorator(
+            decoration: pnDeco(fr ? 'Date de naissance (obligatoire)' : 'Date of birth (required)', icon: Icons.cake_outlined),
+            child: Text(_dateOfBirth == null ? ' ' : paDate(_dateOfBirth!), style: theme.textTheme.bodyLarge),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Row(children: [
+          Expanded(
+            child: PaOptionTile(
+              icon: Icons.male_rounded,
+              title: fr ? 'Masculin' : 'Male',
+              selected: _gender == 'male',
+              onTap: () => setState(() => _gender = 'male'),
             ),
           ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _GenderOption(
-                  label: strings.isFrench ? 'Masculin' : 'Male',
-                  selected: _gender == 'male',
-                  onTap: () => setState(() => _gender = 'male'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _GenderOption(
-                  label: strings.isFrench ? 'Féminin' : 'Female',
-                  selected: _gender == 'female',
-                  onTap: () => setState(() => _gender = 'female'),
-                ),
-              ),
-            ],
+          const SizedBox(width: 12),
+          Expanded(
+            child: PaOptionTile(
+              icon: Icons.female_rounded,
+              title: fr ? 'Féminin' : 'Female',
+              selected: _gender == 'female',
+              onTap: () => setState(() => _gender = 'female'),
+            ),
           ),
-          if (_childStepError != null) ...[
-            const SizedBox(height: 16),
-            Text(_childStepError!, style: TextStyle(color: theme.colorScheme.error)),
-          ],
+        ]),
+        if (_childStepError != null) ...[
+          const SizedBox(height: 16),
+          PnNotice(text: _childStepError!, icon: Icons.error_outline_rounded, color: cs.error),
         ],
-      ),
+      ]),
     );
   }
 
   Widget _buildClassStep(ThemeData theme, AppStrings strings, AsyncValue<List<ClassOption>> classesAsync) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          strings.isFrench
-              ? 'Quelle classe demandez-vous pour votre enfant ? L\'école examinera cette demande.'
-              : 'Which class are you requesting for your child? The school will review this request.',
-          style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.outline),
-        ),
-        const SizedBox(height: 20),
-        classesAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Text(
-            strings.isFrench ? 'Impossible de charger les classes. Veuillez réessayer.' : 'Could not load classes. Please try again.',
-            style: TextStyle(color: theme.colorScheme.error),
-          ),
-          data: (classes) {
-            if (classes.isEmpty) {
-              return Text(
-                strings.isFrench
-                    ? 'L\'école n\'a pas encore configuré de classes.'
-                    : 'The school has not configured any classes yet.',
-              );
-            }
-            return Column(
-              children: [
-                ...classes.map((c) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _SelectableCard(
-                        title: c.className,
-                        selected: _selectedClass?.id == c.id,
-                        onTap: () => _onClassSelected(c),
-                      ),
-                    )),
-                if (_loadingOfferings)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Row(
-                      children: [
-                        const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-                        const SizedBox(width: 12),
-                        Text(
-                          strings.isFrench ? 'Chargement des matières pour cette classe…' : 'Loading subjects for this class…',
-                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            );
-          },
-        ),
-      ],
-    );
+    final fr = strings.isFrench;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _intro(theme, fr ? 'Quelle classe demandez-vous pour votre enfant ? L\'école examinera cette demande.' : 'Which class are you requesting for your child? The school will review this request.'),
+      PaAsync<List<ClassOption>>(
+        value: classesAsync,
+        strings: strings,
+        onRetry: () => ref.invalidate(availableClassesProvider(widget.schoolId)),
+        rows: 4,
+        rowHeight: 64,
+        isEmpty: (l) => l.isEmpty,
+        empty: PaEmpty(icon: Icons.class_outlined, title: fr ? 'L\'école n\'a pas encore configuré de classes.' : 'The school has not configured any classes yet.'),
+        builder: (classes) => Column(children: [
+          for (final c in classes)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: PaOptionTile(icon: Icons.school_outlined, title: c.className, selected: _selectedClass?.id == c.id, onTap: () => _onClassSelected(c)),
+            ),
+          if (_loadingOfferings)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(children: [
+                const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                const SizedBox(width: 12),
+                Text(fr ? 'Chargement des matières pour cette classe…' : 'Loading subjects for this class…', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+              ]),
+            ),
+        ]),
+      ),
+    ]);
   }
 
   Widget _buildSubjectStep(ThemeData theme, AppStrings strings) {
+    final fr = strings.isFrench;
     final compulsory = _offerings.where((o) => o.isCompulsory).toList();
     final optional = _offerings.where((o) => !o.isCompulsory).toList();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          strings.isFrench
-              ? 'Cette classe a des matières obligatoires pour tous les élèves, et d\'autres au choix. Faites ce choix avec votre enfant, pour être sûr(e) de sélectionner ce qu\'il/elle souhaite réellement étudier.'
-              : 'This class has subjects every student takes, and others your child can choose from. Make this choice together with your child, so you pick what they\'ll actually be studying.',
-          style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.outline),
-        ),
-        if (compulsory.isNotEmpty) ...[
-          const SizedBox(height: 20),
-          Text(strings.compulsory, style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800, color: theme.colorScheme.primary)),
-          const SizedBox(height: 10),
-          ...compulsory.map((o) => _SubjectTile(offering: o, selected: true, onChanged: null)),
-        ],
-        if (optional.isNotEmpty) ...[
-          const SizedBox(height: 20),
-          Text(
-            strings.isFrench ? 'Matières au choix' : 'Optional Subjects',
-            style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 10),
-          ...optional.map((o) => _SubjectTile(
-                offering: o,
-                selected: _selectedSubjects.contains(o.subjectId),
-                onChanged: (checked) => setState(() {
-                  if (checked == true) {
-                    _selectedSubjects.add(o.subjectId);
-                  } else {
-                    _selectedSubjects.remove(o.subjectId);
-                  }
-                }),
-              )),
-        ],
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _intro(
+        theme,
+        fr
+            ? 'Cette classe a des matières obligatoires pour tous les élèves, et d\'autres au choix. Faites ce choix avec votre enfant, pour être sûr(e) de sélectionner ce qu\'il/elle souhaite réellement étudier.'
+            : 'This class has subjects every student takes, and others your child can choose from. Make this choice together with your child, so you pick what they\'ll actually be studying.',
+      ),
+      if (compulsory.isNotEmpty) ...[
+        PrSectionTitle(title: strings.compulsory),
+        const SizedBox(height: 10),
+        for (final o in compulsory) _SubjectTile(offering: o, selected: true, onChanged: null),
       ],
-    );
+      if (optional.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        PrSectionTitle(title: fr ? 'Matières au choix' : 'Optional Subjects'),
+        const SizedBox(height: 10),
+        for (final o in optional)
+          _SubjectTile(
+            offering: o,
+            selected: _selectedSubjects.contains(o.subjectId),
+            onChanged: (checked) => setState(() {
+              if (checked == true) {
+                _selectedSubjects.add(o.subjectId);
+              } else {
+                _selectedSubjects.remove(o.subjectId);
+              }
+            }),
+          ),
+      ],
+    ]);
   }
 
   Widget _buildGuardianStep(ThemeData theme, AppStrings strings) {
+    final cs = theme.colorScheme;
+    final fr = strings.isFrench;
     final profile = ref.watch(parentProfileProvider).valueOrNull;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          strings.isFrench
-              ? 'Chaque enfant doit avoir un tuteur enregistré - la personne que l\'école contactera. C\'est généralement vous-même.'
-              : 'Every child needs a registered guardian - the person the school will contact. That\'s usually you.',
-          style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.outline),
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _intro(
+        theme,
+        fr
+            ? 'Chaque enfant doit avoir un tuteur enregistré - la personne que l\'école contactera. C\'est généralement vous-même.'
+            : 'Every child needs a registered guardian - the person the school will contact. That\'s usually you.',
+      ),
+      Row(children: [
+        Expanded(
+          child: PaOptionTile(
+            icon: Icons.person_rounded,
+            title: fr ? 'C\'est moi' : 'This is me',
+            selected: _isGuardianSelf == true,
+            onTap: () => setState(() {
+              _isGuardianSelf = true;
+              _guardianStepError = null;
+            }),
+          ),
         ),
-        const SizedBox(height: 18),
-        Row(
-          children: [
-            Expanded(
-              child: _GenderOption(
-                label: strings.isFrench ? 'C\'est moi' : 'This is me',
-                selected: _isGuardianSelf == true,
-                onTap: () => setState(() {
-                  _isGuardianSelf = true;
-                  _guardianStepError = null;
-                }),
-              ),
-            ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: PaOptionTile(
+            icon: Icons.family_restroom_outlined,
+            title: fr ? 'Une autre personne' : 'Someone else',
+            selected: _isGuardianSelf == false,
+            onTap: () => setState(() {
+              _isGuardianSelf = false;
+              _guardianStepError = null;
+            }),
+          ),
+        ),
+      ]),
+      const SizedBox(height: 16),
+      if (_isGuardianSelf == true) ...[
+        PrCard(
+          padding: const EdgeInsets.all(14),
+          child: Row(children: [
+            Icon(Icons.person_rounded, color: cs.primary, size: 20),
             const SizedBox(width: 12),
-            Expanded(
-              child: _GenderOption(
-                label: strings.isFrench ? 'Une autre personne' : 'Someone else',
-                selected: _isGuardianSelf == false,
-                onTap: () => setState(() {
-                  _isGuardianSelf = false;
-                  _guardianStepError = null;
-                }),
-              ),
-            ),
-          ],
+            Expanded(child: Text(profile?.fullName ?? (fr ? 'Vous' : 'You'), style: const TextStyle(fontWeight: FontWeight.w800))),
+          ]),
         ),
-        const SizedBox(height: 18),
-        if (_isGuardianSelf == true) ...[
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(14)),
-            child: Row(
-              children: [
-                Icon(Icons.person_rounded, color: theme.colorScheme.primary, size: 20),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    profile?.fullName ?? (strings.isFrench ? 'Vous' : 'You'),
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-        ] else if (_isGuardianSelf == false) ...[
-          _ModernField(controller: _guardianName, label: strings.guardianName, icon: Icons.family_restroom_outlined, required: true),
-          const SizedBox(height: 14),
-        ],
-        if (_isGuardianSelf != null) ...[
-          Text(
-            strings.isFrench ? 'Quel est votre lien avec l\'enfant ?' : 'What is your relationship to the child?',
-            style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _relationshipValues.map((value) {
-              final selected = _guardianRelationship == value;
-              return ChoiceChip(
+        const SizedBox(height: 14),
+      ] else if (_isGuardianSelf == false) ...[
+        TextFormField(controller: _guardianName, textCapitalization: TextCapitalization.words, decoration: pnDeco(strings.guardianName, icon: Icons.family_restroom_outlined)),
+        const SizedBox(height: 14),
+      ],
+      if (_isGuardianSelf != null) ...[
+        Text(fr ? 'Quel est votre lien avec l\'enfant ?' : 'What is your relationship to the child?', style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final value in _relationshipValues)
+              ChoiceChip(
                 label: Text(_relationshipLabel(value, strings)),
-                selected: selected,
+                selected: _guardianRelationship == value,
                 onSelected: (_) => setState(() {
                   _guardianRelationship = value;
                   _guardianStepError = null;
                 }),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 20),
-        ],
-        Text(
-          strings.isFrench
-              ? 'Ces informations aident l\'école à vous joindre en cas d\'urgence. Facultatif.'
-              : 'This helps the school reach someone in an emergency. Optional.',
-          style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.outline),
+              ),
+          ],
         ),
-        const SizedBox(height: 14),
-        _ModernField(controller: _emergencyName, label: strings.emergencyContactName, icon: Icons.contact_phone_outlined),
-        const SizedBox(height: 14),
-        _ModernField(
-          controller: _emergencyPhone,
-          label: strings.emergencyContactPhone,
-          icon: Icons.phone_outlined,
-          keyboardType: TextInputType.phone,
-        ),
-        const SizedBox(height: 14),
-        _ModernField(controller: _address, label: strings.address, icon: Icons.location_on_outlined, maxLines: 2),
-        if (_guardianStepError != null) ...[
-          const SizedBox(height: 16),
-          Text(_guardianStepError!, style: TextStyle(color: theme.colorScheme.error)),
-        ],
+        const SizedBox(height: 22),
       ],
-    );
+      Text(
+        fr ? 'Ces informations aident l\'école à vous joindre en cas d\'urgence. Facultatif.' : 'This helps the school reach someone in an emergency. Optional.',
+        style: theme.textTheme.bodyMedium?.copyWith(color: cs.outline),
+      ),
+      const SizedBox(height: 14),
+      TextFormField(controller: _emergencyName, textCapitalization: TextCapitalization.words, decoration: pnDeco(strings.emergencyContactName, icon: Icons.contact_phone_outlined)),
+      const SizedBox(height: 14),
+      TextFormField(controller: _emergencyPhone, keyboardType: TextInputType.phone, decoration: pnDeco(strings.emergencyContactPhone, icon: Icons.phone_outlined)),
+      const SizedBox(height: 14),
+      TextFormField(controller: _address, maxLines: 2, decoration: pnDeco(strings.address, icon: Icons.location_on_outlined)),
+      if (_guardianStepError != null) ...[
+        const SizedBox(height: 16),
+        PnNotice(text: _guardianStepError!, icon: Icons.error_outline_rounded, color: cs.error),
+      ],
+    ]);
   }
 
   Widget _buildReviewStep(ThemeData theme, AppStrings strings) {
+    final fr = strings.isFrench;
     final selectedNames = _offerings.where((o) => _selectedSubjects.contains(o.subjectId)).map((o) => o.subjectName).toList();
     final profile = ref.watch(parentProfileProvider).valueOrNull;
     final guardianDisplayName = _isGuardianSelf == true ? (profile?.fullName ?? '-') : _guardianName.text;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          strings.isFrench
-              ? 'Vérifiez les informations ci-dessous avant de soumettre.'
-              : 'Review the details below before submitting.',
-          style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.outline),
-        ),
-        const SizedBox(height: 20),
-        if (_photoBytes != null)
-          Center(
-            child: CircleAvatar(radius: 36, backgroundImage: MemoryImage(_photoBytes!)),
-          ),
-        const SizedBox(height: 16),
-        _ReviewCard(theme: theme, title: strings.isFrench ? 'Enfant' : 'Child', rows: {
-          strings.isFrench ? 'Nom' : 'Name': '${_firstName.text} ${_lastName.text}',
-          if (_dateOfBirth != null)
-            (strings.isFrench ? 'Naissance' : 'Born'): '${_dateOfBirth!.day}/${_dateOfBirth!.month}/${_dateOfBirth!.year}',
-        }),
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _intro(theme, fr ? 'Vérifiez les informations ci-dessous avant de soumettre.' : 'Review the details below before submitting.'),
+      if (_photoBytes != null) Center(child: CircleAvatar(radius: 38, backgroundImage: MemoryImage(_photoBytes!))),
+      const SizedBox(height: 16),
+      _ReviewCard(title: fr ? 'Enfant' : 'Child', rows: [
+        MapEntry(fr ? 'Nom' : 'Name', '${_firstName.text} ${_lastName.text}'),
+        if (_dateOfBirth != null) MapEntry(fr ? 'Naissance' : 'Born', paDate(_dateOfBirth!)),
+      ]),
+      const SizedBox(height: 12),
+      _ReviewCard(title: strings.requestedClass, rows: [MapEntry(fr ? 'Classe' : 'Class', _selectedClass?.className ?? '-')]),
+      if (_hasSubjectStep) ...[
         const SizedBox(height: 12),
-        _ReviewCard(theme: theme, title: strings.requestedClass, rows: {
-          strings.isFrench ? 'Classe' : 'Class': _selectedClass?.className ?? '-',
-        }),
-        if (_hasSubjectStep) ...[
-          const SizedBox(height: 12),
-          _ReviewCard(theme: theme, title: strings.chooseSubjects, rows: {
-            strings.subject: selectedNames.isEmpty ? '-' : selectedNames.join(', '),
-          }),
-        ],
-        const SizedBox(height: 12),
-        _ReviewCard(theme: theme, title: strings.guardianInformation, rows: {
-          strings.guardianName: guardianDisplayName,
-          if (_guardianRelationship != null)
-            (strings.isFrench ? 'Lien' : 'Relationship'): _relationshipLabel(_guardianRelationship!, strings),
-          if (_emergencyPhone.text.isNotEmpty) strings.emergencyContactPhone: _emergencyPhone.text,
-        }),
-        const SizedBox(height: 20),
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(14)),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Icon(Icons.info_outline_rounded, size: 18),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  strings.isFrench
-                      ? 'Après soumission, vous pourrez payer les frais d\'inscription immédiatement ou plus tard depuis votre tableau de bord.'
-                      : 'After submitting, you\'ll be able to pay the registration fee right away or later from your dashboard.',
-                  style: theme.textTheme.bodySmall,
-                ),
-              ),
-            ],
-          ),
-        ),
+        _ReviewCard(title: strings.chooseSubjects, rows: [MapEntry(strings.subject, selectedNames.isEmpty ? '-' : selectedNames.join(', '))]),
       ],
-    );
+      const SizedBox(height: 12),
+      _ReviewCard(title: strings.guardianInformation, rows: [
+        MapEntry(strings.guardianName, guardianDisplayName),
+        if (_guardianRelationship != null) MapEntry(fr ? 'Lien' : 'Relationship', _relationshipLabel(_guardianRelationship!, strings)),
+        if (_emergencyPhone.text.isNotEmpty) MapEntry(strings.emergencyContactPhone, _emergencyPhone.text),
+      ]),
+      const SizedBox(height: 16),
+      PnNotice(
+        text: fr
+            ? 'Après soumission, vous pourrez payer les frais d\'inscription immédiatement ou plus tard depuis votre tableau de bord.'
+            : 'After submitting, you\'ll be able to pay the registration fee right away or later from your dashboard.',
+      ),
+    ]);
   }
 }
 
-/// Simple no-op awaiter so a fire-and-forget Future's errors are still
-/// caught (via .catchError at the call site) without this method
-/// itself needing to be async - keeps _submit's flow linear.
+/// Keeps a fire-and-forget Future's errors caught (via .catchError at the
+/// call site) without making _submit's flow non-linear.
 void unawaited(Future<void> future) {}
 
 class _SubjectTile extends StatelessWidget {
@@ -906,13 +751,17 @@ class _SubjectTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final cs = Theme.of(context).colorScheme;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(14)),
+      decoration: BoxDecoration(
+        color: selected ? cs.primary.withValues(alpha: 0.06) : cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: selected ? cs.primary.withValues(alpha: 0.5) : cs.outlineVariant.withValues(alpha: 0.6)),
+      ),
       child: CheckboxListTile(
         value: selected,
-        title: Text(offering.subjectName, style: const TextStyle(fontWeight: FontWeight.w600)),
+        title: Text(offering.subjectName, style: const TextStyle(fontWeight: FontWeight.w700)),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         onChanged: onChanged,
       ),
@@ -920,87 +769,20 @@ class _SubjectTile extends StatelessWidget {
   }
 }
 
-class _StepProgress extends StatelessWidget {
-  final int currentStep;
-  final List<String> titles;
-  const _StepProgress({required this.currentStep, required this.titles});
+class _ReviewCard extends StatelessWidget {
+  final String title;
+  final List<MapEntry<String, String>> rows;
+  const _ReviewCard({required this.title, required this.rows});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isMobile = Responsive.isMobile(context);
-
-    if (isMobile) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${currentStep + 1}/${titles.length} · ${titles[currentStep]}',
-              style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700, color: theme.colorScheme.primary),
-            ),
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: LinearProgressIndicator(
-                value: (currentStep + 1) / titles.length,
-                minHeight: 6,
-                backgroundColor: theme.colorScheme.surfaceContainerHighest,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-      child: Row(
-        children: [
-          for (int i = 0; i < titles.length; i++) ...[
-            _StepDot(index: i, label: titles[i], isCurrent: i == currentStep, isDone: i < currentStep),
-            if (i < titles.length - 1)
-              Expanded(
-                child: Container(
-                  height: 2,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  color: i < currentStep ? theme.colorScheme.primary : theme.colorScheme.surfaceContainerHighest,
-                ),
-              ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _StepDot extends StatelessWidget {
-  final int index;
-  final String label;
-  final bool isCurrent;
-  final bool isDone;
-  const _StepDot({required this.index, required this.label, required this.isCurrent, required this.isDone});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = (isCurrent || isDone) ? theme.colorScheme.primary : theme.colorScheme.outlineVariant;
-    return Column(
-      children: [
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          width: 28,
-          height: 28,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          alignment: Alignment.center,
-          child: isDone
-              ? const Icon(Icons.check_rounded, size: 16, color: Colors.white)
-              : Text('${index + 1}', style: TextStyle(color: (isCurrent || isDone) ? Colors.white : theme.colorScheme.outline, fontSize: 12, fontWeight: FontWeight.w700)),
-        ),
-        const SizedBox(height: 4),
-        Text(label, style: theme.textTheme.labelSmall?.copyWith(color: color, fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w500)),
-      ],
+    return PrCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800, color: theme.colorScheme.primary)),
+        const SizedBox(height: 6),
+        for (final r in rows) PaKeyValue(label: r.key, value: r.value),
+      ]),
     );
   }
 }
@@ -1019,202 +801,35 @@ class _NavigationBar extends StatelessWidget {
     required this.totalSteps,
     required this.submitting,
     required this.canGoNext,
-    this.onBack,
-    this.onNext,
-    this.onSubmit,
+    required this.onBack,
+    required this.onNext,
+    required this.onSubmit,
     required this.strings,
   });
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final cs = Theme.of(context).colorScheme;
+    final fr = strings.isFrench;
+    final pad = PrPage.padding(context);
+    final isLast = step == totalSteps - 1;
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        border: Border(top: BorderSide(color: theme.colorScheme.outlineVariant, width: 1)),
-      ),
-      child: Row(
-        children: [
-          if (onBack != null)
-            OutlinedButton(
-              onPressed: submitting ? null : onBack,
-              child: Text(strings.isFrench ? 'Retour' : 'Back'),
-            ),
-          const Spacer(),
-          if (onNext != null)
-            HoverLift(
-              onTap: canGoNext ? onNext : null,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-                decoration: BoxDecoration(
-                  color: canGoNext ? theme.colorScheme.primary : theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Text(
-                  strings.isFrench ? 'Suivant' : 'Next',
-                  style: TextStyle(color: canGoNext ? theme.colorScheme.onPrimary : theme.colorScheme.outline, fontWeight: FontWeight.w700),
-                ),
-              ),
-            ),
-          if (onSubmit != null)
-            HoverLift(
-              onTap: submitting ? null : onSubmit,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-                decoration: BoxDecoration(color: theme.colorScheme.primary, borderRadius: BorderRadius.circular(14)),
-                child: submitting
-                    ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.onPrimary))
-                    : Text(strings.submitEnrollment, style: TextStyle(color: theme.colorScheme.onPrimary, fontWeight: FontWeight.w700)),
-              ),
-            ),
+      padding: EdgeInsets.fromLTRB(pad, 12, pad, 12 + MediaQuery.of(context).padding.bottom),
+      decoration: BoxDecoration(color: cs.surface, border: Border(top: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5)))),
+      child: Row(children: [
+        if (onBack != null) ...[
+          OutlinedButton.icon(onPressed: submitting ? null : onBack, icon: const Icon(Icons.arrow_back_rounded, size: 18), label: Text(fr ? 'Retour' : 'Back')),
+          const SizedBox(width: 12),
         ],
-      ),
-    );
-  }
-}
-
-class _GenderOption extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  const _GenderOption({required this.label, required this.selected, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Material(
-      color: selected ? theme.colorScheme.primary.withValues(alpha: 0.1) : theme.colorScheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: selected ? theme.colorScheme.primary : Colors.transparent, width: 1.5),
-          ),
-          child: Text(label, style: TextStyle(fontWeight: FontWeight.w600, color: selected ? theme.colorScheme.primary : null)),
-        ),
-      ),
-    );
-  }
-}
-
-class _SelectableCard extends StatelessWidget {
-  final String title;
-  final bool selected;
-  final VoidCallback onTap;
-  const _SelectableCard({required this.title, required this.selected, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Material(
-      color: selected ? theme.colorScheme.primary.withValues(alpha: 0.1) : theme.colorScheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: selected ? theme.colorScheme.primary : Colors.transparent, width: 1.5),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.school_outlined, color: selected ? theme.colorScheme.primary : theme.colorScheme.outline, size: 20),
-              const SizedBox(width: 12),
-              Expanded(child: Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: selected ? theme.colorScheme.primary : null))),
-              if (selected) Icon(Icons.check_circle_rounded, color: theme.colorScheme.primary, size: 20),
-            ],
+        Expanded(
+          child: FilledButton(
+            onPressed: submitting ? null : (isLast ? onSubmit : (canGoNext ? onNext : null)),
+            child: submitting
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : Text(isLast ? strings.submitEnrollment : (fr ? 'Suivant' : 'Next')),
           ),
         ),
-      ),
+      ]),
     );
-  }
-}
-
-class _ReviewCard extends StatelessWidget {
-  final ThemeData theme;
-  final String title;
-  final Map<String, String> rows;
-  const _ReviewCard({required this.theme, required this.title, required this.rows});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(14)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800, color: theme.colorScheme.primary)),
-          const SizedBox(height: 8),
-          ...rows.entries.map((e) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(
-                  children: [
-                    Expanded(child: Text(e.key, style: TextStyle(color: theme.colorScheme.outline, fontSize: 13))),
-                    Flexible(child: Text(e.value, textAlign: TextAlign.right, style: const TextStyle(fontWeight: FontWeight.w600))),
-                  ],
-                ),
-              )),
-        ],
-      ),
-    );
-  }
-}
-
-/// Modern filled/rounded field style, matching the card-based
-/// aesthetic used across the rest of the parent module.
-class _ModernField extends StatelessWidget {
-  final TextEditingController controller;
-  final String label;
-  final IconData icon;
-  final bool required;
-  final int maxLines;
-  final TextInputType? keyboardType;
-  final String? Function(String?)? validator;
-
-  const _ModernField({
-    required this.controller,
-    required this.label,
-    required this.icon,
-    this.required = false,
-    this.maxLines = 1,
-    this.keyboardType,
-    this.validator,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return TextFormField(
-      controller: controller,
-      maxLines: maxLines,
-      keyboardType: keyboardType,
-      validator: validator,
-      decoration: InputDecoration(
-        labelText: required ? label : '$label (${_optionalWord(context)})',
-        prefixIcon: Icon(icon, color: theme.colorScheme.outline, size: 20),
-        filled: true,
-        fillColor: theme.colorScheme.surfaceContainerHighest,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: theme.colorScheme.primary, width: 1.6),
-        ),
-      ),
-    );
-  }
-
-  String _optionalWord(BuildContext context) {
-    final locale = Localizations.maybeLocaleOf(context);
-    return locale?.languageCode == 'fr' ? 'facultatif' : 'optional';
   }
 }

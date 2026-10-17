@@ -718,14 +718,31 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
       final days = (settings.workingDays.isEmpty ? [1, 2, 3, 4, 5] : ([...settings.workingDays]..sort()));
       final breaks = _breaksOf(settings);
       final doc = pw.Document();
+      // With a letterhead the page margins shrink to a few millimetres so
+      // the letterhead is drawn edge to edge at its own proportions; the
+      // timetable body is inset back to the normal margin underneath it.
+      final hasLetterhead = branding.letterhead != null;
+      const letterSide = 8 * PdfPageFormat.mm;
+      const bodySide = 24.0;
+      final pageFormat = PdfPageFormat.a4.landscape;
+      final letterWidth = pageFormat.width - 2 * letterSide;
       for (final pg in pages) {
+        final section = _pdfSection(s, pg.title, pg.cells, days, breaks, primary, secondary, pg.teacherMode);
         doc.addPage(pw.MultiPage(
-          pageFormat: PdfPageFormat.a4.landscape,
-          margin: const pw.EdgeInsets.all(24),
+          pageFormat: pageFormat,
+          margin: hasLetterhead
+              ? const pw.EdgeInsets.fromLTRB(letterSide, letterSide, letterSide, 16)
+              : const pw.EdgeInsets.all(bodySide),
           build: (_) => [
-            buildDocumentHeader(branding: branding, schoolName: widget.landing.schoolName, motto: widget.landing.motto),
-            pw.SizedBox(height: 10),
-            _pdfSection(s, pg.title, pg.cells, days, breaks, primary, secondary, pg.teacherMode),
+            if (hasLetterhead) ...[
+              buildFullWidthLetterhead(branding: branding, width: letterWidth),
+              pw.SizedBox(height: 10),
+              pw.Padding(padding: const pw.EdgeInsets.symmetric(horizontal: bodySide - letterSide), child: section),
+            ] else ...[
+              buildDocumentHeader(branding: branding, schoolName: widget.landing.schoolName, motto: widget.landing.motto),
+              pw.SizedBox(height: 10),
+              section,
+            ],
           ],
         ));
       }

@@ -226,12 +226,15 @@ class _CardPainter {
     }
 
     // school name (auto-fit) and motto
-    final nameMax = pnCardW - 168 - 40;
+    // the flag sits at the right end of the header, so the name stops before it
+    final nameMax = pnCardW - 168 - 44 - _flagW - 24;
     final fit = _fitSize(s.name.toUpperCase(), nameMax, 40, 24, FontWeight.w900, spacing: 1);
     _text(s.name.toUpperCase(), Offset(160, 30), size: fit, color: const Color(0xFFFFFFFF), weight: FontWeight.w900, maxW: nameMax, spacing: 1);
     if (s.motto.isNotEmpty) {
       _text(s.motto, Offset(160, 30 + fit + 8), size: 21, color: const Color(0xDDFFFFFF), maxW: nameMax, italic: true);
     }
+
+    _flag(const Rect.fromLTWH(pnCardW - 44 - _flagW, 24, _flagW, _flagH));
 
     // card title
     _text(s.label('STUDENT ID CARD', 'CARTE D’ÉLÈVE').toUpperCase(), Offset(330, 148), size: 19, color: p, weight: FontWeight.w800, maxW: pnCardW - 330 - 44, spacing: 3);
@@ -308,8 +311,9 @@ class _CardPainter {
     );
 
     // identity strip
-    _text(s.name.toUpperCase(), Offset(48, 92), size: 27, color: p, weight: FontWeight.w900, maxW: pnCardW - 96, spacing: 1.2);
-    _text(st.fullName, Offset(48, 128), size: 22, color: soft, weight: FontWeight.w600, maxW: pnCardW - 96);
+    _text(s.name.toUpperCase(), Offset(48, 92), size: 27, color: p, weight: FontWeight.w900, maxW: pnCardW - 96 - _flagW - 24, spacing: 1.2);
+    _text(st.fullName, Offset(48, 128), size: 22, color: soft, weight: FontWeight.w600, maxW: pnCardW - 96 - _flagW - 24);
+    _flag(const Rect.fromLTWH(pnCardW - 48 - _flagW, 84, _flagW, _flagH));
 
     const x = 48.0;
     const colW = 420.0;
@@ -346,6 +350,44 @@ class _CardPainter {
 
     _barcode(st.admissionNumber, Rect.fromLTWH(pnCardW - 48 - 280, 188, 280, 56));
     _stripe();
+  }
+
+  // ------------------------------------------------------------ flag
+
+  static const double _flagW = 104;
+  static const double _flagH = 70;
+
+  /// The flag of Cameroon: green, red and yellow vertical bands with a
+  /// yellow star on the red one. Drawn in code so it is crisp at any
+  /// size and needs no image file.
+  void _flag(Rect r) {
+    final rr = RRect.fromRectAndRadius(r, const Radius.circular(8));
+    c.drawRRect(rr.shift(const Offset(0, 4)), Paint()..color = const Color(0x33000000)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
+    c.save();
+    c.clipRRect(rr);
+    final bw = r.width / 3;
+    c.drawRect(Rect.fromLTWH(r.left, r.top, bw, r.height), Paint()..color = const Color(0xFF007A5E));
+    c.drawRect(Rect.fromLTWH(r.left + bw, r.top, bw, r.height), Paint()..color = const Color(0xFFCE1126));
+    c.drawRect(Rect.fromLTWH(r.left + 2 * bw, r.top, bw + 1, r.height), Paint()..color = const Color(0xFFFCD116));
+    // five-point star centred on the red band
+    final centre = Offset(r.left + bw * 1.5, r.center.dy);
+    final outer = r.height * 0.27;
+    final inner = outer * 0.382;
+    final star = Path();
+    for (var i = 0; i < 10; i++) {
+      final rad = i.isEven ? outer : inner;
+      final a = -math.pi / 2 + i * math.pi / 5;
+      final pt = Offset(centre.dx + rad * math.cos(a), centre.dy + rad * math.sin(a));
+      if (i == 0) {
+        star.moveTo(pt.dx, pt.dy);
+      } else {
+        star.lineTo(pt.dx, pt.dy);
+      }
+    }
+    star.close();
+    c.drawPath(star, Paint()..color = const Color(0xFFFCD116));
+    c.restore();
+    c.drawRRect(rr, Paint()..style = PaintingStyle.stroke..strokeWidth = 3..color = const Color(0xFFFFFFFF));
   }
 
   // ------------------------------------------------------------ shared bits

@@ -11,15 +11,17 @@ import '../../core/status_colors.dart';
 import '../../shared/official_document_branding.dart';
 import '../landing/landing_model.dart';
 import '../landing/landing_providers.dart';
+import '../principal/principal_core.dart';
+import '../proprietor/proprietor_ui.dart';
 import 'parent_models.dart';
 import 'parent_providers.dart';
+import 'parent_ui.dart';
 
 // ============================================================
 // MOBILE MONEY PAYMENT PAGE
 // Also used directly for registration fees (child == null in that
-// case, admissionRequestId set instead). Still a legacy pushed page
-// this pass - a payment flow benefits from being a focused,
-// full-screen step regardless of the shell migration elsewhere.
+// case, admissionRequestId set instead). A focused, full-screen step
+// that wraps itself in the school's theme.
 // ============================================================
 
 class MobileMoneyPaymentPage extends ConsumerStatefulWidget {
@@ -49,6 +51,12 @@ class _MobileMoneyPaymentPageState extends ConsumerState<MobileMoneyPaymentPage>
   final _phoneController = TextEditingController();
   bool _loading = false;
 
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    super.dispose();
+  }
+
   Future<void> _pay() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
@@ -71,12 +79,9 @@ class _MobileMoneyPaymentPageState extends ConsumerState<MobileMoneyPaymentPage>
         'amount': widget.amount,
       });
     } catch (e) {
-      if (mounted) {
-        // initiatePayment throws Exception(serverMessage) - strip the
-        // "Exception: " prefix Dart adds so the parent doesn't see it.
-        final message = e.toString().replaceFirst('Exception: ', '');
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-      }
+      // initiatePayment throws Exception(serverMessage); paMessage strips
+      // the prefix so the parent sees the real reason.
+      if (mounted) prSnack(context, paMessage(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -85,123 +90,77 @@ class _MobileMoneyPaymentPageState extends ConsumerState<MobileMoneyPaymentPage>
   @override
   Widget build(BuildContext context) {
     final strings = AppStrings(ref.watch(activeLocaleProvider));
+    final fr = strings.isFrench;
     return Theme(
       data: buildSchoolTheme(widget.landing.primaryColor, widget.landing.secondaryColor),
-      child: Builder(
-        // A fresh Theme.of(context) here, from the context BELOW the
-        // Theme(...) wrapper above - reading it from the outer build()
-        // context (before the wrapper applies) would silently fall
-        // back to the app's default colors instead of this school's.
-        builder: (context) {
-          final theme = Theme.of(context);
-          final scheme = theme.colorScheme;
-          return Scaffold(
-            appBar: AppBar(title: Text(strings.mobileMoneyPayment)),
-            body: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 480),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        brandedSubpageHeader(context, schoolName: widget.landing.schoolName, logoUrl: widget.landing.logoUrl),
-                        const SizedBox(height: 18),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(22),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(colors: [scheme.primary, scheme.secondary]),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Column(
-                            children: [
-                              Icon(Icons.phone_android_rounded, size: 32, color: scheme.onPrimary),
-                              const SizedBox(height: 10),
-                              Text(
-                                widget.paymentPurpose,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: scheme.onPrimary.withValues(alpha: 0.9), fontWeight: FontWeight.w600),
-                              ),
-                              if (widget.child != null) ...[
-                                const SizedBox(height: 2),
-                                Text(widget.child!.fullName, style: TextStyle(color: scheme.onPrimary.withValues(alpha: 0.75), fontSize: 12)),
-                              ],
-                              const SizedBox(height: 10),
-                              Text(
-                                '${widget.amount.toStringAsFixed(0)} FCFA',
-                                style: TextStyle(color: scheme.onPrimary, fontSize: 28, fontWeight: FontWeight.w800),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        TextFormField(
-                          controller: _phoneController,
-                          keyboardType: TextInputType.phone,
-                          decoration: InputDecoration(
-                            labelText: strings.mobileMoneyNumber,
-                            hintText: '6XXXXXXXX',
-                            prefixIcon: const Icon(Icons.phone_outlined),
-                            filled: true,
-                            fillColor: scheme.surfaceContainerHighest,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                          ),
-                          validator: (v) {
-                            final digits = (v ?? '').replaceAll(RegExp(r'\D'), '');
-                            if (digits.length < 9) return strings.enterValidNumber;
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          strings.isFrench
-                              ? 'Utilisez le numéro MTN ou Orange Money qui recevra la demande de paiement.'
-                              : 'Use the MTN or Orange Money number that will receive the payment request.',
-                          style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-                        ),
-                        const SizedBox(height: 20),
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(color: kPending.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(14)),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Icon(Icons.info_outline_rounded, size: 18, color: kPending),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  strings.isFrench
-                                      ? 'Après avoir appuyé sur "Confirmer", vous recevrez une demande sur votre téléphone. Entrez votre code secret Mobile Money pour terminer le paiement.'
-                                      : 'After tapping "Confirm", you will receive a prompt on your phone. Enter your Mobile Money PIN to complete the payment.',
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 22),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: FilledButton(
-                            onPressed: _loading ? null : _pay,
-                            child: _loading
-                                ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: scheme.onPrimary))
-                                : Text(strings.confirmPayment),
-                          ),
-                        ),
-                      ],
+      // Builder: a context BELOW the Theme wrapper, so Theme.of reads
+      // this school's colours.
+      child: Builder(builder: (context) {
+        final theme = Theme.of(context);
+        final cs = theme.colorScheme;
+        return Scaffold(
+          appBar: AppBar(title: Text(strings.mobileMoneyPayment)),
+          body: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Form(
+                  key: _formKey,
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    brandedSubpageHeader(context, schoolName: widget.landing.schoolName, logoUrl: widget.landing.logoUrl),
+                    const SizedBox(height: 16),
+                    PaHero(
+                      eyebrow: widget.child != null ? '${widget.paymentPurpose} · ${widget.child!.fullName}' : widget.paymentPurpose,
+                      title: paMoney(widget.amount),
+                      subtitle: fr ? 'Paiement par Mobile Money' : 'Pay with Mobile Money',
                     ),
-                  ),
+                    const SizedBox(height: 20),
+                    TextFormField(
+                      controller: _phoneController,
+                      keyboardType: TextInputType.phone,
+                      decoration: pnDeco(strings.mobileMoneyNumber, hint: '6XXXXXXXX', icon: Icons.phone_outlined),
+                      validator: (v) {
+                        final digits = (v ?? '').replaceAll(RegExp(r'\D'), '');
+                        if (digits.length < 9) return strings.enterValidNumber;
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        fr
+                            ? 'Utilisez le numéro MTN ou Orange Money qui recevra la demande de paiement.'
+                            : 'Use the MTN or Orange Money number that will receive the payment request.',
+                        style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    PnNotice(
+                      text: fr
+                          ? 'Après avoir appuyé sur "Confirmer", vous recevrez une demande sur votre téléphone. Entrez votre code secret Mobile Money pour terminer le paiement.'
+                          : 'After tapping "Confirm", you will receive a prompt on your phone. Enter your Mobile Money PIN to complete the payment.',
+                      color: kPending,
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: FilledButton(
+                        onPressed: _loading ? null : _pay,
+                        child: _loading
+                            ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: cs.onPrimary))
+                            : Text(strings.confirmPayment),
+                      ),
+                    ),
+                  ]),
                 ),
               ),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      }),
     );
   }
 }
@@ -232,14 +191,14 @@ class PaymentStatusPage extends ConsumerStatefulWidget {
 
 class _PaymentStatusPageState extends ConsumerState<PaymentStatusPage> {
   // 20 tries * 6s = 2 minutes. Past that a Mobile Money prompt has
-  // almost certainly expired - polling forever (silently, on a page
-  // the parent may have walked away from) wastes their data for no
-  // reason, so it stops and offers a manual re-check instead.
+  // almost certainly expired, so polling stops and offers a manual
+  // re-check instead of silently using the parent's data.
   static const _maxAttempts = 20;
 
   PaymentTransaction? _transaction;
   bool _checking = false;
   bool _timedOut = false;
+  bool _receiptBusy = false;
   int _attempts = 0;
 
   @override
@@ -268,8 +227,8 @@ class _PaymentStatusPageState extends ConsumerState<PaymentStatusPage> {
         ref.invalidate(enrolledChildrenProvider);
       }
     } catch (_) {
-      // A network blip while polling isn't a failed payment - just
-      // stop this round quietly; "Check again" lets the parent retry.
+      // A network blip while polling isn't a failed payment - stop this
+      // round quietly; "Check again" lets the parent retry.
     } finally {
       if (mounted) setState(() => _checking = false);
     }
@@ -283,26 +242,30 @@ class _PaymentStatusPageState extends ConsumerState<PaymentStatusPage> {
     _poll();
   }
 
-  Future<void> _generateReceipt(BuildContext context) async {
+  Future<void> _generateReceipt() async {
     final strings = AppStrings(ref.read(activeLocaleProvider));
-    await generateReceiptPdf(ref: ref, transaction: _transaction!, landing: widget.landing, isFrench: strings.isFrench);
+    setState(() => _receiptBusy = true);
+    try {
+      await generateReceiptPdf(ref: ref, transaction: _transaction!, landing: widget.landing, isFrench: strings.isFrench);
+    } catch (_) {
+      if (mounted) prSnack(context, strings.isFrench ? 'Échec du téléchargement. Veuillez réessayer.' : 'Download failed. Please try again.');
+    } finally {
+      if (mounted) setState(() => _receiptBusy = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final strings = AppStrings(ref.watch(activeLocaleProvider));
+    final fr = strings.isFrench;
     final t = _transaction;
     final success = t?.isSuccessful ?? false;
-    // A cancelled payment reads the same as a failed one here - both
-    // are dead ends that need a fresh attempt, just worded differently.
-    final failed = (t?.isFailed ?? false) || (t?.isCancelled ?? false);
+    // A cancelled payment reads like a failed one: a dead end needing a
+    // fresh attempt, worded differently.
     final cancelled = t?.isCancelled ?? false;
+    final failed = (t?.isFailed ?? false) || cancelled;
 
-    final statusColor = success
-        ? kSettled
-        : failed
-            ? kOverdue
-            : kPending;
+    final statusColor = success ? kSettled : (failed ? kOverdue : kPending);
     final statusIcon = success
         ? Icons.check_circle_rounded
         : failed
@@ -313,94 +276,103 @@ class _PaymentStatusPageState extends ConsumerState<PaymentStatusPage> {
 
     return Theme(
       data: buildSchoolTheme(widget.landing.primaryColor, widget.landing.secondaryColor),
-      // Builder gives a context BELOW the Theme(...) above, so the
-      // Theme.of(context) calls inside actually read this school's
-      // theme - reading it from build()'s own context (above the
-      // wrapper) would silently fall back to the app's default.
       child: Builder(builder: (context) {
         final theme = Theme.of(context);
         return Scaffold(
-        appBar: AppBar(title: Text(strings.paymentStatus), automaticallyImplyLeading: false),
-        body: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+          appBar: AppBar(title: Text(strings.paymentStatus), automaticallyImplyLeading: false),
+          body: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
                   brandedSubpageHeader(context, schoolName: widget.landing.schoolName, logoUrl: widget.landing.logoUrl),
-                  const SizedBox(height: 18),
-                  Container(
-                    width: 96,
-                    height: 96,
-                    decoration: BoxDecoration(color: statusColor.withValues(alpha: 0.12), shape: BoxShape.circle),
-                    child: Icon(statusIcon, size: 48, color: statusColor),
+                  const SizedBox(height: 22),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: PaStatusBadge(key: ValueKey('$success$failed$_timedOut'), icon: statusIcon, color: statusColor, size: 96),
                   ),
                   const SizedBox(height: 18),
                   Text(
                     success
                         ? strings.paymentSuccessful
                         : cancelled
-                            ? (strings.isFrench ? 'Paiement annulé' : 'Payment cancelled')
+                            ? (fr ? 'Paiement annulé' : 'Payment cancelled')
                             : failed
                                 ? strings.paymentFailed
                                 : _timedOut
-                                    ? (strings.isFrench ? 'Toujours en attente' : 'Still pending')
+                                    ? (fr ? 'Toujours en attente' : 'Still pending')
                                     : strings.paymentPending,
-                    style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${widget.paymentPurpose} · ${paMoney(widget.amount)}',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 10),
                   Text(
                     success
-                        ? (strings.isFrench
+                        ? (fr
                             ? 'Votre paiement a été confirmé. L\'école peut maintenant voir cette mise à jour.'
                             : 'Your payment has been confirmed. The school can now see this update.')
                         : failed
-                            ? (strings.isFrench
-                                ? 'Le paiement n\'a pas pu être confirmé. Vous pouvez réessayer.'
-                                : 'The payment could not be confirmed. You can try again.')
+                            ? (fr ? 'Le paiement n\'a pas pu être confirmé. Vous pouvez réessayer.' : 'The payment could not be confirmed. You can try again.')
                             : _timedOut
-                                ? (strings.isFrench
+                                ? (fr
                                     ? 'Nous n\'avons pas encore reçu de confirmation. Vous pouvez vérifier à nouveau, ou consulter l\'historique des paiements plus tard.'
                                     : 'We haven\'t received confirmation yet. You can check again, or look at your payment history later.')
-                                : (strings.isFrench
+                                : (fr
                                     ? 'Vérifiez votre téléphone et entrez votre code secret Mobile Money pour continuer. Cette page se mettra à jour automatiquement.'
                                     : 'Check your phone and enter your Mobile Money PIN to continue. This page will update automatically.'),
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant, height: 1.45),
                   ),
                   const SizedBox(height: 26),
-                  if (success)
+                  if (success) ...[
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
-                        onPressed: () => _generateReceipt(context),
-                        icon: const Icon(Icons.receipt_long_rounded),
+                        onPressed: _receiptBusy ? null : _generateReceipt,
+                        icon: _receiptBusy
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.receipt_long_rounded),
                         label: Text(strings.downloadReceipt),
                       ),
                     ),
-                  if (!success && !failed && !_timedOut)
-                    const Padding(padding: EdgeInsets.only(top: 4), child: CircularProgressIndicator()),
-                  if (!success && !failed && _timedOut)
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(onPressed: () => Navigator.of(context).maybePop(), child: Text(fr ? 'Terminé' : 'Done')),
+                    ),
+                  ],
+                  if (!success && !failed && !_timedOut) const Padding(padding: EdgeInsets.only(top: 4), child: CircularProgressIndicator()),
+                  if (!success && !failed && _timedOut) ...[
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
                         onPressed: _checkAgain,
                         icon: const Icon(Icons.refresh_rounded),
-                        label: Text(strings.isFrench ? 'Vérifier à nouveau' : 'Check again'),
+                        label: Text(fr ? 'Vérifier à nouveau' : 'Check again'),
                       ),
                     ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(onPressed: () => Navigator.of(context).maybePop(), child: Text(fr ? 'Fermer' : 'Close')),
+                    ),
+                  ],
                   if (failed)
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton(onPressed: () => Navigator.pop(context), child: Text(strings.tryAgain)),
                     ),
-                ],
+                ]),
               ),
             ),
           ),
-        ),
         );
       }),
     );

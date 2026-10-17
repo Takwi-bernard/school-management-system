@@ -2,18 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/l10n/app_strings.dart';
-import '../../core/responsive.dart';
 import '../landing/landing_providers.dart';
-import 'parent_models.dart';
+import '../principal/principal_core.dart';
+import '../principal/principal_kit.dart';
+import '../proprietor/proprietor_ui.dart';
 import 'parent_navigation.dart';
 import 'parent_providers.dart';
+import 'parent_ui.dart';
 
-/// For a child already admitted (and possibly already paid for) by
-/// school staff on the parent's behalf - not built yet on the staff
-/// side, but this half needs to be ready for when it is. The parent
-/// enters the child's admission number plus date of birth (both are
-/// required together - the admission number alone is guessable), sees
-/// enough to confirm it's really their child, then links.
+/// Link a child the school already admitted: admission number plus date
+/// of birth (both required, the number alone is guessable), confirm it is
+/// the right child, then link.
 class LinkChildPage extends ConsumerStatefulWidget {
   final String schoolId;
   const LinkChildPage({super.key, required this.schoolId});
@@ -40,7 +39,7 @@ class _LinkChildPageState extends ConsumerState<LinkChildPage> {
     final now = DateTime.now();
     final picked = await showDatePicker(
       context: context,
-      initialDate: DateTime(now.year - 10),
+      initialDate: _dateOfBirth ?? DateTime(now.year - 10),
       firstDate: DateTime(now.year - 25),
       lastDate: now,
     );
@@ -75,9 +74,7 @@ class _LinkChildPageState extends ConsumerState<LinkChildPage> {
       }
     } catch (_) {
       if (mounted) {
-        setState(() => _error = strings.isFrench
-            ? 'Une erreur est survenue. Veuillez réessayer.'
-            : 'Something went wrong. Please try again.');
+        setState(() => _error = strings.isFrench ? 'Une erreur est survenue. Veuillez réessayer.' : 'Something went wrong. Please try again.');
       }
     } finally {
       if (mounted) setState(() => _searching = false);
@@ -85,14 +82,15 @@ class _LinkChildPageState extends ConsumerState<LinkChildPage> {
   }
 
   Future<void> _confirmLink(AppStrings strings) async {
-    setState(() => _linking = true);
+    setState(() {
+      _linking = true;
+      _error = null;
+    });
     try {
       await ref.read(parentRepositoryProvider).linkChildToParent(_found!['student_id'] as String);
       ref.invalidate(enrolledChildrenProvider);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
-        strings.isFrench ? 'Enfant ajouté à votre compte.' : 'Child added to your account.',
-      )));
+      prSnack(context, strings.isFrench ? 'Enfant ajouté à votre compte.' : 'Child added to your account.');
       popParentContent(ref);
     } catch (_) {
       if (mounted) {
@@ -108,165 +106,103 @@ class _LinkChildPageState extends ConsumerState<LinkChildPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final strings = AppStrings(ref.watch(activeLocaleProvider));
-    final landing = ref.watch(landingProvider).value;
+    final fr = strings.isFrench;
 
-    // No own Scaffold/AppBar - in-shell content now, pushed onto
-    // ParentShell's own content stack.
-    return SafeArea(
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: SingleChildScrollView(
-            padding: EdgeInsets.all(Responsive.pagePadding(context)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (landing != null)
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 16),
-                          child: brandedSubpageHeader(context, schoolName: landing.schoolName, logoUrl: landing.logoUrl),
-                        ),
-                      )
-                    else
-                      const Spacer(),
-                    IconButton(
-                      onPressed: () => popParentContent(ref),
-                      icon: const Icon(Icons.close_rounded),
-                      tooltip: strings.isFrench ? 'Fermer' : 'Close',
-                    ),
-                  ],
-                ),
-                  Text(
-                    strings.isFrench
-                        ? 'Si l\'école a déjà inscrit votre enfant pour vous, entrez son numéro d\'admission et sa date de naissance ci-dessous pour l\'ajouter à votre compte.'
-                        : 'If the school already enrolled your child for you, enter their admission number and date of birth below to add them to your account.',
-                    style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.outline),
-                  ),
-                  const SizedBox(height: 24),
-                  if (_found == null) ...[
+    return PrPage(
+      maxWidth: 560,
+      children: [
+        PrHeader(
+          title: fr ? 'Retrouver mon enfant' : 'Find My Child',
+          subtitle: fr
+              ? 'Si l\'école a déjà inscrit votre enfant, entrez son numéro d\'admission et sa date de naissance pour l\'ajouter à votre compte.'
+              : 'If the school already enrolled your child, enter their admission number and date of birth to add them to your account.',
+          trailing: IconButton(onPressed: () => popParentContent(ref), icon: const Icon(Icons.close_rounded), tooltip: fr ? 'Fermer' : 'Close'),
+        ),
+        const SizedBox(height: 20),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 260),
+          switchInCurve: Curves.easeOutCubic,
+          child: _found == null
+              ? PrCard(
+                  key: const ValueKey('form'),
+                  padding: const EdgeInsets.all(20),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     TextField(
                       controller: _admissionNumber,
                       textCapitalization: TextCapitalization.characters,
-                      decoration: InputDecoration(
-                        labelText: strings.isFrench ? 'Numéro d\'admission' : 'Admission Number',
-                        prefixIcon: const Icon(Icons.badge_outlined),
-                        filled: true,
-                        fillColor: theme.colorScheme.surfaceContainerHighest,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                      ),
+                      decoration: pnDeco(fr ? 'Numéro d\'admission' : 'Admission Number', icon: Icons.badge_outlined),
                     ),
                     const SizedBox(height: 14),
-                    Material(
-                      color: theme.colorScheme.surfaceContainerHighest,
+                    InkWell(
                       borderRadius: BorderRadius.circular(14),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(14),
-                        onTap: _pickDateOfBirth,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                          child: Row(
-                            children: [
-                              Icon(Icons.cake_outlined, color: theme.colorScheme.outline, size: 20),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  _dateOfBirth == null
-                                      ? (strings.isFrench ? 'Date de naissance de l\'enfant' : 'Child\'s date of birth')
-                                      : '${_dateOfBirth!.day}/${_dateOfBirth!.month}/${_dateOfBirth!.year}',
-                                  style: TextStyle(color: _dateOfBirth == null ? theme.colorScheme.outline : null),
-                                ),
-                              ),
-                              Icon(Icons.calendar_today_outlined, size: 18, color: theme.colorScheme.outline),
-                            ],
-                          ),
+                      onTap: _pickDateOfBirth,
+                      child: InputDecorator(
+                        decoration: pnDeco(fr ? 'Date de naissance de l\'enfant' : 'Child\'s date of birth', icon: Icons.cake_outlined),
+                        child: Text(
+                          _dateOfBirth == null ? ' ' : paDate(_dateOfBirth!),
+                          style: theme.textTheme.bodyLarge,
                         ),
                       ),
                     ),
-                    const SizedBox(height: 20),
                     if (_error != null) ...[
-                      Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 14),
+                      PnNotice(text: _error!, icon: Icons.error_outline_rounded, color: cs.error),
                     ],
-                    FilledButton.icon(
-                      onPressed: _searching ? null : () => _search(strings),
-                      icon: _searching
-                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.search_rounded),
-                      label: Text(strings.isFrench ? 'Rechercher' : 'Find My Child'),
-                    ),
-                  ] else ...[
-                    Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Column(
-                        children: [
-                          CircleAvatar(
-                            radius: 40,
-                            backgroundColor: theme.colorScheme.surface,
-                            backgroundImage: (_found!['photo_path'] as String?) != null
-                                ? NetworkImage(_found!['photo_path'] as String)
-                                : null,
-                            onBackgroundImageError: (_found!['photo_path'] as String?) != null ? (_, __) {} : null,
-                            child: (_found!['photo_path'] as String?) == null
-                                ? Icon(Icons.person_outline, size: 36, color: theme.colorScheme.primary)
-                                : null,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            '${_found!['first_name']} ${_found!['last_name']}',
-                            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-                          ),
-                          if ((_found!['class_name'] as String?) != null) ...[
-                            const SizedBox(height: 2),
-                            Text(_found!['class_name'] as String, style: TextStyle(color: theme.colorScheme.outline)),
-                          ],
-                        ],
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _searching ? null : () => _search(strings),
+                        icon: _searching ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.search_rounded),
+                        label: Text(fr ? 'Rechercher' : 'Find My Child'),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      strings.isFrench ? 'Est-ce bien votre enfant ?' : 'Is this your child?',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.outline),
-                    ),
-                    const SizedBox(height: 20),
+                  ]),
+                )
+              : PrCard(
+                  key: const ValueKey('found'),
+                  padding: const EdgeInsets.all(22),
+                  child: Column(children: [
+                    PnAvatar(stored: _found!['photo_path'] as String?, name: '${_found!['first_name']} ${_found!['last_name']}', radius: 40),
+                    const SizedBox(height: 12),
+                    Text('${_found!['first_name']} ${_found!['last_name']}', textAlign: TextAlign.center, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
+                    if ((_found!['class_name'] as String?) != null) ...[
+                      const SizedBox(height: 2),
+                      Text(_found!['class_name'] as String, style: TextStyle(color: cs.outline)),
+                    ],
+                    const SizedBox(height: 10),
+                    Text(fr ? 'Est-ce bien votre enfant ?' : 'Is this your child?', style: theme.textTheme.bodyMedium?.copyWith(color: cs.outline)),
                     if (_error != null) ...[
-                      Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
                       const SizedBox(height: 12),
+                      PnNotice(text: _error!, icon: Icons.error_outline_rounded, color: cs.error),
                     ],
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: _linking ? null : () => setState(() => _found = null),
-                            child: Text(strings.isFrench ? 'Non, réessayer' : 'No, try again'),
-                          ),
+                    const SizedBox(height: 18),
+                    Row(children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _linking ? null : () => setState(() {
+                                _found = null;
+                                _error = null;
+                              }),
+                          child: Text(fr ? 'Non, réessayer' : 'No, try again'),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: FilledButton(
-                            onPressed: _linking ? null : () => _confirmLink(strings),
-                            child: _linking
-                                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                                : Text(strings.isFrench ? 'Oui, c\'est mon enfant' : 'Yes, this is my child'),
-                          ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: _linking ? null : () => _confirmLink(strings),
+                          child: _linking
+                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                              : Text(fr ? 'Oui, c\'est mon enfant' : 'Yes, this is my child', textAlign: TextAlign.center),
                         ),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
+                      ),
+                    ]),
+                  ]),
+                ),
         ),
-      );
+      ],
+    );
   }
 }

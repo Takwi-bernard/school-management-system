@@ -1,9 +1,11 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/l10n/app_strings.dart';
-import '../../core/responsive.dart';
+import '../principal/principal_core.dart';
+import '../proprietor/proprietor_ui.dart';
 import 'secretary_format.dart';
 import 'secretary_models.dart';
 import 'secretary_providers.dart';
@@ -11,7 +13,7 @@ import 'secretary_strings.dart';
 import 'secretary_ui.dart';
 
 /// Front-desk directory: browse or search every student at the school,
-/// independent of any fee workflow. From a student's detail card the
+/// independent of any fee workflow. From a student's detail sheet the
 /// secretary can jump straight to collecting their fees.
 class StudentDirectoryPage extends ConsumerStatefulWidget {
   final AppStrings strings;
@@ -53,7 +55,7 @@ class _StudentDirectoryPageState extends ConsumerState<StudentDirectoryPage> {
     });
     try {
       final result = await ref.read(secretaryRepositoryProvider).listStudents(query.trim());
-      if (!mounted || token != _requestToken) return; // a newer search superseded this one
+      if (!mounted || token != _requestToken) return;
       setState(() => _students = result);
     } catch (e) {
       if (!mounted || token != _requestToken) return;
@@ -71,45 +73,40 @@ class _StudentDirectoryPageState extends ConsumerState<StudentDirectoryPage> {
     setState(() {});
   }
 
-  void _showDetails(DirectoryStudent s) {
+  void _showDetails(DirectoryStudent st) {
     final theme = Theme.of(context);
-    Widget row(String label, String value, {bool selectable = false}) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            SizedBox(width: 130, child: Text(label, style: TextStyle(color: theme.colorScheme.outline, fontSize: 13))),
-            Expanded(
-              child: selectable
-                  ? SelectableText(value, style: const TextStyle(fontWeight: FontWeight.w700))
-                  : Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
-            ),
-          ]),
-        );
-
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(_s.sStudentDetailsTitle),
-        content: SizedBox(
-          width: 420,
-          child: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              row(_s.fullName, s.fullName),
-              row(_s.sAdmissionNumberLabel, s.admissionNumber, selectable: true),
-              row(_s.sClassLabel, '${s.className ?? '-'}${s.departmentName != null ? ' · ${s.departmentName}' : ''}'),
-              row(_s.sGenderLabel, genderLabel(_s, s.gender)),
-              if (s.dateOfBirth != null) row(_s.sReviewBornLabel, formatDate(s.dateOfBirth!)),
-              row(_s.sReviewGuardianLabel, s.guardianName != null ? '${s.guardianName}${s.guardianPhone != null ? ' · ${s.guardianPhone}' : ''}' : _s.sNoGuardianOnFile),
+    final cs = theme.colorScheme;
+    pnSheet<void>(
+      context,
+      (sheetContext) => PnSheetBody(
+        title: st.fullName,
+        subtitle: '${st.className ?? '-'}${st.departmentName != null ? ' · ${st.departmentName}' : ''}',
+        children: [
+          Center(child: PrAvatar(name: st.fullName, radius: 38)),
+          const SizedBox(height: 16),
+          PrCard(
+            color: cs.surface,
+            child: Column(children: [
+              SxKeyValue(label: _s.sAdmissionNumberLabel, value: st.admissionNumber, strong: true),
+              const Divider(height: 8),
+              SxKeyValue(label: _s.sGenderLabel, value: genderLabel(_s, st.gender)),
+              if (st.dateOfBirth != null) SxKeyValue(label: _s.sReviewBornLabel, value: formatDate(st.dateOfBirth!)),
+              const Divider(height: 8),
+              SxKeyValue(
+                label: _s.sReviewGuardianLabel,
+                value: st.guardianName != null ? '${st.guardianName}${st.guardianPhone != null ? '\n${st.guardianPhone}' : ''}' : _s.sNoGuardianOnFile,
+              ),
             ]),
           ),
-        ),
+        ],
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(closeLabel(_s))),
+          TextButton(onPressed: () => Navigator.pop(sheetContext), child: Text(closeLabel(_s))),
           FilledButton.icon(
             onPressed: () {
-              Navigator.pop(dialogContext);
-              widget.onCollectFees(s.admissionNumber);
+              Navigator.pop(sheetContext);
+              widget.onCollectFees(st.admissionNumber);
             },
-            icon: const Icon(Icons.payments_outlined, size: 18),
+            icon: const Icon(Icons.payments_rounded, size: 18),
             label: Text(_s.sViewCollectFeesLabel),
           ),
         ],
@@ -120,79 +117,60 @@ class _StudentDirectoryPageState extends ConsumerState<StudentDirectoryPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final fr = _s.isFrench;
 
     Widget content;
     if (_loading && _students.isEmpty) {
-      content = const Center(child: CircularProgressIndicator());
+      content = const SxSkeletonList(rows: 6, height: 74);
     } else if (_error != null && _students.isEmpty) {
-      content = SecretaryErrorView(error: _error!, strings: _s, onRetry: () => _load(_controller.text.trim()));
+      content = SxError(error: _error!, strings: _s, onRetry: () => _load(_controller.text.trim()));
     } else if (_students.isEmpty) {
-      content = SecretaryEmptyState(icon: Icons.groups_outlined, title: _s.sDirectoryEmptyMessage);
+      content = PrCard(child: SxEmpty(icon: Icons.groups_2_outlined, title: _s.sDirectoryEmptyMessage));
     } else {
-      content = RefreshIndicator(
-        onRefresh: () => _load(_controller.text.trim()),
-        child: ListView.separated(
-          physics: const AlwaysScrollableScrollPhysics(),
-          itemCount: _students.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
-          itemBuilder: (context, i) {
-            final s = _students[i];
-            final initial = s.fullName.trim().isNotEmpty ? s.fullName.trim()[0].toUpperCase() : '?';
-            return SecretaryCard(
-              onTap: () => _showDetails(s),
-              child: Row(children: [
-                CircleAvatar(
-                  backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
-                  child: Text(initial, style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.w800)),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(s.fullName, style: const TextStyle(fontWeight: FontWeight.w800)),
-                    Text('${s.admissionNumber} · ${s.className ?? '-'}', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-                    if (s.guardianName != null)
-                      Text(s.guardianName!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
-                  ]),
-                ),
-                const Icon(Icons.chevron_right_rounded),
-              ]),
-            );
-          },
-        ),
-      );
+      content = LayoutBuilder(builder: (context, c) {
+        final cols = c.maxWidth >= 900 ? 2 : 1;
+        const gap = 12.0;
+        final w = (c.maxWidth - gap * (cols - 1)) / cols;
+        return Wrap(spacing: gap, runSpacing: 0, children: [
+          for (var i = 0; i < _students.length; i++)
+            SizedBox(
+              width: w,
+              child: SxRow(
+                index: i < 12 ? i : 0,
+                leading: PrAvatar(name: _students[i].fullName, radius: 22),
+                title: _students[i].fullName,
+                lines: [
+                  '${_students[i].admissionNumber} · ${_students[i].className ?? '-'}',
+                  _students[i].guardianName ?? '',
+                ],
+                trailing: Icon(Icons.chevron_right_rounded, color: cs.outline),
+                onTap: () => _showDetails(_students[i]),
+              ),
+            ),
+        ]);
+      });
     }
 
-    return Padding(
-      padding: EdgeInsets.all(Responsive.pagePadding(context)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        SecretaryPageHeader(
+    return PrPage(
+      onRefresh: () => _load(_controller.text.trim()),
+      children: [
+        PrHeader(
           title: _s.sDirectory,
           subtitle: _s.sDirectoryDescription,
-          trailing: IconButton(tooltip: _s.tryAgain, icon: const Icon(Icons.refresh_rounded), onPressed: () => _load(_controller.text.trim())),
+          trailing: _students.isEmpty ? null : PnChip(label: '${_students.length} ${fr ? 'élèves' : 'students'}', color: cs.primary, icon: Icons.groups_2_rounded),
         ),
-        TextField(
-          controller: _controller,
-          onChanged: _onChanged,
-          decoration: InputDecoration(
-            prefixIcon: const Icon(Icons.search_rounded),
-            labelText: _s.sSearchStudentHint,
-            border: const OutlineInputBorder(),
-            suffixIcon: _controller.text.isEmpty
-                ? null
-                : IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    onPressed: () {
-                      _controller.clear();
-                      _load('');
-                      setState(() {});
-                    },
-                  ),
-          ),
+        PnSearch(controller: _controller, hint: _s.sSearchStudentHint, onChanged: _onChanged),
+        const SizedBox(height: 6),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          height: _loading && _students.isNotEmpty ? 14 : 0,
+          padding: const EdgeInsets.only(top: 8),
+          child: _loading && _students.isNotEmpty ? const LinearProgressIndicator(minHeight: 3) : null,
         ),
-        if (_loading && _students.isNotEmpty) const Padding(padding: EdgeInsets.only(top: 8), child: LinearProgressIndicator()),
-        const SizedBox(height: 14),
-        Expanded(child: content),
-      ]),
+        const SizedBox(height: 12),
+        content,
+      ],
     );
   }
 }
