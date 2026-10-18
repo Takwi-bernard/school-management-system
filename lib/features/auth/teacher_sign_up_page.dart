@@ -7,6 +7,8 @@ import '../landing/landing_providers.dart';
 import 'auth_branding_header.dart';
 import 'auth_error_banner.dart';
 import 'auth_providers.dart';
+import 'auth_widgets.dart';
+import 'google_icon.dart';
 
 class TeacherSignUpPage extends ConsumerStatefulWidget {
   const TeacherSignUpPage({super.key});
@@ -27,7 +29,6 @@ class _TeacherSignUpPageState extends ConsumerState<TeacherSignUpPage> {
   @override
   void initState() {
     super.initState();
-    // FIX: clear any error left over from a different auth page.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(authControllerProvider.notifier).clearError();
     });
@@ -56,8 +57,9 @@ class _TeacherSignUpPageState extends ConsumerState<TeacherSignUpPage> {
     if (!mounted) return;
     final state = ref.read(authControllerProvider);
     if (state.errorMessage == null) {
+      final fr = ref.read(activeLocaleProvider).languageCode == 'fr';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Account created. Awaiting Principal approval.')),
+        SnackBar(content: Text(fr ? 'Compte créé. En attente de l\'approbation du Principal.' : 'Account created. Awaiting Principal approval.')),
       );
       context.go('/sign-in');
     }
@@ -68,32 +70,14 @@ class _TeacherSignUpPageState extends ConsumerState<TeacherSignUpPage> {
     final landing = ref.watch(landingProvider);
     final locale = ref.watch(activeLocaleProvider);
     final authState = ref.watch(authControllerProvider);
+    final fr = locale.languageCode == 'fr';
 
     return landing.when(
-      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Scaffold(
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.wifi_off_rounded, size: 48, color: Colors.grey),
-                const SizedBox(height: 16),
-                const Text('We couldn\'t reach the server. Please check your connection.',
-                    textAlign: TextAlign.center),
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: () => ref.invalidate(landingProvider),
-                  child: const Text('Try Again'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      loading: () => const AuthLoadingView(),
+      error: (e, _) => const AuthLoadFailedView(),
       data: (school) {
         final strings = AppStrings(locale);
+        String? req(String? v) => (v == null || v.trim().isEmpty) ? (fr ? 'Obligatoire' : 'Required') : null;
 
         return AuthScaffold(
           school: school,
@@ -102,40 +86,38 @@ class _TeacherSignUpPageState extends ConsumerState<TeacherSignUpPage> {
             key: _formKey,
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 AuthBrandingHeader(school: school, subtitle: strings.teacher),
                 const SizedBox(height: 20),
+                GoogleSignInButton(
+                  onPressed: authState.isLoading
+                      ? null
+                      : () => ref.read(authControllerProvider.notifier).signInWithGoogle(signUpRole: 'teacher'),
+                  label: strings.continueWithGoogle,
+                ),
+                const SizedBox(height: 18),
+                AuthOrDivider(label: fr ? 'OU AVEC E-MAIL' : 'OR WITH EMAIL'),
+                const SizedBox(height: 18),
                 TextFormField(
                   controller: _name,
                   textCapitalization: TextCapitalization.words,
-                  decoration: InputDecoration(
-                    labelText: strings.fullName,
-                    prefixIcon: const Icon(Icons.person_outline),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  decoration: InputDecoration(labelText: strings.fullName, prefixIcon: const Icon(Icons.person_outline)),
+                  validator: req,
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: _phone,
                   keyboardType: TextInputType.phone,
-                  decoration: InputDecoration(
-                    labelText: strings.phoneNumber,
-                    prefixIcon: const Icon(Icons.phone_outlined),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  decoration: InputDecoration(labelText: strings.phoneNumber, prefixIcon: const Icon(Icons.phone_outlined)),
+                  validator: req,
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: _email,
                   keyboardType: TextInputType.emailAddress,
-                  decoration: InputDecoration(
-                    labelText: strings.email,
-                    prefixIcon: const Icon(Icons.email_outlined),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  validator: (v) => (v == null || !v.contains('@')) ? 'Enter a valid email' : null,
+                  decoration: InputDecoration(labelText: strings.email, prefixIcon: const Icon(Icons.email_outlined)),
+                  validator: (v) => (v == null || !v.contains('@')) ? (fr ? 'Entrez une adresse e-mail valide' : 'Enter a valid email') : null,
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
@@ -144,13 +126,12 @@ class _TeacherSignUpPageState extends ConsumerState<TeacherSignUpPage> {
                   decoration: InputDecoration(
                     labelText: strings.password,
                     prefixIcon: const Icon(Icons.lock_outline),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
                     suffixIcon: IconButton(
                       icon: Icon(_obscure1 ? Icons.visibility_outlined : Icons.visibility_off_outlined),
                       onPressed: () => setState(() => _obscure1 = !_obscure1),
                     ),
                   ),
-                  validator: (v) => (v == null || v.length < 8) ? 'At least 8 characters' : null,
+                  validator: (v) => (v == null || v.length < 8) ? strings.passwordTooShort : null,
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
@@ -159,31 +140,21 @@ class _TeacherSignUpPageState extends ConsumerState<TeacherSignUpPage> {
                   decoration: InputDecoration(
                     labelText: strings.confirmPassword,
                     prefixIcon: const Icon(Icons.lock_reset_outlined),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
                     suffixIcon: IconButton(
                       icon: Icon(_obscure2 ? Icons.visibility_outlined : Icons.visibility_off_outlined),
                       onPressed: () => setState(() => _obscure2 = !_obscure2),
                     ),
                   ),
-                  validator: (v) => v != _password.text ? 'Passwords do not match' : null,
+                  validator: (v) => v != _password.text ? strings.passwordsDoNotMatch : null,
                 ),
                 AuthErrorBanner(
                   message: authState.errorMessage,
                   onDismiss: () => ref.read(authControllerProvider.notifier).clearError(),
                 ),
                 const SizedBox(height: 22),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: FilledButton(
-                    onPressed: authState.isLoading
-                        ? null
-                        : () => _submit(school.schoolId, school.languageMode),
-                    child: authState.isLoading
-                        ? const SizedBox(
-                            width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
-                        : Text(strings.createTeacherAccount),
-                  ),
+                FilledButton(
+                  onPressed: authState.isLoading ? null : () => _submit(school.schoolId, school.languageMode),
+                  child: authState.isLoading ? const AuthButtonSpinner() : Text(strings.createTeacherAccount),
                 ),
                 const SizedBox(height: 12),
                 TextButton(

@@ -8,6 +8,9 @@ import '../features/auth/sign_up_page.dart';
 import '../features/auth/parent_sign_up_page.dart';
 import '../features/auth/teacher_sign_up_page.dart';
 import '../features/auth/auth_gate.dart';
+import '../features/auth/auth_callback_page.dart';
+import '../features/auth/phone_auth_page.dart';
+import '../features/auth/password_recovery_page.dart';
 import '../features/teacher/teacher_home.dart';
 import '../features/parent/parent_home.dart';
 import '../features/parent/parent_fees.dart';
@@ -43,6 +46,22 @@ final appRouter = GoRouter(
   routes: [
     GoRoute(path: '/', name: 'landing', pageBuilder: (c, s) => _page(const LandingPage(), s)),
     GoRoute(path: '/sign-in', name: 'sign-in', pageBuilder: (c, s) => _page(const SignInPage(), s)),
+    GoRoute(path: '/auth/callback', name: 'auth-callback', pageBuilder: (c, s) => _page(const AuthCallbackPage(), s)),
+    GoRoute(
+      path: '/auth/forgot',
+      name: 'auth-forgot',
+      pageBuilder: (c, s) => _page(PasswordRecoveryPage(initialEmail: s.uri.queryParameters['email'] ?? ''), s),
+    ),
+    GoRoute(
+      path: '/auth/reset',
+      name: 'auth-reset',
+      pageBuilder: (c, s) => _page(const PasswordRecoveryPage(fromLink: true), s),
+    ),
+    GoRoute(
+      path: '/auth/phone',
+      name: 'auth-phone',
+      pageBuilder: (c, s) => _page(PhoneAuthPage(signUp: s.uri.queryParameters['mode'] == 'sign-up'), s),
+    ),
     GoRoute(path: '/sign-up', name: 'sign-up', pageBuilder: (c, s) => _page(const SignUpPage(), s)),
     GoRoute(
       path: '/sign-up/parent',
@@ -118,11 +137,6 @@ final appRouter = GoRouter(
   path: '/secretary',
   pageBuilder: (c, s) => _page(const SecretaryHome(), s),
 ),
-    GoRoute(
-      path: '/secretary',
-      pageBuilder: (c, s) =>
-          _page(const RoleGate(requiredRole: 'secretary', label: 'Secretary'), s),
-    ),
    GoRoute(
   path: '/proprietor',
   pageBuilder: (c, s) => _page(const ProprietorHome(), s),

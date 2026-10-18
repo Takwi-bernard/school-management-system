@@ -6,6 +6,7 @@ import '../../core/l10n/app_strings.dart';
 import '../../core/motion.dart';
 import '../landing/landing_providers.dart';
 import 'auth_branding_header.dart';
+import 'auth_widgets.dart';
 
 /// Only Parent and Teacher can publicly register - Principal,
 /// Secretary, and Proprietor accounts are created internally
@@ -19,28 +20,8 @@ class SignUpPage extends ConsumerWidget {
     final locale = ref.watch(activeLocaleProvider);
 
     return landing.when(
-      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Scaffold(
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.wifi_off_rounded, size: 48, color: Colors.grey),
-                const SizedBox(height: 16),
-                const Text('We couldn\'t reach the server. Please check your connection.',
-                    textAlign: TextAlign.center),
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: () => ref.invalidate(landingProvider),
-                  child: const Text('Try Again'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      loading: () => const AuthLoadingView(),
+      error: (e, _) => const AuthLoadFailedView(),
       data: (school) {
         final strings = AppStrings(locale);
 
@@ -49,6 +30,7 @@ class SignUpPage extends ConsumerWidget {
           maxWidth: 560,
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               AuthBrandingHeader(school: school, subtitle: strings.chooseAccountType),
               const SizedBox(height: 24),

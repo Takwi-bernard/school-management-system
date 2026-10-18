@@ -2,6 +2,12 @@ import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/web_prefs.dart';
+
+/// Remembered across Google's full-page redirect: which kind of account
+/// the person was creating ('parent' / 'teacher'). Absent = plain sign-in.
+const kSignUpIntentKey = 'pending_signup_role';
+
 /// A signed-in user's actual identity in OUR system - not just the
 /// Supabase auth.users record, but their role and which school they
 /// belong to (read from public.users, which is what determines what
@@ -26,11 +32,92 @@ class AuthRepository {
     return _client.auth.signInWithPassword(email: email, password: password);
   }
 
-  Future<void> signInWithGoogle() {
+  /// Google sends the person straight back to the auth module's own
+  /// callback page (not the landing page), which finishes the sign-in
+  /// and opens the right dashboard. The callback URL must be in
+  /// Supabase's redirect allow-list (Authentication > URL
+  /// Configuration), e.g. https://your-domain/**
+  ///
+  /// [signUpRole] is 'parent' or 'teacher' when the person is on a
+  /// sign-up page; it is remembered so that, if Google gives us a brand
+  /// new user, the right kind of account is created. From the Sign In
+  /// page it is null, so an unknown Google account is NOT turned into
+  /// anything - the person is told to create an account first.
+  Future<void> signInWithGoogle({String? signUpRole}) {
+    if (signUpRole == 'parent' || signUpRole == 'teacher') {
+      webPrefSet(kSignUpIntentKey, signUpRole!);
+    } else {
+      webPrefRemove(kSignUpIntentKey);
+    }
     return _client.auth.signInWithOAuth(
       OAuthProvider.google,
-      redirectTo: Uri.base.origin,
+      redirectTo: '${Uri.base.origin}/auth/callback',
     );
+  }
+
+  // --------------------------------------------------
+  // PHONE (SMS code)
+  // --------------------------------------------------
+
+  /// Sends a one-time code by SMS. For sign-up [createUser] is true and
+  /// [metadata] carries the same fields the email sign-up sends, so the
+  /// same database trigger builds the profile. For sign-in [createUser]
+  /// is false so an unknown number is refused instead of silently
+  /// creating an account.
+  Future<void> sendPhoneCode({
+    required String phone,
+    required bool createUser,
+    Map<String, dynamic>? metadata,
+  }) {
+    return _client.auth.signInWithOtp(
+      phone: phone,
+      shouldCreateUser: createUser,
+      data: createUser ? metadata : null,
+    );
+  }
+
+  Future<AuthResponse> verifyPhoneCode({required String phone, required String code}) {
+    return _client.auth.verifyOTP(phone: phone, token: code, type: OtpType.sms);
+  }
+
+  String? get currentUserId => _client.auth.currentUser?.id;
+
+  /// After an OAuth redirect the session is established a moment after
+  /// the page loads. Waits for it, up to [timeout].
+  Future<bool> waitForSession({Duration timeout = const Duration(seconds: 8)}) async {
+    final end = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(end)) {
+      if (_client.auth.currentSession != null) return true;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    return _client.auth.currentSession != null;
+  }
+
+  /// First-time Google sign-up: the database trigger cannot know which
+  /// school or role the person chose, so the app asks the database to
+  /// create the profile (parent or teacher) for the signed-in user.
+  /// No-op if a profile already exists.
+  Future<void> claimProfile({required String schoolId, required String role, required String language}) async {
+    await _client.rpc('complete_oauth_signup', params: {'p_school_id': schoolId, 'p_role': role, 'p_language': language});
+  }
+
+  // --------------------------------------------------
+  // PASSWORD RECOVERY
+  // --------------------------------------------------
+
+  /// Emails a reset link (and a one-time code, if the email template
+  /// includes it). Supabase never reveals whether the address exists.
+  Future<void> sendPasswordReset(String email) {
+    return _client.auth.resetPasswordForEmail(email, redirectTo: '${Uri.base.origin}/auth/reset');
+  }
+
+  /// Works from any browser or device, unlike the link.
+  Future<AuthResponse> verifyRecoveryCode({required String email, required String code}) {
+    return _client.auth.verifyOTP(email: email, token: code, type: OtpType.recovery);
+  }
+
+  Future<UserResponse> updatePassword(String newPassword) {
+    return _client.auth.updateUser(UserAttributes(password: newPassword));
   }
 
   Future<void> signOut() => _client.auth.signOut();

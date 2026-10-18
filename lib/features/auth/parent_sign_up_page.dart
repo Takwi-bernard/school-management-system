@@ -10,6 +10,8 @@ import '../landing/landing_providers.dart';
 import 'auth_branding_header.dart';
 import 'auth_error_banner.dart';
 import 'auth_providers.dart';
+import 'auth_widgets.dart';
+import 'google_icon.dart';
 
 class ParentSignUpPage extends ConsumerStatefulWidget {
   const ParentSignUpPage({super.key});
@@ -85,7 +87,7 @@ class _ParentSignUpPageState extends ConsumerState<ParentSignUpPage> {
     final state = ref.read(authControllerProvider);
     if (state.errorMessage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Account created successfully.')),
+        SnackBar(content: Text(ref.read(activeLocaleProvider).languageCode == 'fr' ? 'Compte créé avec succès.' : 'Account created successfully.')),
       );
       context.go('/sign-in');
     }
@@ -98,60 +100,57 @@ class _ParentSignUpPageState extends ConsumerState<ParentSignUpPage> {
     final authState = ref.watch(authControllerProvider);
 
     return landing.when(
-      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Scaffold(
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.wifi_off_rounded, size: 48, color: Colors.grey),
-                const SizedBox(height: 16),
-                const Text('We couldn\'t reach the server. Please check your connection.',
-                    textAlign: TextAlign.center),
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: () => ref.invalidate(landingProvider),
-                  child: const Text('Try Again'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      loading: () => const AuthLoadingView(),
+      error: (e, _) => const AuthLoadFailedView(),
       data: (school) {
         final strings = AppStrings(locale);
-        final theme = Theme.of(context);
+        final fr = locale.languageCode == 'fr';
+        String? req(String? v) => (v == null || v.trim().isEmpty) ? (fr ? 'Obligatoire' : 'Required') : null;
 
         return AuthScaffold(
           school: school,
           maxWidth: 560,
-          child: Form(
+          child: Builder(builder: (context) {
+            final theme = Theme.of(context);
+            return Form(
             key: _formKey,
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 AuthBrandingHeader(school: school, subtitle: strings.parent),
                 const SizedBox(height: 20),
+                GoogleSignInButton(
+                  onPressed: authState.isLoading ? null : () => ref.read(authControllerProvider.notifier).signInWithGoogle(signUpRole: 'parent'),
+                  label: strings.continueWithGoogle,
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: authState.isLoading ? null : () => context.push('/auth/phone?mode=sign-up'),
+                  icon: const Icon(Icons.phone_iphone_rounded),
+                  label: Text(fr ? "S'inscrire avec le téléphone" : 'Sign up with phone'),
+                ),
+                const SizedBox(height: 18),
+                AuthOrDivider(label: fr ? 'OU AVEC E-MAIL' : 'OR WITH EMAIL'),
+                const SizedBox(height: 18),
                 _field(_name, strings.fullName, Icons.person_outline,
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null),
+                    validator: req),
                 const SizedBox(height: 14),
                 _field(_phone, strings.phoneNumber, Icons.phone_outlined,
                     keyboardType: TextInputType.phone,
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null),
+                    validator: req),
                 const SizedBox(height: 14),
                 _field(_email, strings.email, Icons.email_outlined,
                     keyboardType: TextInputType.emailAddress,
-                    validator: (v) => (v == null || !v.contains('@')) ? 'Enter a valid email' : null),
+                    validator: (v) => (v == null || !v.contains('@')) ? (fr ? 'Entrez une adresse e-mail valide' : 'Enter a valid email') : null),
                 const SizedBox(height: 14),
                 _passwordField(_password, strings.password, _obscure1,
                     () => setState(() => _obscure1 = !_obscure1),
-                    validator: (v) => (v == null || v.length < 8) ? 'At least 8 characters' : null),
+                    validator: (v) => (v == null || v.length < 8) ? strings.passwordTooShort : null),
                 const SizedBox(height: 14),
                 _passwordField(_confirm, strings.confirmPassword, _obscure2,
                     () => setState(() => _obscure2 = !_obscure2),
-                    validator: (v) => v != _password.text ? 'Passwords do not match' : null),
+                    validator: (v) => v != _password.text ? strings.passwordsDoNotMatch : null),
 
                 const SizedBox(height: 28),
                 Row(children: [
@@ -192,8 +191,7 @@ class _ParentSignUpPageState extends ConsumerState<ParentSignUpPage> {
                         ? null
                         : () => _submit(school.schoolId, school.languageMode),
                     child: authState.isLoading
-                        ? const SizedBox(
-                            width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
+                        ? const AuthButtonSpinner()
                         : Text(strings.createParentAccount),
                   ),
                 ),
@@ -204,7 +202,8 @@ class _ParentSignUpPageState extends ConsumerState<ParentSignUpPage> {
                 ),
               ],
             ),
-          ),
+          );
+          }),
         );
       },
     );
@@ -223,7 +222,6 @@ class _ParentSignUpPageState extends ConsumerState<ParentSignUpPage> {
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
       ),
       validator: validator,
     );
@@ -242,7 +240,6 @@ class _ParentSignUpPageState extends ConsumerState<ParentSignUpPage> {
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: const Icon(Icons.lock_outline),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
         suffixIcon: IconButton(
           icon: Icon(obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
           onPressed: onToggle,
