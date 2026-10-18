@@ -4,10 +4,12 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/app_strings.dart';
 import '../../core/responsive.dart';
+import '../auth/auth_branding_header.dart';
 import '../auth/auth_gate.dart';
 import '../auth/auth_providers.dart';
 import 'landing_model.dart';
 import 'landing_providers.dart';
+import 'landing_text.dart';
 
 class LandingNavbar extends ConsumerWidget {
   final LandingModel school;
@@ -37,136 +39,143 @@ class LandingNavbar extends ConsumerWidget {
     required this.onNavContact,
   });
 
+  static String _dashboardRoute(String role) => switch (role) {
+        'parent' => '/parent',
+        'teacher' => '/teacher',
+        'principal' => '/principal',
+        'secretary' => '/secretary',
+        'proprietor' => '/proprietor',
+        _ => '/',
+      };
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final text = LandingText(strings.isFrench);
     final isMobile = Responsive.isMobile(context);
-    final isNarrow = MediaQuery.sizeOf(context).width < 360;
     final session = ref.watch(sessionProfileProvider(school.schoolId));
-    final isSignedIn = session.valueOrNull != null;
+    final profile = session.valueOrNull;
+    final isSignedIn = profile != null;
 
-    final navItems = <(String, VoidCallback)>[
-      (strings.home, onNavHome),
-      (strings.about, onNavAbout),
-      (strings.achievements, onNavAchievements),
-      (strings.gallery, onNavGallery),
-      (strings.admissions, onNavAdmissions),
-      (strings.contact, onNavContact),
+    // Transparent and white over the hero; solid and dark-on-light once
+    // the page has scrolled.
+    final fg = elevated ? theme.colorScheme.onSurface : Colors.white;
+
+    final navItems = <(String, IconData, VoidCallback)>[
+      (strings.home, Icons.home_rounded, onNavHome),
+      (strings.about, Icons.info_outline_rounded, onNavAbout),
+      (strings.achievements, Icons.emoji_events_outlined, onNavAchievements),
+      (strings.gallery, Icons.photo_library_outlined, onNavGallery),
+      (strings.admissions, Icons.how_to_reg_outlined, onNavAdmissions),
+      (strings.contact, Icons.mail_outline_rounded, onNavContact),
     ];
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOut,
       height: 72,
-      padding: EdgeInsets.symmetric(horizontal: Responsive.pagePadding(context)),
+      padding: EdgeInsets.symmetric(horizontal: Responsive.pagePadding(context).clamp(16.0, 56.0).toDouble()),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface.withValues(alpha: elevated ? 0.98 : 0.9),
-        boxShadow: elevated
-            ? [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  blurRadius: 20,
-                  offset: const Offset(0, 6),
-                ),
-              ]
-            : [],
+        color: elevated ? theme.colorScheme.surface.withValues(alpha: 0.97) : Colors.transparent,
+        boxShadow: elevated ? [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 24, offset: const Offset(0, 6))] : const [],
       ),
-      child: Row(
-        children: [
-          if (school.logoUrl.isNotEmpty)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                school.logoUrl,
-                width: isNarrow ? 32 : 40,
-                height: isNarrow ? 32 : 40,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) =>
-                    Icon(Icons.school_rounded, color: theme.colorScheme.primary),
-              ),
-            ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              school.schoolName,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              softWrap: true,
-              style: (isMobile ? theme.textTheme.titleSmall : theme.textTheme.titleMedium)
-                  ?.copyWith(fontWeight: FontWeight.w700, height: 1.15),
+      child: Row(children: [
+        SchoolLogo(url: school.logoUrl, size: 44),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            school.schoolName,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: (isMobile ? theme.textTheme.titleSmall : theme.textTheme.titleMedium)?.copyWith(
+              color: fg,
+              fontWeight: FontWeight.w800,
+              height: 1.15,
+              letterSpacing: -0.2,
             ),
           ),
-          const SizedBox(width: 8),
-          if (!isMobile)
-            for (final item in navItems)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: TextButton(onPressed: item.$2, child: Text(item.$1)),
-              ),
-          if (canToggleLanguage) _LanguageToggle(locale: locale),
-          const SizedBox(width: 10),
-          if (!isMobile)
-            _AuthButton(isSignedIn: isSignedIn, school: school, strings: strings)
-          else
-            IconButton(
-              icon: const Icon(Icons.menu_rounded),
-              onPressed: () => _openMobileMenu(context, navItems, strings, isSignedIn, school),
-            ),
+        ),
+        const SizedBox(width: 8),
+        if (!isMobile && MediaQuery.sizeOf(context).width >= 1000)
+          for (final item in navItems) _NavLink(label: item.$1, color: fg, onTap: item.$3),
+        if (canToggleLanguage) ...[
+          const SizedBox(width: 6),
+          _LanguagePill(locale: locale, elevated: elevated),
         ],
-      ),
+        const SizedBox(width: 10),
+        if (!isMobile && MediaQuery.sizeOf(context).width >= 1000)
+          _AuthButton(
+            isSignedIn: isSignedIn,
+            text: text,
+            strings: strings,
+            dashboardRoute: isSignedIn ? _dashboardRoute(profile?.role ?? '') : '/',
+            elevated: elevated,
+          )
+        else
+          IconButton(
+            tooltip: text.menu,
+            icon: Icon(Icons.menu_rounded, color: fg),
+            onPressed: () => _openMenu(context, navItems, text, isSignedIn, isSignedIn ? _dashboardRoute(profile?.role ?? '') : '/'),
+          ),
+      ]),
     );
   }
 
-  void _openMobileMenu(
+  void _openMenu(
     BuildContext context,
-    List<(String, VoidCallback)> navItems,
-    AppStrings strings,
+    List<(String, IconData, VoidCallback)> items,
+    LandingText text,
     bool isSignedIn,
-    LandingModel school,
+    String dashboardRoute,
   ) {
-    // FIX: previously used the default (roughly half-screen, non-
-    // scrollable) bottom sheet, which cut off items on smaller
-    // phones. isScrollControlled + an explicit max-height + a scroll
-    // view means every item is always reachable regardless of screen size.
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (sheetContext) => SafeArea(
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheet) => SafeArea(
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.85),
           child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final item in navItems)
-                  ListTile(
-                    title: Text(item.$1),
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      item.$2();
-                    },
-                  ),
-                const Divider(),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              for (final item in items)
                 ListTile(
-                  title: Text(isSignedIn ? 'Sign Out' : strings.signIn,
-                      style: TextStyle(
-                        color: isSignedIn ? Theme.of(context).colorScheme.error : null,
-                        fontWeight: FontWeight.w600,
-                      )),
-                  trailing: Icon(isSignedIn ? Icons.logout_rounded : Icons.login_rounded,
-                      color: isSignedIn ? Theme.of(context).colorScheme.error : null),
-                  onTap: () async {
-                    Navigator.pop(sheetContext);
-                    if (isSignedIn) {
-                      // ignore: use_build_context_synchronously
-                      await _signOut(context);
-                    } else {
-                      context.push('/sign-in');
-                    }
+                  leading: Icon(item.$2),
+                  title: Text(item.$1, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  onTap: () {
+                    Navigator.pop(sheet);
+                    item.$3();
+                  },
+                ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                  icon: Icon(isSignedIn ? Icons.dashboard_rounded : Icons.login_rounded),
+                  label: Text(isSignedIn ? text.dashboard : strings.signIn),
+                  onPressed: () {
+                    Navigator.pop(sheet);
+                    isSignedIn ? context.go(dashboardRoute) : context.push('/sign-in');
+                  },
+                ),
+              ),
+              if (isSignedIn) ...[
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  icon: const Icon(Icons.logout_rounded),
+                  style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error),
+                  label: Text(text.signOut),
+                  onPressed: () async {
+                    Navigator.pop(sheet);
+                    await _signOut(context);
                   },
                 ),
               ],
-            ),
+            ]),
           ),
         ),
       ),
@@ -180,54 +189,135 @@ Future<void> _signOut(BuildContext context) async {
   if (context.mounted) context.go('/');
 }
 
-/// Sign In uses the school's own primary color (matches every other
-/// primary action on the page). Sign Out is deliberately red/error -
-/// a different, unmistakable color so the two states are never
-/// visually confused.
-class _AuthButton extends StatelessWidget {
-  final bool isSignedIn;
-  final LandingModel school;
-  final AppStrings strings;
-  const _AuthButton({required this.isSignedIn, required this.school, required this.strings});
+/// Text link with a small animated underline.
+class _NavLink extends StatefulWidget {
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  const _NavLink({required this.label, required this.color, required this.onTap});
+
+  @override
+  State<_NavLink> createState() => _NavLinkState();
+}
+
+class _NavLinkState extends State<_NavLink> {
+  bool _hover = false;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(widget.label, style: TextStyle(color: widget.color, fontWeight: FontWeight.w600, fontSize: 14.5)),
+            const SizedBox(height: 3),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              height: 2,
+              width: _hover ? 22 : 0,
+              decoration: BoxDecoration(color: widget.color, borderRadius: BorderRadius.circular(2)),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _AuthButton extends StatelessWidget {
+  final bool isSignedIn;
+  final LandingText text;
+  final AppStrings strings;
+  final String dashboardRoute;
+  final bool elevated;
+  const _AuthButton({required this.isSignedIn, required this.text, required this.strings, required this.dashboardRoute, required this.elevated});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(12));
 
     if (isSignedIn) {
-      return FilledButton(
-        style: FilledButton.styleFrom(backgroundColor: theme.colorScheme.error),
-        onPressed: () => _signOut(context),
-        child: const Text('Sign Out'),
-      );
+      return Row(mainAxisSize: MainAxisSize.min, children: [
+        FilledButton(
+          style: FilledButton.styleFrom(minimumSize: const Size(0, 42), shape: shape),
+          onPressed: () => context.go(dashboardRoute),
+          child: Text(text.dashboard),
+        ),
+        const SizedBox(width: 6),
+        IconButton(
+          tooltip: text.signOut,
+          icon: Icon(Icons.logout_rounded, color: elevated ? cs.error : Colors.white),
+          onPressed: () => _signOut(context),
+        ),
+      ]);
     }
 
+    // On the hero the button is white; once scrolled it takes the
+    // school's colour.
     return FilledButton(
+      style: FilledButton.styleFrom(
+        minimumSize: const Size(0, 42),
+        padding: const EdgeInsets.symmetric(horizontal: 22),
+        shape: shape,
+        backgroundColor: elevated ? cs.primary : Colors.white,
+        foregroundColor: elevated ? cs.onPrimary : cs.primary,
+        textStyle: const TextStyle(fontWeight: FontWeight.w800),
+      ),
       onPressed: () => context.push('/sign-in'),
       child: Text(strings.signIn),
     );
   }
 }
 
-class _LanguageToggle extends ConsumerWidget {
+class _LanguagePill extends ConsumerWidget {
   final Locale locale;
-  const _LanguageToggle({required this.locale});
+  final bool elevated;
+  const _LanguagePill({required this.locale, required this.elevated});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return PopupMenuButton<String>(
-      tooltip: 'Language',
-      initialValue: locale.languageCode,
-      onSelected: (value) =>
-          ref.read(localeOverrideProvider.notifier).state = Locale(value),
-      itemBuilder: (_) => const [
-        PopupMenuItem(value: 'en', child: Text('English')),
-        PopupMenuItem(value: 'fr', child: Text('Français')),
-      ],
-      child: const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 6),
-        child: Icon(Icons.language_rounded, size: 22),
+    final cs = Theme.of(context).colorScheme;
+    final selectedBg = elevated ? cs.primary : Colors.white;
+    final selectedFg = elevated ? cs.onPrimary : cs.primary;
+    final idleFg = elevated ? cs.onSurface : Colors.white;
+
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: elevated ? cs.surfaceContainerHighest.withValues(alpha: 0.6) : Colors.white.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: elevated ? cs.outlineVariant : Colors.white24),
       ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        for (final code in const ['en', 'fr'])
+          GestureDetector(
+            onTap: () => ref.read(localeOverrideProvider.notifier).state = Locale(code),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+              decoration: BoxDecoration(
+                color: locale.languageCode == code ? selectedBg : Colors.transparent,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Text(
+                code.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: locale.languageCode == code ? selectedFg : idleFg,
+                ),
+              ),
+            ),
+          ),
+      ]),
     );
   }
 }
