@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/l10n/app_strings.dart';
+import '../../core/student_photo.dart';
+import '../../core/supabase_providers.dart';
 import '../../shared/official_document_branding.dart';
 import '../landing/landing_model.dart';
 import '../parent/parent_providers.dart' show officialBrandingProvider;
@@ -79,8 +81,10 @@ class _PrincipalCardsPageState extends ConsumerState<PrincipalCardsPage> {
   Future<void> _buildPdf(PnBoardRow row, PnBoardStats stats, String yearName) async {
     final repo = ref.read(principalHubRepositoryProvider);
     final data = await repo.getCardPdfData(row.cardId!, yearLabelFallback: yearName);
+    final photoBytes = await StudentPhoto.bytes(ref.read(supabaseClientProvider), data.studentPhotoUrl);
     final bytes = await pnBuildCardPdf(
       data: data,
+      photoBytes: photoBytes,
       branding: _branding ?? const OfficialBranding(),
       school: widget.landing,
       fallbackLogo: _logo,

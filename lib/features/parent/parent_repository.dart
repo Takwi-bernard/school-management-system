@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'parent_models.dart';
+import '../../core/student_photo.dart';
 
 /// Thrown by changePassword specifically for a wrong CURRENT password,
 /// so the UI (which has the locale) can show a localized message
@@ -76,31 +77,9 @@ class ParentRepository {
     return signed;
   }
 
-  // The student-photos bucket is private, so a stored value can never be
-  // opened directly - it must always be re-signed. Handles both a bare
-  // storage path (the current format) and an old getPublicUrl-style link
-  // from before this fix, so previously-submitted rows keep working.
-  static const _studentPhotoBucket = 'student-photos';
-
-  String? _studentPhotoPath(String stored) {
-    if (!stored.startsWith('http')) return stored;
-    const marker = '/$_studentPhotoBucket/';
-    final index = stored.indexOf(marker);
-    if (index == -1) return null;
-    return Uri.decodeComponent(stored.substring(index + marker.length).split('?').first);
-  }
-
-  Future<String?> _signedStudentPhotoUrl(String stored) async {
-    final path = _studentPhotoPath(stored);
-    if (path == null) return null;
-    try {
-      return await _client.storage.from(_studentPhotoBucket).createSignedUrl(path, 6 * 60 * 60);
-    } catch (_) {
-      // A photo that can no longer be signed (moved/deleted) just shows
-      // the placeholder icon instead of a broken image.
-      return null;
-    }
-  }
+  // Photos are resolved by the shared StudentPhoto helper: it signs the link
+  // and, if signing is refused, falls back instead of showing nothing.
+  Future<String?> _signedStudentPhotoUrl(String stored) => StudentPhoto.displayUrl(_client, stored);
 
   Future<List<EnrolledChild>> _withSignedPhotoUrls(List<EnrolledChild> children) {
     return Future.wait(children.map((child) async {

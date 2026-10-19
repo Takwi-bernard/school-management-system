@@ -16,6 +16,7 @@ Future<Uint8List> pnBuildCardPdf({
   required LandingModel school,
   required pw.MemoryImage? fallbackLogo,
   required bool french,
+  Uint8List? photoBytes,
   required double passMark,
   double? classAverage,
   double? classHighest,
@@ -24,7 +25,9 @@ Future<Uint8List> pnBuildCardPdf({
   String t(String en, String fr) => french ? fr : en;
 
   pw.MemoryImage? photo;
-  if (data.studentPhotoUrl != null) {
+  if (photoBytes != null && photoBytes.isNotEmpty) {
+    photo = pw.MemoryImage(photoBytes);
+  } else if (data.studentPhotoUrl != null && data.studentPhotoUrl!.startsWith('http')) {
     try {
       final r = await http.get(Uri.parse(data.studentPhotoUrl!));
       if (r.statusCode == 200) photo = pw.MemoryImage(r.bodyBytes);
