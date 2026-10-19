@@ -359,7 +359,100 @@ class ParentRepository {
         .select('score, coefficient, weighted_score, grade, remark, subjects(subject_name)')
         .eq('report_card_id', reportRow['id']);
 
-    return ReportCardSummary.fromMap(reportRow, subjectRows);
+    final base = ReportCardSummary.fromMap(reportRow, subjectRows);
+
+    // A sequence report is a single column; nothing to combine.
+    if (scope != 'term') {
+      return ReportCardSummary(
+        studentName: base.studentName,
+        className: base.className,
+        termName: base.termName,
+        overallAverage: base.overallAverage,
+        classRank: base.classRank,
+        totalStudents: base.totalStudents,
+        principalComment: base.principalComment,
+        subjects: base.subjects,
+        periods: [ReportPeriodColumn(id: examPeriodId!, name: (reportRow['exam_periods'] as Map?)?['period_name'] as String? ?? '')],
+      );
+    }
+
+    // Term report: one column per sequence of the term, filled from the
+    // approved marks. A sequence that has no approved mark yet stays an
+    // empty cell, and the average is taken over the marks that exist.
+    final periodRows = await _client
+        .from('exam_periods')
+        .select('id, period_name')
+        .eq('academic_term_id', termId!)
+        .order('sequence_order');
+    final periods = [
+      for (final p in periodRows) ReportPeriodColumn(id: p['id'] as String, name: p['period_name'] as String? ?? ''),
+    ];
+
+    List<dynamic> marksRows = const [];
+    try {
+      marksRows = await _client
+          .from('marks')
+          .select('score, coefficient, exam_period_id, subjects(subject_name)')
+          .eq('student_id', studentId)
+          .inFilter('exam_period_id', periods.map((p) => p.id).toList())
+          .eq('status', 'approved');
+    } catch (_) {
+      // If marks cannot be read here, fall back to the stored term
+      // averages (the columns just stay empty).
+    }
+
+    final byName = <String, SubjectResult>{for (final s in base.subjects) s.subjectName: s};
+    final scores = <String, Map<String, double>>{};
+    final coefs = <String, int>{};
+    for (final m in marksRows) {
+      final name = (m['subjects'] as Map?)?['subject_name'] as String? ?? '';
+      if (name.isEmpty) continue;
+      scores.putIfAbsent(name, () => {})[m['exam_period_id'] as String] = (m['score'] as num).toDouble();
+      coefs[name] = (m['coefficient'] as num).toInt();
+    }
+
+    final names = <String>{...byName.keys, ...scores.keys}.toList()..sort();
+    final subjects = <SubjectResult>[];
+    for (final name in names) {
+      final stored = byName[name];
+      final perPeriod = scores[name] ?? const <String, double>{};
+      final coefficient = stored?.coefficient ?? coefs[name] ?? 1;
+      double avg = stored?.score ?? 0;
+      var grade = stored?.grade;
+      if (perPeriod.isNotEmpty) {
+        avg = perPeriod.values.reduce((a, b) => a + b) / perPeriod.length;
+        // The stored grade belonged to the stored average.
+        if (stored == null || (stored.score - avg).abs() > 0.005) grade = null;
+      }
+      subjects.add(SubjectResult(
+        subjectName: name,
+        score: avg,
+        coefficient: coefficient,
+        weightedScore: avg * coefficient,
+        grade: grade,
+        remark: stored?.remark,
+        scoresByPeriod: perPeriod,
+      ));
+    }
+
+    var overall = base.overallAverage;
+    if (marksRows.isNotEmpty) {
+      final coefSum = subjects.fold<int>(0, (a, s) => a + s.coefficient);
+      final weighted = subjects.fold<double>(0, (a, s) => a + s.weightedScore);
+      if (coefSum > 0) overall = weighted / coefSum;
+    }
+
+    return ReportCardSummary(
+      studentName: base.studentName,
+      className: base.className,
+      termName: base.termName,
+      overallAverage: overall,
+      classRank: base.classRank,
+      totalStudents: base.totalStudents,
+      principalComment: base.principalComment,
+      subjects: subjects,
+      periods: periods,
+    );
   }
 
   // --------------------------------------------------

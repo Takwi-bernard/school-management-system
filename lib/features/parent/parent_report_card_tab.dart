@@ -11,6 +11,7 @@ import '../landing/landing_model.dart';
 import '../proprietor/proprietor_ui.dart';
 import 'parent_models.dart';
 import 'parent_providers.dart';
+import 'parent_shell.dart' show ParentChildAvatar;
 import 'parent_ui.dart';
 
 /// In-shell report card viewer: term picker, a summary hero (average and
@@ -45,6 +46,17 @@ class _ParentReportCardTabState extends ConsumerState<ParentReportCardTab> {
           // No fallback logo - the document just prints without one.
         }
       }
+      // Child's photo (already a signed link), embedded in the header box.
+      pw.MemoryImage? studentPhoto;
+      final photoLink = widget.child.photoUrl;
+      if (photoLink != null && photoLink.isNotEmpty) {
+        try {
+          final res = await http.get(Uri.parse(photoLink));
+          if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) studentPhoto = pw.MemoryImage(res.bodyBytes);
+        } catch (_) {
+          // No photo - the card just prints without one.
+        }
+      }
       if (!mounted) return;
       final primary = Theme.of(context).colorScheme.primary;
       await generateReportCardPdf(
@@ -54,6 +66,7 @@ class _ParentReportCardTabState extends ConsumerState<ParentReportCardTab> {
         isFrench: widget.strings.isFrench,
         accent: PdfColor.fromInt(primary.toARGB32()),
         fallbackLogo: fallbackLogo,
+        studentPhoto: studentPhoto,
       );
     } catch (_) {
       if (mounted) {
@@ -115,7 +128,7 @@ class _ParentReportCardTabState extends ConsumerState<ParentReportCardTab> {
               rowHeight: 90,
               builder: (report) {
                 if (report == null) return _NotPublishedView(strings: strings);
-                return _ReportCardView(report: report, strings: strings, downloading: _downloading, onDownload: () => _download(report));
+                return _ReportCardView(report: report, child: child, strings: strings, downloading: _downloading, onDownload: () => _download(report));
               },
             ),
           ]);
@@ -165,10 +178,11 @@ class _NotPublishedView extends StatelessWidget {
 
 class _ReportCardView extends StatelessWidget {
   final ReportCardSummary report;
+  final EnrolledChild child;
   final AppStrings strings;
   final bool downloading;
   final VoidCallback onDownload;
-  const _ReportCardView({required this.report, required this.strings, required this.downloading, required this.onDownload});
+  const _ReportCardView({required this.report, required this.child, required this.strings, required this.downloading, required this.onDownload});
 
   static const double _maxMark = 20;
 
@@ -182,6 +196,7 @@ class _ReportCardView extends StatelessWidget {
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       PaHero(
+        leading: ParentChildAvatar(child: child, radius: 32),
         eyebrow: strings.studentReportCard,
         title: report.studentName,
         subtitle: '${report.className} · ${report.termName}',
@@ -208,7 +223,7 @@ class _ReportCardView extends StatelessWidget {
       ),
       const SizedBox(height: 12),
       for (var i = 0; i < report.subjects.length; i++)
-        PrReveal(index: i, child: Padding(padding: const EdgeInsets.only(bottom: 10), child: _SubjectCard(result: report.subjects[i], strings: strings, maxMark: _maxMark))),
+        PrReveal(index: i, child: Padding(padding: const EdgeInsets.only(bottom: 10), child: _SubjectCard(result: report.subjects[i], periods: report.periods, strings: strings, maxMark: _maxMark))),
       if (comment != null && comment.isNotEmpty) ...[
         const SizedBox(height: 6),
         PrReveal(
@@ -232,9 +247,10 @@ class _ReportCardView extends StatelessWidget {
 
 class _SubjectCard extends StatelessWidget {
   final SubjectResult result;
+  final List<ReportPeriodColumn> periods;
   final AppStrings strings;
   final double maxMark;
-  const _SubjectCard({required this.result, required this.strings, required this.maxMark});
+  const _SubjectCard({required this.result, required this.periods, required this.strings, required this.maxMark});
 
   @override
   Widget build(BuildContext context) {
@@ -260,6 +276,20 @@ class _SubjectCard extends StatelessWidget {
         ]),
         const SizedBox(height: 10),
         PrProgressBar(value: progress, height: 6),
+        if (periods.length > 1) ...[
+          const SizedBox(height: 10),
+          Wrap(spacing: 8, runSpacing: 6, children: [
+            for (final p in periods)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(color: cs.surfaceContainerHighest, borderRadius: BorderRadius.circular(8)),
+                child: Text(
+                  '${p.name}: ${result.scoresByPeriod[p.id] == null ? '-' : result.scoresByPeriod[p.id]!.toStringAsFixed(1)}',
+                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: result.scoresByPeriod[p.id] == null ? cs.outline : cs.onSurface),
+                ),
+              ),
+          ]),
+        ],
         const SizedBox(height: 8),
         Row(children: [
           Text('${strings.coefficientShort} ${result.coefficient}', style: theme.textTheme.bodySmall?.copyWith(color: cs.outline)),
@@ -287,6 +317,7 @@ Future<void> generateReportCardPdf({
   required bool isFrench,
   PdfColor? accent,
   pw.MemoryImage? fallbackLogo,
+  pw.MemoryImage? studentPhoto,
 }) async {
   String t(String en, String fr) => isFrench ? fr : en;
 
@@ -304,6 +335,8 @@ Future<void> generateReportCardPdf({
   final totalWeighted = report.subjects.fold<double>(0, (sum, s) => sum + s.weightedScore);
   final hasRank = report.classRank != null && report.totalStudents != null;
   final comment = report.principalComment?.trim();
+  // one column per sequence, only when the report combines several
+  final seqCols = report.periods.length > 1 ? report.periods : const <ReportPeriodColumn>[];
 
   pw.Widget cell(String text, {bool bold = false, bool center = false, PdfColor? color}) => pw.Padding(
         padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
@@ -365,22 +398,38 @@ Future<void> generateReportCardPdf({
         borderRadius: pw.BorderRadius.circular(4),
       ),
       child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        crossAxisAlignment: pw.CrossAxisAlignment.center,
         children: [
-          pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              infoLine(t('Student', 'Élève'), report.studentName),
-              infoLine(t('Class', 'Classe'), report.className),
-            ],
-          ),
-          pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              infoLine(t('Term', 'Trimestre'), report.termName),
-              if (hasRank) infoLine(t('Class size', 'Effectif'), '${report.totalStudents}'),
-            ],
+          if (studentPhoto != null) ...[
+            pw.Container(
+              width: 62,
+              height: 78,
+              decoration: pw.BoxDecoration(border: pw.Border.all(color: accentColor, width: 1)),
+              child: pw.Image(studentPhoto, fit: pw.BoxFit.cover),
+            ),
+            pw.SizedBox(width: 14),
+          ],
+          pw.Expanded(
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    infoLine(t('Student', 'Élève'), report.studentName),
+                    infoLine(t('Class', 'Classe'), report.className),
+                  ],
+                ),
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    infoLine(t('Term', 'Trimestre'), report.termName),
+                    if (hasRank) infoLine(t('Class size', 'Effectif'), '${report.totalStudents}'),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -391,10 +440,11 @@ Future<void> generateReportCardPdf({
       columnWidths: {
         0: const pw.FlexColumnWidth(4),
         1: const pw.FlexColumnWidth(1),
-        2: const pw.FlexColumnWidth(1.2),
-        3: const pw.FlexColumnWidth(1.4),
-        4: const pw.FlexColumnWidth(1),
-        5: const pw.FlexColumnWidth(3),
+        for (var i = 0; i < seqCols.length; i++) 2 + i: const pw.FlexColumnWidth(1.1),
+        2 + seqCols.length: const pw.FlexColumnWidth(1.2),
+        3 + seqCols.length: const pw.FlexColumnWidth(1.4),
+        4 + seqCols.length: const pw.FlexColumnWidth(1),
+        5 + seqCols.length: const pw.FlexColumnWidth(3),
       },
       children: [
         pw.TableRow(
@@ -402,7 +452,8 @@ Future<void> generateReportCardPdf({
           children: [
             cell(t('Subject', 'Matière'), bold: true, color: onAccent),
             cell(t('Coef.', 'Coef.'), bold: true, center: true, color: onAccent),
-            cell(t('Mark', 'Note'), bold: true, center: true, color: onAccent),
+            for (final p in seqCols) cell(p.name, bold: true, center: true, color: onAccent),
+            cell(seqCols.isEmpty ? t('Mark', 'Note') : t('Avg.', 'Moy.'), bold: true, center: true, color: onAccent),
             cell(t('Total', 'Total'), bold: true, center: true, color: onAccent),
             cell(t('Grade', 'Appréc.'), bold: true, center: true, color: onAccent),
             cell(t('Remark', 'Remarque'), bold: true, color: onAccent),
@@ -412,6 +463,8 @@ Future<void> generateReportCardPdf({
           pw.TableRow(children: [
             cell(s.subjectName),
             cell('${s.coefficient}', center: true),
+            // an empty cell where a sequence has no approved mark yet
+            for (final p in seqCols) cell(s.scoresByPeriod[p.id]?.toStringAsFixed(1) ?? '', center: true),
             cell(s.score.toStringAsFixed(1), center: true),
             cell(s.weightedScore.toStringAsFixed(1), center: true),
             cell(s.grade ?? '-', center: true),
@@ -422,6 +475,7 @@ Future<void> generateReportCardPdf({
           children: [
             cell(t('TOTAL', 'TOTAL'), bold: true),
             cell('$totalCoefficient', bold: true, center: true),
+            for (var i = 0; i < seqCols.length; i++) cell('', center: true),
             cell('', center: true),
             cell(totalWeighted.toStringAsFixed(1), bold: true, center: true),
             cell('', center: true),

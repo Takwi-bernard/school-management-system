@@ -366,6 +366,11 @@ class SubjectResult {
   final String? grade;
   final String? remark;
 
+  /// Approved mark per sequence (keyed by exam period id), filled for a
+  /// term report so every sequence gets its own column. A sequence with
+  /// no approved mark simply has no entry, and shows as an empty cell.
+  final Map<String, double> scoresByPeriod;
+
   const SubjectResult({
     required this.subjectName,
     required this.score,
@@ -373,6 +378,7 @@ class SubjectResult {
     required this.weightedScore,
     this.grade,
     this.remark,
+    this.scoresByPeriod = const {},
   });
 
   factory SubjectResult.fromMap(Map<String, dynamic> map) {
@@ -398,6 +404,10 @@ class ReportCardSummary {
   final String? principalComment;
   final List<SubjectResult> subjects;
 
+  /// The sequences that make up this report, in order: one for a
+  /// sequence report, all of the term's sequences for a term report.
+  final List<ReportPeriodColumn> periods;
+
   const ReportCardSummary({
     required this.studentName,
     required this.className,
@@ -407,6 +417,7 @@ class ReportCardSummary {
     this.totalStudents,
     this.principalComment,
     required this.subjects,
+    this.periods = const [],
   });
 
   factory ReportCardSummary.fromMap(Map<String, dynamic> report, List<dynamic> subjectRows) {
@@ -431,6 +442,12 @@ class ReportCardSummary {
       subjects: subjectRows.map((r) => SubjectResult.fromMap(Map<String, dynamic>.from(r))).toList(),
     );
   }
+}
+
+class ReportPeriodColumn {
+  final String id;
+  final String name;
+  const ReportPeriodColumn({required this.id, required this.name});
 }
 
 class AttendanceSummary {
