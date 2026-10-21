@@ -44,7 +44,8 @@ class PrincipalRepository {
 
   Future<void> approveTeacher(String teacherId, String principalId) async {
     await _client.from('teachers').update({
-      'is_approved': true,
+      // is_approved is a generated column: the database derives it from
+      // approval_status, so it must never be written from the app.
       'approval_status': 'approved',
       'approved_by': principalId,
       'approved_at': DateTime.now().toIso8601String(),
@@ -53,7 +54,6 @@ class PrincipalRepository {
 
   Future<void> rejectTeacher(String teacherId, String principalId) async {
     await _client.from('teachers').update({
-      'is_approved': false,
       'approval_status': 'rejected',
       'approved_by': principalId,
       'approved_at': DateTime.now().toIso8601String(),
