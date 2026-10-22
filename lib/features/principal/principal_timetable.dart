@@ -18,7 +18,7 @@ import 'principal_core.dart';
 import 'principal_hub_providers.dart';
 import 'principal_kit.dart';
 import 'principal_models.dart';
-import 'principal_providers.dart';
+import 'principal_providers.dart' hide officialBrandingProvider;
 import 'principal_timetable_extra.dart';
 
 // ============================================================
