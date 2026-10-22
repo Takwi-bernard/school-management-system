@@ -32,6 +32,7 @@ import 'principal_students.dart';
 import 'principal_teacher_pay.dart';
 import 'principal_teachers.dart';
 import 'principal_timetable.dart';
+import 'principal_website.dart';
 import 'principal_tracker.dart';
 
 class PrincipalHome extends ConsumerWidget {
@@ -139,6 +140,12 @@ class _PrincipalShellState extends ConsumerState<_PrincipalShell> {
           _NavItem(key: PnNav.ttGenerate, icon: Icons.auto_awesome_outlined, activeIcon: Icons.auto_awesome_rounded, title: _s.pn('Generate with AI', 'Générer avec l\'IA')),
           _NavItem(key: PnNav.ttView, icon: Icons.calendar_view_week_outlined, activeIcon: Icons.calendar_view_week_rounded, title: _s.pn('View & download', 'Consulter et télécharger')),
         ]),
+        _NavGroup(title: _s.pn('School website', 'Site de l\'école'), items: [
+          _NavItem(key: PnNav.siteAnnouncements, icon: Icons.campaign_outlined, activeIcon: Icons.campaign_rounded, title: _s.pn('Announcements', 'Annonces')),
+          _NavItem(key: PnNav.siteEvents, icon: Icons.event_available_outlined, activeIcon: Icons.event_available_rounded, title: _s.pn('Events', 'Événements')),
+          _NavItem(key: PnNav.siteStats, icon: Icons.query_stats_outlined, activeIcon: Icons.query_stats_rounded, title: _s.pn('Website statistics', 'Statistiques du site')),
+          _NavItem(key: PnNav.siteDocuments, icon: Icons.approval_outlined, activeIcon: Icons.approval_rounded, title: _s.pn('Letterhead & stamps', 'En-tête et cachets')),
+        ]),
         _NavGroup(title: _s.pn('Money', 'Finances'), items: [
           _NavItem(key: PnNav.corrections, icon: Icons.rule_outlined, activeIcon: Icons.rule_rounded, title: _s.pn('Payment corrections', 'Corrections de paiement')),
           _NavItem(key: PnNav.arrears, icon: Icons.hourglass_bottom_outlined, activeIcon: Icons.hourglass_bottom_rounded, title: _s.pn('Fee arrears', 'Frais impayés')),
@@ -198,6 +205,14 @@ class _PrincipalShellState extends ConsumerState<_PrincipalShell> {
         return PrincipalTeacherPayPage(schoolId: _schoolId, strings: _s);
       case PnNav.expenses:
         return PrincipalExpensesPage(schoolId: _schoolId, strings: _s);
+      case PnNav.siteAnnouncements:
+        return PrincipalAnnouncementsPage(schoolId: _schoolId, strings: _s);
+      case PnNav.siteEvents:
+        return PrincipalEventsPage(schoolId: _schoolId, strings: _s);
+      case PnNav.siteStats:
+        return PrincipalWebsiteStatsPage(schoolId: _schoolId, strings: _s);
+      case PnNav.siteDocuments:
+        return PrincipalDocumentsPage(schoolId: _schoolId, strings: _s);
       case PnNav.settings:
         return PrincipalSettingsPage(schoolId: _schoolId, strings: _s);
       default:

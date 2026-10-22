@@ -7,6 +7,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import '../../core/l10n/app_strings.dart';
+import '../../core/supabase_providers.dart';
 import '../../shared/official_document_branding.dart';
 import '../landing/landing_model.dart';
 import '../parent/parent_providers.dart' show officialBrandingProvider;
@@ -17,13 +18,27 @@ import 'principal_core.dart';
 import 'principal_hub_providers.dart';
 import 'principal_kit.dart';
 import 'principal_models.dart';
-import 'principal_providers.dart' hide officialBrandingProvider;
+import 'principal_providers.dart';
+import 'principal_timetable_extra.dart';
 
 // ============================================================
 // shared helpers
 // ============================================================
 
 String _hm5(String v) => v.length >= 5 ? v.substring(0, 5) : v;
+
+/// The working days plus any other day that actually has lessons (for
+/// example a requested Saturday), so those lessons are never hidden.
+List<int> _unionDays(TimetableSettings st, Iterable<int> slotDays) {
+  final base = st.workingDays.isEmpty ? [1, 2, 3, 4, 5] : st.workingDays;
+  return {...base, ...slotDays.where((d) => d >= 1 && d <= 7)}.toList()..sort();
+}
+
+class _DayHrs {
+  TimeOfDay start;
+  TimeOfDay end;
+  _DayHrs(this.start, this.end);
+}
 
 class _Break {
   final String label;
@@ -113,6 +128,9 @@ class _TimetableSettingsPageState extends ConsumerState<TimetableSettingsPage> {
   TimeOfDay _end = const TimeOfDay(hour: 15, minute: 30);
   final Set<int> _days = {};
   final List<_BreakDraft> _breaks = [];
+  final Map<int, _DayHrs> _dayHours = {};
+  bool _dhSeeded = false;
+  bool _dhHadAny = false;
   bool _seeded = false;
   bool _dirty = false;
   bool _saving = false;
@@ -141,6 +159,16 @@ class _TimetableSettingsPageState extends ConsumerState<TimetableSettingsPage> {
     }
   }
 
+  void _seedDayHours(PnDayHours h) {
+    _dhHadAny = h.isNotEmpty;
+    for (final e in h.entries) {
+      _dayHours[e.key] = _DayHrs(
+        e.value.start == null ? _start : pnParseHm(e.value.start!),
+        e.value.end == null ? _end : pnParseHm(e.value.end!, fallback: _end),
+      );
+    }
+  }
+
   int _m(TimeOfDay t) => t.hour * 60 + t.minute;
 
   List<String> _problems() {
@@ -149,6 +177,11 @@ class _TimetableSettingsPageState extends ConsumerState<TimetableSettingsPage> {
     if (_period < 20 || _period > 180) out.add(s.pn('The period length must be between 20 and 180 minutes.', 'La durée d’une période doit être comprise entre 20 et 180 minutes.'));
     if (_m(_end) <= _m(_start)) out.add(s.pn('The day must end after it starts.', 'La journée doit se terminer après son début.'));
     if (_days.isEmpty) out.add(s.pn('Select at least one working day.', 'Sélectionnez au moins un jour de classe.'));
+    for (final e in _dayHours.entries) {
+      if (_days.contains(e.key) && _m(e.value.end) <= _m(e.value.start)) {
+        out.add(s.pn('${pnDayLong(s, e.key)} must end after it starts.', '${pnDayLong(s, e.key)} doit se terminer après son début.'));
+      }
+    }
     final sorted = [..._breaks]..sort((a, b) => _m(a.start).compareTo(_m(b.start)));
     for (var i = 0; i < sorted.length; i++) {
       final b = sorted[i];
@@ -181,7 +214,16 @@ class _TimetableSettingsPageState extends ConsumerState<TimetableSettingsPage> {
             breakPeriods: [for (final b in _breaks) {'label': b.label.text.trim().isEmpty ? 'Break' : b.label.text.trim(), 'start': pnHm(b.start), 'end': pnHm(b.end)}],
             workingDays: _days.toList()..sort(),
           );
+      final PnDayHours custom = {
+        for (final e in _dayHours.entries)
+          if (_days.contains(e.key)) e.key: (start: pnHm(e.value.start), end: pnHm(e.value.end)),
+      };
+      if (custom.isNotEmpty || _dhHadAny) {
+        await saveTimetableDayHours(ref.read(supabaseClientProvider), widget.schoolId, custom);
+        _dhHadAny = custom.isNotEmpty;
+      }
       ref.invalidate(timetableSettingsProvider(widget.schoolId));
+      ref.invalidate(timetableDayHoursProvider(widget.schoolId));
       if (mounted) {
         setState(() => _dirty = false);
         prSnack(context, s.pn('Timetable settings saved.', 'Paramètres de l’emploi du temps enregistrés.'));
@@ -199,6 +241,7 @@ class _TimetableSettingsPageState extends ConsumerState<TimetableSettingsPage> {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final async = ref.watch(timetableSettingsProvider(widget.schoolId));
+    final dhAsync = ref.watch(timetableDayHoursProvider(widget.schoolId));
     return PrPage(
       maxWidth: 780,
       children: [
@@ -213,6 +256,10 @@ class _TimetableSettingsPageState extends ConsumerState<TimetableSettingsPage> {
           onRetry: () => ref.invalidate(timetableSettingsProvider(widget.schoolId)),
           builder: (st) {
             _seed(st);
+            if (!_dhSeeded && dhAsync.hasValue) {
+              _dhSeeded = true;
+              _seedDayHours(dhAsync.value!);
+            }
             final problems = _problems();
             final dayMin = _m(_end) - _m(_start);
             final breakMin = _breaks.fold<int>(0, (a, b) => a + (_m(b.end) - _m(b.start)).clamp(0, 600).toInt());
@@ -292,6 +339,47 @@ class _TimetableSettingsPageState extends ConsumerState<TimetableSettingsPage> {
               const SizedBox(height: 14),
               PrReveal(
                 index: 2,
+                child: PnPanel(
+                  title: s.pn('Different hours on some days', 'Horaires différents certains jours'),
+                  subtitle: s.pn('For example Wednesday finishing earlier. Days you do not switch on follow the school day above.', 'Par exemple le mercredi qui se termine plus tôt. Les jours non activés suivent la journée scolaire ci-dessus.'),
+                  child: _days.isEmpty
+                      ? Text(s.pn('Select working days first.', 'Sélectionnez d’abord les jours de classe.'), style: theme.textTheme.bodySmall?.copyWith(color: cs.outline))
+                      : Column(children: [
+                          for (final d in ([..._days]..sort()))
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                                Row(children: [
+                                  Expanded(child: Text(pnDayLong(s, d), style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700))),
+                                  Switch(
+                                    value: _dayHours.containsKey(d),
+                                    onChanged: (on) => setState(() {
+                                      if (on) {
+                                        _dayHours[d] = _DayHrs(_start, _end);
+                                      } else {
+                                        _dayHours.remove(d);
+                                      }
+                                      _dirty = true;
+                                    }),
+                                  ),
+                                ]),
+                                if (_dayHours.containsKey(d))
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: Row(children: [
+                                      Expanded(child: OutlinedButton(onPressed: () => _pick(_dayHours[d]!.start, (t) => _dayHours[d]!.start = t), child: Text(s.pn('Starts ${pnHm(_dayHours[d]!.start)}', 'Début ${pnHm(_dayHours[d]!.start)}')))),
+                                      const SizedBox(width: 10),
+                                      Expanded(child: OutlinedButton(onPressed: () => _pick(_dayHours[d]!.end, (t) => _dayHours[d]!.end = t), child: Text(s.pn('Ends ${pnHm(_dayHours[d]!.end)}', 'Fin ${pnHm(_dayHours[d]!.end)}')))),
+                                    ]),
+                                  ),
+                              ]),
+                            ),
+                        ]),
+                ),
+              ),
+              const SizedBox(height: 14),
+              PrReveal(
+                index: 3,
                 child: PnPanel(
                   title: s.pn('Preview of a day', 'Aperçu d’une journée'),
                   subtitle: dayMin > 0 ? s.pn('About $perDay teaching periods per day.', 'Environ $perDay périodes de cours par jour.') : null,
@@ -381,6 +469,12 @@ class _GenerateTimetablePageState extends ConsumerState<GenerateTimetablePage> {
   DepartmentFull? _department;
   ManagedClass? _class;
   final _note = TextEditingController();
+  bool _useHours = false;
+  TimeOfDay _hStart = const TimeOfDay(hour: 7, minute: 30);
+  TimeOfDay _hEnd = const TimeOfDay(hour: 15, minute: 30);
+  bool _extraDay = false;
+  int _extraDayNo = 6;
+  final Map<String, int> _extraSubjects = {};
   bool _generating = false;
   Map<String, dynamic>? _result;
   Timer? _ticker;
@@ -403,8 +497,27 @@ class _GenerateTimetablePageState extends ConsumerState<GenerateTimetablePage> {
         _s.pn('Almost there…', 'Presque terminé…'),
       ];
 
+  Future<void> _pickTime(TimeOfDay initial, ValueChanged<TimeOfDay> set) async {
+    final p = await showTimePicker(context: context, initialTime: initial);
+    if (p != null && mounted) setState(() => set(p));
+  }
+
+  int _effectiveExtraDay(List<int> working) {
+    final choices = [for (var d = 1; d <= 7; d++) if (!working.contains(d)) d];
+    if (choices.isEmpty || choices.contains(_extraDayNo)) return _extraDayNo;
+    return choices.first;
+  }
+
   Future<void> _generate() async {
     final s = _s;
+    if (_useHours && _hEnd.hour * 60 + _hEnd.minute <= _hStart.hour * 60 + _hStart.minute) {
+      prSnack(context, s.pn('The closing time must be after the start time.', 'L’heure de fin doit être après l’heure de début.'));
+      return;
+    }
+    if (_extraDay && _extraSubjects.isEmpty) {
+      prSnack(context, s.pn('Choose at least one subject for the extra day, or switch it off.', 'Choisissez au moins une matière pour le jour supplémentaire, ou désactivez-le.'));
+      return;
+    }
     if (_scope == _GenScope.department && _department == null) {
       prSnack(context, s.pn('Select a department.', 'Sélectionnez un département.'));
       return;
@@ -431,12 +544,18 @@ class _GenerateTimetablePageState extends ConsumerState<GenerateTimetablePage> {
       if (mounted) setState(() => _msg = (_msg + 1) % _messages.length);
     });
     try {
-      final r = await ref.read(principalRepositoryProvider).generateTimetable(
+      final working = ref.read(timetableSettingsProvider(widget.schoolId)).valueOrNull?.workingDays ?? const [1, 2, 3, 4, 5];
+      final extraDay = _effectiveExtraDay(working);
+      final r = await generateTimetableWithOptions(
+            ref.read(supabaseClientProvider),
             schoolId: widget.schoolId,
             scopeType: _scope == _GenScope.school ? 'school' : (_scope == _GenScope.department ? 'department' : 'class'),
             departmentId: _scope == _GenScope.department ? _department!.id : null,
             classId: _scope == _GenScope.class_ ? _class!.id : null,
             principalNote: _note.text,
+            hoursStart: _useHours ? pnHm(_hStart) : null,
+            hoursEnd: _useHours ? pnHm(_hEnd) : null,
+            dayRequests: _extraDay ? [for (final e in _extraSubjects.entries) PnDayRequest(day: extraDay, subjectId: e.key, periods: e.value)] : const [],
           );
       ref.invalidate(timetableHistoryProvider(widget.schoolId));
       ref.invalidate(pnOverviewProvider);
@@ -545,6 +664,8 @@ class _GenerateTimetablePageState extends ConsumerState<GenerateTimetablePage> {
                 ]),
               ),
               const SizedBox(height: 18),
+              _special(s, settings.valueOrNull),
+              const SizedBox(height: 18),
               Text(s.pn('Note for the AI (optional)', 'Note pour l’IA (facultatif)'), style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
               const SizedBox(height: 4),
               Text(s.pn('Context only: it can never override your fixed settings.', 'Contexte uniquement : elle ne peut jamais outrepasser vos paramètres fixes.'), style: theme.textTheme.bodySmall?.copyWith(color: cs.outline)),
@@ -590,6 +711,88 @@ class _GenerateTimetablePageState extends ConsumerState<GenerateTimetablePage> {
         _history(s),
       ],
     );
+  }
+
+  Widget _special(AppStrings s, TimetableSettings? st) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final working = st?.workingDays ?? const [1, 2, 3, 4, 5];
+    final extraChoices = [for (var d = 1; d <= 7; d++) if (!working.contains(d)) d];
+    final extraDay = _effectiveExtraDay(working);
+    final subjects = ref.watch(managedSubjectsProvider(widget.schoolId));
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      SwitchListTile.adaptive(
+        contentPadding: EdgeInsets.zero,
+        value: _useHours,
+        onChanged: _generating
+            ? null
+            : (v) => setState(() {
+                  _useHours = v;
+                  if (v && st != null) {
+                    _hStart = pnParseHm(st.dayStartTime);
+                    _hEnd = pnParseHm(st.dayEndTime, fallback: const TimeOfDay(hour: 15, minute: 30));
+                  }
+                }),
+        title: Text(s.pn('Different hours for this generation', 'Horaires différents pour cette génération'), style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+        subtitle: Text(s.pn('For classes that finish at a different time, for example Form 1 before Upper Sixth. Your saved settings are not changed.', 'Pour les classes qui finissent à une autre heure, par exemple la 6e avant la Terminale. Vos paramètres enregistrés ne sont pas modifiés.')),
+      ),
+      if (_useHours)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(children: [
+            Expanded(child: OutlinedButton(onPressed: _generating ? null : () => _pickTime(_hStart, (t) => _hStart = t), child: Text(s.pn('Starts ${pnHm(_hStart)}', 'Début ${pnHm(_hStart)}')))),
+            const SizedBox(width: 10),
+            Expanded(child: OutlinedButton(onPressed: _generating ? null : () => _pickTime(_hEnd, (t) => _hEnd = t), child: Text(s.pn('Ends ${pnHm(_hEnd)}', 'Fin ${pnHm(_hEnd)}')))),
+          ]),
+        ),
+      SwitchListTile.adaptive(
+        contentPadding: EdgeInsets.zero,
+        value: _extraDay,
+        onChanged: _generating ? null : (v) => setState(() => _extraDay = v),
+        title: Text(s.pn('Lessons on an extra day (for example Saturday)', 'Cours un jour supplémentaire (par exemple le samedi)'), style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+        subtitle: Text(s.pn('Only the subjects you pick are placed on that day, together. The rest of each subject’s weekly periods go on the normal days.', 'Seules les matières choisies sont placées ce jour-là, ensemble. Le reste des périodes hebdomadaires va sur les jours normaux.')),
+      ),
+      if (_extraDay) ...[
+        if (extraChoices.isEmpty)
+          Text(s.pn('Every day is already a working day.', 'Tous les jours sont déjà des jours de classe.'), style: theme.textTheme.bodySmall?.copyWith(color: cs.outline))
+        else
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final d in extraChoices)
+              ChoiceChip(label: Text(pnDayLong(s, d)), selected: extraDay == d, onSelected: _generating ? null : (_) => setState(() => _extraDayNo = d)),
+          ]),
+        const SizedBox(height: 10),
+        subjects.when(
+          loading: () => const LinearProgressIndicator(minHeight: 3),
+          error: (e, _) => Text(pnErrorDetail(e), style: theme.textTheme.bodySmall?.copyWith(color: cs.error)),
+          data: (list) => ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 280),
+            child: ListView(shrinkWrap: true, children: [
+              for (final sj in list)
+                Row(children: [
+                  Checkbox(
+                    value: _extraSubjects.containsKey(sj.id),
+                    onChanged: _generating
+                        ? null
+                        : (on) => setState(() {
+                              if (on == true) {
+                                _extraSubjects[sj.id] = 2;
+                              } else {
+                                _extraSubjects.remove(sj.id);
+                              }
+                            }),
+                  ),
+                  Expanded(child: Text(sj.subjectName, overflow: TextOverflow.ellipsis)),
+                  if (_extraSubjects.containsKey(sj.id)) ...[
+                    IconButton(visualDensity: VisualDensity.compact, icon: const Icon(Icons.remove_rounded), onPressed: _generating || _extraSubjects[sj.id]! <= 1 ? null : () => setState(() => _extraSubjects[sj.id] = _extraSubjects[sj.id]! - 1)),
+                    Text(s.pn('${_extraSubjects[sj.id]} periods', '${_extraSubjects[sj.id]} périodes'), style: theme.textTheme.labelLarge),
+                    IconButton(visualDensity: VisualDensity.compact, icon: const Icon(Icons.add_rounded), onPressed: _generating || _extraSubjects[sj.id]! >= 8 ? null : () => setState(() => _extraSubjects[sj.id] = _extraSubjects[sj.id]! + 1)),
+                  ],
+                ]),
+            ]),
+          ),
+        ),
+      ],
+    ]);
   }
 
   Widget _resultCard(AppStrings s, Map<String, dynamic> r) {
@@ -715,7 +918,7 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
       final branding = await OfficialBranding.fetch(assets);
       final primary = PdfColor.fromInt(pnHex(widget.landing.primaryColor, const Color(0xFF1A73E8)).toARGB32());
       final secondary = PdfColor.fromInt(pnHex(widget.landing.secondaryColor, const Color(0xFFF59E0B)).toARGB32());
-      final days = (settings.workingDays.isEmpty ? [1, 2, 3, 4, 5] : ([...settings.workingDays]..sort()));
+      final days = _unionDays(settings, [for (final pg in pages) ...pg.cells.keys]);
       final breaks = _breaksOf(settings);
       final doc = pw.Document();
       // With a letterhead the page margins shrink to a few millimetres so
@@ -943,7 +1146,7 @@ class _ViewTimetablePageState extends ConsumerState<ViewTimetablePage> {
             final active = cls.where((c) => c.isActive).toList();
             final names = {for (final c in cls) c.id: c.className};
             final conflicts = _conflictKeys(byClass);
-            final days = st.workingDays.isEmpty ? [1, 2, 3, 4, 5] : ([...st.workingDays]..sort());
+            final days = _unionDays(st, [for (final l in byClass.values) for (final sl in l) int.tryParse(sl.dayOfWeek) ?? 1]);
             final breaks = _breaksOf(st);
             final noTeacher = byClass.values.fold<int>(0, (a, l) => a + l.where((x) => x.needsTeacher).length);
             final generated = active.where((c) => (byClass[c.id] ?? const []).isNotEmpty).length;

@@ -177,9 +177,11 @@ class LandingRepository {
     return result;
   }
 
-  // school_statistics (Migration 012) - school-configured, NOT a live
-  // RPC computing counts from private tables. See conversation notes:
-  // this was a deliberate rejection of the RPC-based approach.
+  // Statistics: each counter has a typed figure and an optional live
+  // source. Until the live number reaches `show_from`, the typed figure
+  // is shown; after that the real number is shown and keeps updating.
+  // A counter with no typed figure stays hidden until it reaches the
+  // threshold. The website only ever receives counts (never personal data).
   Future<List<LandingStatistic>> _loadStatistics({
     required String schoolId,
     required String language,
@@ -191,14 +193,46 @@ class LandingRepository {
         .eq('is_active', true)
         .order('display_order', ascending: true);
 
+    Map<String, dynamic> live = const {};
+    final needsLive = rows.any((r) => ((r['metric'] as String?) ?? 'custom') != 'custom');
+    if (needsLive) {
+      try {
+        final res = await client.rpc('landing_live_stats', params: {'p_school_id': schoolId});
+        if (res is Map) live = Map<String, dynamic>.from(res);
+      } catch (e) {
+        debugPrint('[LandingRepository] live statistics unavailable: $e');
+      }
+    }
+
     final fr = language == 'fr';
-    return rows
-        .map<LandingStatistic>((r) => LandingStatistic(
-              label: ((fr ? r['label_fr'] : r['label_en']) as String?) ??
-                  (r['label_en'] as String? ?? ''),
-              value: r['value'] as String? ?? '',
-            ))
-        .toList();
+    final out = <LandingStatistic>[];
+    for (final r in rows) {
+      final label = ((fr ? r['label_fr'] : r['label_en']) as String?) ?? (r['label_en'] as String? ?? '');
+      final typed = (r['value'] as String? ?? '').trim();
+      final metric = (r['metric'] as String?) ?? 'custom';
+      final showFrom = (r['show_from'] as num?)?.toInt() ?? 0;
+      final liveValue = metric == 'custom' ? null : (live[metric] as num?)?.toInt();
+
+      String shown;
+      if (liveValue != null && liveValue >= showFrom && liveValue > 0) {
+        shown = _thousands(liveValue);
+      } else {
+        shown = typed;
+      }
+      if (shown.isEmpty || label.isEmpty) continue;
+      out.add(LandingStatistic(label: label, value: shown));
+    }
+    return out;
+  }
+
+  String _thousands(int n) {
+    final s = n.toString();
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write(' ');
+      buf.write(s[i]);
+    }
+    return buf.toString();
   }
 
   // school_achievements (Migration 012) - a repeatable list. NOT
@@ -250,6 +284,8 @@ class LandingRepository {
         .select()
         .eq('school_id', schoolId)
         .eq('status', 'published')
+        .lte('published_at', DateTime.now().toUtc().toIso8601String())
+        .or('expires_at.is.null,expires_at.gt.${DateTime.now().toUtc().toIso8601String()}')
         .order('published_at', ascending: false)
         .limit(3);
 
@@ -271,10 +307,18 @@ class LandingRepository {
         .select()
         .eq('school_id', schoolId)
         .eq('status', 'published')
+        .gte('event_date', _isoDay(DateTime.now().subtract(const Duration(days: 30))))
         .order('event_date', ascending: true)
-        .limit(3);
+        .limit(30);
 
-    return rows
+    // Upcoming first (soonest first), then recent past events (latest
+    // first); events disappear 30 days after their date.
+    final today = _isoDay(DateTime.now());
+    final upcoming = rows.where((r) => (r['event_date'] as String).compareTo(today) >= 0).toList();
+    final past = rows.where((r) => (r['event_date'] as String).compareTo(today) < 0).toList().reversed.toList();
+    final ordered = [...upcoming, ...past].take(3).toList();
+
+    return ordered
         .map<LandingEvent>((r) => LandingEvent(
               id: r['id'] as String,
               title: r['title'] as String? ?? '',
@@ -286,4 +330,7 @@ class LandingRepository {
             ))
         .toList();
   }
+
+  String _isoDay(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 }

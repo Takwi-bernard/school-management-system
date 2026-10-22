@@ -36,6 +36,10 @@ class PnNav {
   static const ttView = 'tt_view';
   static const settings = 'settings';
   static const insights = 'insights';
+  static const siteStats = 'site_stats';
+  static const siteAnnouncements = 'site_announcements';
+  static const siteEvents = 'site_events';
+  static const siteDocuments = 'site_documents';
 }
 
 class PrincipalOverviewPage extends ConsumerWidget {
