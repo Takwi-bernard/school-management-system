@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -675,24 +677,67 @@ class _CreateAdminDialog extends ConsumerStatefulWidget {
 }
 
 class _CreateAdminDialogState extends ConsumerState<_CreateAdminDialog> {
-  String _role = 'principal';
+  String? _role; // null = still choosing the role
+  String _lang = 'en';
   final _name = TextEditingController();
   final _email = TextEditingController();
   final _phone = TextEditingController();
+  final _password = TextEditingController();
+  bool _showPassword = true;
   bool _saving = false;
   String? _error;
+
+  static const _roles = [
+    ('principal', 'Principal', 'Runs the school: staff, students, results and the school website.', Icons.school_rounded),
+    ('proprietor', 'Proprietor', 'Owner view: finances, performance and oversight.', Icons.business_center_rounded),
+    ('secretary', 'Secretary', 'Daily office work: admissions, records and fees.', Icons.assignment_ind_rounded),
+  ];
+
+  String get _roleLabel => _roles.firstWhere((r) => r.$1 == _role).$2;
+
+  @override
+  void initState() {
+    super.initState();
+    _password.text = _generate();
+  }
 
   @override
   void dispose() {
     _name.dispose();
     _email.dispose();
     _phone.dispose();
+    _password.dispose();
     super.dispose();
   }
 
+  String _generate() {
+    const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const lower = 'abcdefghijkmnopqrstuvwxyz';
+    const digits = '23456789';
+    const symbols = '@#\$%&*!?';
+    final rnd = Random.secure();
+    String pick(String s) => s[rnd.nextInt(s.length)];
+    final chars = [pick(upper), pick(lower), pick(digits), pick(symbols)];
+    const all = upper + lower + digits + symbols;
+    while (chars.length < 14) {
+      chars.add(pick(all));
+    }
+    chars.shuffle(rnd);
+    return chars.join();
+  }
+
   Future<void> _save() async {
-    if (_name.text.trim().isEmpty || !_email.text.contains('@')) {
-      setState(() => _error = 'Enter a name and a valid email.');
+    final email = _email.text.trim();
+    if (_name.text.trim().length < 2) {
+      setState(() => _error = 'Enter the full name.');
+      return;
+    }
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
+      setState(() => _error = 'Enter a login email, for example name@yourschool.com.');
+      return;
+    }
+    if (_password.text.length < 8) {
+      setState(() => _error = 'The password must be at least 8 characters.');
       return;
     }
     setState(() {
@@ -702,14 +747,16 @@ class _CreateAdminDialogState extends ConsumerState<_CreateAdminDialog> {
     try {
       final creds = await ref.read(superAdminRepositoryProvider).createSchoolAdmin(
             schoolId: widget.schoolId,
-            role: _role,
+            role: _role!,
             fullName: _name.text.trim(),
-            email: _email.text.trim(),
+            email: email,
             phone: _phone.text.trim(),
+            password: _password.text,
+            language: _lang,
           );
       if (mounted) Navigator.pop(context, creds);
     } catch (e) {
-      setState(() => _error = '$e'.replaceFirst('Exception: ', ''));
+      if (mounted) setState(() => _error = '$e'.replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -717,42 +764,133 @@ class _CreateAdminDialogState extends ConsumerState<_CreateAdminDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    final width = MediaQuery.of(context).size.width;
+    return Dialog(
       backgroundColor: const Color(0xFF1E293B),
-      title: const Text('Create Admin Account', style: TextStyle(color: Colors.white)),
-      content: SizedBox(
-        width: 380,
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          DropdownButtonFormField<String>(
-            initialValue: _role,
-            dropdownColor: const Color(0xFF1E293B),
-            style: const TextStyle(color: Colors.white),
-            decoration: const InputDecoration(labelText: 'Role', labelStyle: TextStyle(color: Colors.white38)),
-            items: const [
-              DropdownMenuItem(value: 'principal', child: Text('Principal')),
-              DropdownMenuItem(value: 'proprietor', child: Text('Proprietor')),
-              DropdownMenuItem(value: 'secretary', child: Text('Secretary')),
-            ],
-            onChanged: (v) => setState(() => _role = v ?? 'principal'),
-          ),
-          const SizedBox(height: 12),
-          _field(_name, 'Full name'),
-          const SizedBox(height: 12),
-          _field(_email, 'Email (their login)'),
-          const SizedBox(height: 12),
-          _field(_phone, 'Phone'),
-          if (_error != null) ...[const SizedBox(height: 10), Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 12))],
-        ]),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: width < 520 ? width : 460, maxHeight: 640),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          child: _role == null ? _rolePicker() : _form(),
+        ),
       ),
-      actions: [
-        TextButton(onPressed: _saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
-        FilledButton(onPressed: _saving ? null : _save, child: _saving ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Create')),
-      ],
     );
   }
 
-  Widget _field(TextEditingController c, String label) =>
-      TextField(controller: c, style: const TextStyle(color: Colors.white), decoration: InputDecoration(labelText: label, labelStyle: const TextStyle(color: Colors.white38)));
+  Widget _rolePicker() => Padding(
+        key: const ValueKey('pick'),
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Create Admin Account', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 4),
+          const Text('Who is this account for?', style: TextStyle(color: Colors.white54, fontSize: 13)),
+          const SizedBox(height: 16),
+          for (final r in _roles)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => setState(() => _role = r.$1),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.white12)),
+                  child: Row(children: [
+                    Icon(r.$4, color: Colors.white70),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(r.$2, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 2),
+                        Text(r.$3, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                      ]),
+                    ),
+                    const Icon(Icons.chevron_right_rounded, color: Colors.white38),
+                  ]),
+                ),
+              ),
+            ),
+          Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel'))),
+        ]),
+      );
+
+  Widget _form() => SingleChildScrollView(
+        key: const ValueKey('form'),
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            IconButton(
+              onPressed: _saving ? null : () => setState(() => _role = null),
+              icon: const Icon(Icons.arrow_back_rounded, color: Colors.white70),
+              visualDensity: VisualDensity.compact,
+            ),
+            Expanded(child: Text('Sign up a $_roleLabel', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800))),
+          ]),
+          const SizedBox(height: 6),
+          const Text('This creates a real login. The person can sign in right away with the email and password below.', style: TextStyle(color: Colors.white54, fontSize: 12)),
+          const SizedBox(height: 16),
+          _field(_name, 'Full name', icon: Icons.person_outline_rounded),
+          const SizedBox(height: 12),
+          _field(_email, 'Login email', icon: Icons.alternate_email_rounded, keyboard: TextInputType.emailAddress),
+          const SizedBox(height: 12),
+          _field(_phone, 'Phone (optional)', icon: Icons.phone_outlined, keyboard: TextInputType.phone),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _password,
+            obscureText: !_showPassword,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              labelText: 'Password',
+              labelStyle: const TextStyle(color: Colors.white38),
+              prefixIcon: const Icon(Icons.lock_outline_rounded, color: Colors.white38, size: 20),
+              suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
+                IconButton(
+                  tooltip: _showPassword ? 'Hide' : 'Show',
+                  onPressed: () => setState(() => _showPassword = !_showPassword),
+                  icon: Icon(_showPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: Colors.white38, size: 20),
+                ),
+                IconButton(
+                  tooltip: 'Generate a new one',
+                  onPressed: () => setState(() => _password.text = _generate()),
+                  icon: const Icon(Icons.autorenew_rounded, color: Colors.white54, size: 20),
+                ),
+              ]),
+            ),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: _lang,
+            dropdownColor: const Color(0xFF1E293B),
+            style: const TextStyle(color: Colors.white),
+            decoration: const InputDecoration(labelText: 'Language', labelStyle: TextStyle(color: Colors.white38)),
+            items: const [
+              DropdownMenuItem(value: 'en', child: Text('English')),
+              DropdownMenuItem(value: 'fr', child: Text('Français')),
+            ],
+            onChanged: (v) => setState(() => _lang = v ?? 'en'),
+          ),
+          if (_error != null) ...[const SizedBox(height: 12), Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 12))],
+          const SizedBox(height: 18),
+          Row(children: [
+            Expanded(
+              child: FilledButton(
+                onPressed: _saving ? null : _save,
+                child: _saving ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Create account'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            TextButton(onPressed: _saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
+          ]),
+        ]),
+      );
+
+  Widget _field(TextEditingController c, String label, {required IconData icon, TextInputType? keyboard}) => TextField(
+        controller: c,
+        keyboardType: keyboard,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(labelText: label, labelStyle: const TextStyle(color: Colors.white38), prefixIcon: Icon(icon, color: Colors.white38, size: 20)),
+      );
 }
 
 class _AdminCredentialsDialog extends StatelessWidget {
@@ -766,14 +904,14 @@ class _AdminCredentialsDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return AlertDialog(
       backgroundColor: const Color(0xFF1E293B),
-      title: const Text('Account created', style: TextStyle(color: Colors.white)),
+      title: const Text('Account created successfully', style: TextStyle(color: Colors.white)),
       content: SizedBox(
         width: 400,
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
-            child: const Text('Shown only now. Copy and send these before closing.', style: TextStyle(color: Colors.amberAccent, fontSize: 12)),
+            child: const Text('The password is shown only now. Copy these details and hand them over before closing.', style: TextStyle(color: Colors.amberAccent, fontSize: 12)),
           ),
           const SizedBox(height: 16),
           _row('Role', credentials.role),

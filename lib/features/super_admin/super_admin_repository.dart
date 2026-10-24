@@ -115,8 +115,18 @@ class SuperAdminRepository {
     required String fullName,
     required String email,
     String? phone,
+    String? password,
+    String? language,
   }) async {
-    final data = await _call('create_school_admin', {'school_id': schoolId, 'role': role, 'full_name': fullName, 'email': email, 'phone': phone});
+    final data = await _call('create_school_admin', {
+      'school_id': schoolId,
+      'role': role,
+      'full_name': fullName,
+      'email': email,
+      'phone': phone,
+      'password': password,
+      'preferred_language': language,
+    });
     return NewAdminCredentials.fromMap(Map<String, dynamic>.from(data['account'] as Map));
   }
 
