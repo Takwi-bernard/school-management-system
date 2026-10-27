@@ -42,3 +42,19 @@ final schoolAssetsProvider = FutureProvider.family<List<SchoolAssetItem>, String
 final academicStructureProvider = FutureProvider.family<AcademicStructure, String>((ref, schoolId) {
   return ref.watch(superAdminRepositoryProvider).getAcademicStructure(schoolId);
 });
+
+final platformOverviewProvider = FutureProvider<PlatformOverview>((ref) {
+  return ref.watch(superAdminRepositoryProvider).getOverview();
+});
+
+final schoolMetricsProvider = FutureProvider<Map<String, SchoolMetrics>>((ref) {
+  return ref.watch(superAdminRepositoryProvider).getSchoolMetrics();
+});
+
+final allAdminsProvider = FutureProvider<List<SchoolAdminAccount>>((ref) {
+  return ref.watch(superAdminRepositoryProvider).listAllAdmins();
+});
+
+final auditLogProvider = FutureProvider<List<AuditEntry>>((ref) {
+  return ref.watch(superAdminRepositoryProvider).listAudit();
+});

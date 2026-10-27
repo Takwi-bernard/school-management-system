@@ -1,15 +1,13 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'super_admin_academic.dart';
-import 'super_admin_branding.dart';
 import 'super_admin_models.dart';
 import 'super_admin_providers.dart';
+import 'super_admin_school_detail.dart';
+import 'super_admin_theme.dart';
+import 'super_admin_ui.dart';
 
-Color? _tryParseHex(String hex) {
+Color? parseHexColor(String hex) {
   var v = hex.trim().replaceAll('#', '');
   if (v.length == 6) v = 'FF$v';
   if (v.length != 8) return null;
@@ -27,25 +25,25 @@ class SchoolsSection extends ConsumerStatefulWidget {
 }
 
 class _SchoolsSectionState extends ConsumerState<SchoolsSection> {
-  final _searchController = TextEditingController();
+  final _search = TextEditingController();
   String _query = '';
-  _StatusFilter _statusFilter = _StatusFilter.all;
+  _StatusFilter _filter = _StatusFilter.all;
 
   @override
   void dispose() {
-    _searchController.dispose();
+    _search.dispose();
     super.dispose();
   }
 
-  List<SchoolSummary> _applyFilters(List<SchoolSummary> schools) {
+  List<SchoolSummary> _apply(List<SchoolSummary> all) {
     final q = _query.trim().toLowerCase();
-    return schools.where((s) {
-      final matchesStatus = switch (_statusFilter) {
+    return all.where((s) {
+      final okStatus = switch (_filter) {
         _StatusFilter.all => true,
         _StatusFilter.active => s.isActive,
         _StatusFilter.inactive => !s.isActive,
       };
-      if (!matchesStatus) return false;
+      if (!okStatus) return false;
       if (q.isEmpty) return true;
       return s.schoolName.toLowerCase().contains(q) ||
           s.schoolCode.toLowerCase().contains(q) ||
@@ -57,241 +55,134 @@ class _SchoolsSectionState extends ConsumerState<SchoolsSection> {
     }).toList();
   }
 
+  Future<void> _refresh() async {
+    ref.invalidate(schoolsListProvider);
+    ref.invalidate(schoolMetricsProvider);
+    await ref.read(schoolsListProvider.future).catchError((_) => <SchoolSummary>[]);
+  }
+
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(schoolsListProvider);
+    final metrics = ref.watch(schoolMetricsProvider).valueOrNull ?? const <String, SchoolMetrics>{};
 
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LayoutBuilder(builder: (context, constraints) {
-            final narrow = constraints.maxWidth < 500;
-            final title = const Text('Schools', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800));
-            final button = FilledButton.icon(
-              onPressed: () async {
-                final created = await showDialog<bool>(context: context, builder: (_) => const _SchoolFormDialog());
-                if (created == true) ref.invalidate(schoolsListProvider);
-              },
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Onboard a School'),
-            );
-            if (narrow) {
-              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [title, const SizedBox(height: 12), SizedBox(width: double.infinity, child: button)]);
+    return SaPage(
+      title: 'Schools',
+      subtitle: 'Every school on the platform, in one place.',
+      onRefresh: _refresh,
+      actions: [
+        FilledButton.icon(
+          onPressed: () async {
+            final created = await showDialog<bool>(context: context, builder: (_) => const SchoolFormDialog());
+            if (created == true) {
+              ref.invalidate(schoolsListProvider);
+              ref.invalidate(schoolMetricsProvider);
+              ref.invalidate(platformOverviewProvider);
             }
-            return Row(children: [Expanded(child: title), button]);
-          }),
-          const SizedBox(height: 16),
-          LayoutBuilder(builder: (context, constraints) {
-            final narrow = constraints.maxWidth < 650;
-            final search = TextField(
-              controller: _searchController,
-              onChanged: (v) => setState(() => _query = v),
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'Search by name, code, domain, ID, city, email...',
-                hintStyle: const TextStyle(color: Colors.white38),
-                prefixIcon: const Icon(Icons.search_rounded, color: Colors.white38),
-                suffixIcon: _query.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.close_rounded, color: Colors.white38, size: 18),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _query = '');
-                        },
-                      ),
-                filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.04),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-              ),
-            );
-            final filterChips = Wrap(
-              spacing: 8,
-              children: [
-                ChoiceChip(
-                  label: const Text('All'),
-                  selected: _statusFilter == _StatusFilter.all,
-                  onSelected: (_) => setState(() => _statusFilter = _StatusFilter.all),
-                  labelStyle: TextStyle(color: _statusFilter == _StatusFilter.all ? Colors.white : Colors.white60),
-                  backgroundColor: Colors.white.withValues(alpha: 0.04),
-                  selectedColor: Colors.indigo,
-                ),
-                ChoiceChip(
-                  label: const Text('Active'),
-                  selected: _statusFilter == _StatusFilter.active,
-                  onSelected: (_) => setState(() => _statusFilter = _StatusFilter.active),
-                  labelStyle: TextStyle(color: _statusFilter == _StatusFilter.active ? Colors.white : Colors.white60),
-                  backgroundColor: Colors.white.withValues(alpha: 0.04),
-                  selectedColor: Colors.green,
-                ),
-                ChoiceChip(
-                  label: const Text('Inactive'),
-                  selected: _statusFilter == _StatusFilter.inactive,
-                  onSelected: (_) => setState(() => _statusFilter = _StatusFilter.inactive),
-                  labelStyle: TextStyle(color: _statusFilter == _StatusFilter.inactive ? Colors.white : Colors.white60),
-                  backgroundColor: Colors.white.withValues(alpha: 0.04),
-                  selectedColor: Colors.red,
-                ),
-              ],
-            );
-            if (narrow) {
-              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [search, const SizedBox(height: 10), filterChips]);
-            }
-            return Row(children: [Expanded(child: search), const SizedBox(width: 14), filterChips]);
-          }),
-          const SizedBox(height: 16),
-          Expanded(
-            child: async.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Text('$e', style: const TextStyle(color: Colors.redAccent)),
-              data: (allSchools) {
-                final schools = _applyFilters(allSchools);
-                if (allSchools.isEmpty) return Center(child: Text('No schools onboarded yet.', style: TextStyle(color: Colors.white.withValues(alpha: 0.4))));
-                if (schools.isEmpty) return Center(child: Text('No schools match this search.', style: TextStyle(color: Colors.white.withValues(alpha: 0.4))));
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Text('${schools.length} of ${allSchools.length} schools', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12)),
-                    ),
-                    Expanded(
-                      child: LayoutBuilder(builder: (context, constraints) {
-                        final columns = constraints.maxWidth > 1100 ? 3 : constraints.maxWidth > 700 ? 2 : 1;
-                        return GridView.builder(
-                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: columns, mainAxisSpacing: 14, crossAxisSpacing: 14, childAspectRatio: columns == 1 ? 1.3 : 1.45),
-                          itemCount: schools.length,
-                          itemBuilder: (context, i) => _SchoolCard(school: schools[i]),
-                        );
-                      }),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SchoolCard extends ConsumerStatefulWidget {
-  final SchoolSummary school;
-  const _SchoolCard({required this.school});
-
-  @override
-  ConsumerState<_SchoolCard> createState() => _SchoolCardState();
-}
-
-class _SchoolCardState extends ConsumerState<_SchoolCard> {
-  bool _busy = false;
-
-  Future<void> _toggleStatus() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1E293B),
-        title: Text('${widget.school.isActive ? 'Deactivate' : 'Activate'} ${widget.school.schoolName}?', style: const TextStyle(color: Colors.white)),
-        content: Text(
-          widget.school.isActive ? 'Everyone at this school loses access to the platform immediately.' : 'This school regains access to the platform.',
-          style: const TextStyle(color: Colors.white70),
+          },
+          icon: const Icon(Icons.add_rounded, size: 20),
+          label: const Text('Onboard a school'),
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(widget.school.isActive ? 'Deactivate' : 'Activate')),
-        ],
-      ),
+      ],
+      children: [
+        LayoutBuilder(builder: (context, c) {
+          final narrow = c.maxWidth < 700;
+          final search = SaSearchField(controller: _search, hint: 'Search name, code, domain, city, email...', onChanged: (v) => setState(() => _query = v));
+          final seg = SaSegmented<_StatusFilter>(
+            options: const {_StatusFilter.all: 'All', _StatusFilter.active: 'Active', _StatusFilter.inactive: 'Suspended'},
+            value: _filter,
+            onChanged: (v) => setState(() => _filter = v),
+          );
+          if (narrow) return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [search, const SizedBox(height: 12), seg]);
+          return Row(children: [Expanded(child: search), const SizedBox(width: 14), seg]);
+        }),
+        const SizedBox(height: 18),
+        async.when(
+          loading: () => const SaCardSkeleton(count: 6),
+          error: (e, _) => SaErrorState(e, onRetry: () => ref.invalidate(schoolsListProvider)),
+          data: (all) {
+            final schools = _apply(all);
+            if (all.isEmpty) {
+              return const SaEmpty(icon: Icons.apartment_rounded, title: 'No schools onboarded yet', message: 'Use "Onboard a school" to add the first one.');
+            }
+            if (schools.isEmpty) {
+              return const SaEmpty(icon: Icons.search_off_rounded, title: 'No school matches', message: 'Try a different search or filter.');
+            }
+            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text('${schools.length} of ${all.length} schools', style: const TextStyle(color: Sa.faint, fontSize: 12.5)),
+              ),
+              SaGrid(minItemWidth: 340, children: [for (final s in schools) _SchoolCard(school: s, metrics: metrics[s.id])]),
+            ]);
+          },
+        ),
+      ],
     );
-    if (confirmed != true) return;
-    setState(() => _busy = true);
-    try {
-      await ref.read(superAdminRepositoryProvider).toggleSchoolStatus(widget.school.id);
-      ref.invalidate(schoolsListProvider);
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'.replaceFirst('Exception: ', ''))));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
   }
+}
+
+class _SchoolCard extends StatelessWidget {
+  final SchoolSummary school;
+  final SchoolMetrics? metrics;
+  const _SchoolCard({required this.school, required this.metrics});
 
   @override
   Widget build(BuildContext context) {
-    final s = widget.school;
-    final primary = _tryParseHex(s.primaryColor) ?? Colors.indigo;
+    final s = school;
+    final accent = parseHexColor(s.primaryColor) ?? Sa.primary;
+    final place = [if (s.city != null && s.city!.isNotEmpty) s.city!, if (s.country != null && s.country!.isNotEmpty) s.country!].join(', ');
 
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(18), border: Border.all(color: Colors.white.withValues(alpha: 0.06))),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Container(width: 12, height: 12, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: primary, shape: BoxShape.circle)),
-            Expanded(child: Text(s.schoolName, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800), overflow: TextOverflow.ellipsis)),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(color: (s.isActive ? Colors.green : Colors.red).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
-              child: Text(s.status, style: TextStyle(color: s.isActive ? Colors.greenAccent : Colors.redAccent, fontSize: 11, fontWeight: FontWeight.w700)),
-            ),
+    Widget stat(IconData icon, String label, int? v) => Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [Icon(icon, size: 14, color: Sa.faint), const SizedBox(width: 5), Text(label, style: const TextStyle(color: Sa.faint, fontSize: 11.5))]),
+            const SizedBox(height: 3),
+            Text(v == null ? '-' : saCount(v), style: const TextStyle(color: Sa.text, fontSize: 17, fontWeight: FontWeight.w800)),
           ]),
-          const SizedBox(height: 6),
-          Text('${s.schoolCode} · ${s.domain}', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
-          if (s.phone != null && s.phone!.isNotEmpty)
-            Padding(padding: const EdgeInsets.only(top: 4), child: Text(s.phone!, style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11))),
-          if (s.city != null && s.city!.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text('${s.city}${s.country != null && s.country!.isNotEmpty ? ', ${s.country}' : ''}', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11)),
+        );
+
+    return SaCard(
+      accent: accent,
+      onTap: () => Navigator.push(context, saRoute(SchoolDetailPage(schoolId: s.id))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [accent, accent.withValues(alpha: 0.6)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+              borderRadius: BorderRadius.circular(13),
             ),
-          const Spacer(),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              SizedBox(
-                width: 85,
-                child: OutlinedButton(
-                  onPressed: () async {
-                    final changed = await showDialog<bool>(context: context, builder: (_) => _SchoolFormDialog(existing: s));
-                    if (changed == true) ref.invalidate(schoolsListProvider);
-                  },
-                  child: const Text('Edit', style: TextStyle(fontSize: 13)),
-                ),
-              ),
-              SizedBox(
-                width: 95,
-                child: OutlinedButton(
-                  onPressed: () => showDialog(context: context, builder: (_) => _SchoolAdminsDialog(school: s)),
-                  child: const Text('Admins', style: TextStyle(fontSize: 13)),
-                ),
-              ),
-              SizedBox(
-                width: 100,
-                child: FilledButton(
-                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => BrandingPage(school: s))),
-                  child: const Text('Branding', style: TextStyle(fontSize: 13)),
-                ),
-              ),
-              SizedBox(
-                width: 100,
-                child: FilledButton(
-                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AcademicStructurePage(school: s))),
-                  child: const Text('Academic', style: TextStyle(fontSize: 13)),
-                ),
-              ),
-              IconButton(
-                icon: _busy
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                    : Icon(s.isActive ? Icons.toggle_on_rounded : Icons.toggle_off_outlined, color: s.isActive ? Colors.green : Colors.white38, size: 28),
-                onPressed: _busy ? null : _toggleStatus,
-              ),
-            ],
+            child: Text(saInitials(s.schoolName), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
           ),
-        ],
-      ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(s.schoolName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Sa.text, fontSize: 15.5, fontWeight: FontWeight.w800, letterSpacing: -0.2)),
+              const SizedBox(height: 2),
+              Text('${s.schoolCode} · ${s.domain}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Sa.muted, fontSize: 12.5)),
+            ]),
+          ),
+          SaChip(s.isActive ? 'Active' : 'Suspended', tone: s.isActive ? SaTone.success : SaTone.danger),
+        ]),
+        const SizedBox(height: 18),
+        Row(children: [
+          stat(Icons.school_outlined, 'Students', metrics?.students),
+          stat(Icons.co_present_outlined, 'Teachers', metrics?.teachers),
+          stat(Icons.admin_panel_settings_outlined, 'Admins', metrics?.admins),
+        ]),
+        const SizedBox(height: 16),
+        Row(children: [
+          if (place.isNotEmpty) ...[
+            const Icon(Icons.place_outlined, size: 14, color: Sa.faint),
+            const SizedBox(width: 4),
+            Flexible(child: Text(place, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Sa.faint, fontSize: 12))),
+          ],
+          const Spacer(),
+          if (metrics != null && metrics!.principals == 0) const SaChip('No principal', tone: SaTone.warning, icon: Icons.warning_amber_rounded),
+        ]),
+      ]),
     );
   }
 }
@@ -300,17 +191,17 @@ class _SchoolCardState extends ConsumerState<_SchoolCard> {
 // CREATE / EDIT SCHOOL
 // ============================================================
 
-class _SchoolFormDialog extends ConsumerStatefulWidget {
+class SchoolFormDialog extends ConsumerStatefulWidget {
   final SchoolSummary? existing;
-  const _SchoolFormDialog({this.existing});
+  const SchoolFormDialog({super.key, this.existing});
 
   @override
-  ConsumerState<_SchoolFormDialog> createState() => _SchoolFormDialogState();
+  ConsumerState<SchoolFormDialog> createState() => _SchoolFormDialogState();
 }
 
-class _SchoolFormDialogState extends ConsumerState<_SchoolFormDialog> {
+class _SchoolFormDialogState extends ConsumerState<SchoolFormDialog> {
   int _step = 0;
-  static const _titles = ['Identity', 'Location', 'Branding', 'Done'];
+  static const _titles = ['Identity', 'Contact and location', 'Look and feel', 'Done'];
 
   late final TextEditingController _name;
   late final TextEditingController _code;
@@ -373,144 +264,137 @@ class _SchoolFormDialogState extends ConsumerState<_SchoolFormDialog> {
     });
     try {
       final repo = ref.read(superAdminRepositoryProvider);
-      final schoolName = _name.text.trim();
-      final schoolCode = _code.text.trim();
-      final domain = _domain.text.trim();
-      final languageMode = _languageMode;
-      final motto = _motto.text.trim();
-      final website = _website.text.trim();
-      final email = _email.text.trim();
-      final phone = _phone.text.trim();
-      final address = _address.text.trim();
-      final city = _city.text.trim();
-      final country = _country.text.trim();
-      final primaryColor = _primaryHex.text.trim();
-      final secondaryColor = _secondaryHex.text.trim();
-
       final SchoolSummary saved;
       if (_isEdit) {
         saved = await repo.updateSchool(
           schoolId: widget.existing!.id,
-          schoolName: schoolName,
-          schoolCode: schoolCode,
-          domain: domain,
-          languageMode: languageMode,
-          motto: motto,
-          website: website,
-          email: email,
-          phone: phone,
-          address: address,
-          city: city,
-          country: country,
-          primaryColor: primaryColor,
-          secondaryColor: secondaryColor,
+          schoolName: _name.text.trim(),
+          schoolCode: _code.text.trim(),
+          domain: _domain.text.trim(),
+          languageMode: _languageMode,
+          motto: _motto.text.trim(),
+          website: _website.text.trim(),
+          email: _email.text.trim(),
+          phone: _phone.text.trim(),
+          address: _address.text.trim(),
+          city: _city.text.trim(),
+          country: _country.text.trim(),
+          primaryColor: _primaryHex.text.trim(),
+          secondaryColor: _secondaryHex.text.trim(),
         );
       } else {
         saved = await repo.createSchool(
-          schoolName: schoolName,
-          schoolCode: schoolCode,
-          domain: domain,
-          languageMode: languageMode,
-          motto: motto,
-          website: website,
-          email: email,
-          phone: phone,
-          address: address,
-          city: city,
-          country: country,
-          primaryColor: primaryColor,
-          secondaryColor: secondaryColor,
+          schoolName: _name.text.trim(),
+          schoolCode: _code.text.trim(),
+          domain: _domain.text.trim(),
+          languageMode: _languageMode,
+          motto: _motto.text.trim(),
+          website: _website.text.trim(),
+          email: _email.text.trim(),
+          phone: _phone.text.trim(),
+          address: _address.text.trim(),
+          city: _city.text.trim(),
+          country: _country.text.trim(),
+          primaryColor: _primaryHex.text.trim(),
+          secondaryColor: _secondaryHex.text.trim(),
         );
       }
-      setState(() {
-        _result = saved;
-        _step = 3;
-      });
+      if (mounted) {
+        setState(() {
+          _result = saved;
+          _step = 3;
+        });
+      }
     } catch (e) {
-      setState(() => _error = '$e'.replaceFirst('Exception: ', ''));
+      if (mounted) setState(() => _error = '$e'.replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
 
+  void _next() {
+    if (_step == 0 && (_name.text.trim().isEmpty || _code.text.trim().isEmpty)) {
+      setState(() => _error = 'School name and code are required.');
+      return;
+    }
+    setState(() {
+      _error = null;
+      _step++;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: const Color(0xFF1E293B),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('${_isEdit ? 'Edit' : 'Onboard'} School · ${_titles[_step]} (${_step + 1}/${_titles.length})', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 6),
-              ClipRRect(borderRadius: BorderRadius.circular(10), child: LinearProgressIndicator(value: (_step + 1) / _titles.length, minHeight: 5, backgroundColor: Colors.white12)),
-              const SizedBox(height: 22),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 420),
-                child: SingleChildScrollView(
-                  child: _step == 0
-                      ? _identityStep()
-                      : _step == 1
-                          ? _locationStep()
-                          : _step == 2
-                              ? _brandingStep()
-                              : _doneStep(),
+    return SaDialog(
+      icon: _isEdit ? Icons.edit_rounded : Icons.add_business_rounded,
+      title: _isEdit ? 'Edit school' : 'Onboard a school',
+      subtitle: _step < 3 ? 'Step ${_step + 1} of 3 · ${_titles[_step]}' : null,
+      maxWidth: 560,
+      actions: [
+        if (_step > 0 && _step < 3) TextButton(onPressed: _saving ? null : () => setState(() => _step--), child: const Text('Back')),
+        if (_step == 0) TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+        if (_step < 2) FilledButton(onPressed: _next, child: const Text('Continue')),
+        if (_step == 2)
+          FilledButton(
+            onPressed: _saving ? null : _submit,
+            child: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : Text(_isEdit ? 'Save changes' : 'Create school'),
+          ),
+        if (_step == 3) FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Done')),
+      ],
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (_step < 3)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 18),
+            child: Row(children: [
+              for (var i = 0; i < 3; i++) ...[
+                Expanded(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    height: 4,
+                    decoration: BoxDecoration(color: i <= _step ? Sa.primaryHi : Colors.white12, borderRadius: BorderRadius.circular(4)),
+                  ),
                 ),
-              ),
-              if (_error != null) ...[const SizedBox(height: 14), Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 13))],
-              const SizedBox(height: 20),
-              Row(children: [
-                if (_step > 0 && _step < 3) TextButton(onPressed: _saving ? null : () => setState(() => _step--), child: const Text('Back')),
-                const Spacer(),
-                if (_step < 2)
-                  FilledButton(
-                    onPressed: () {
-                      if (_step == 0 && (_name.text.trim().isEmpty || _code.text.trim().isEmpty)) {
-                        setState(() => _error = 'School name and code are required.');
-                        return;
-                      }
-                      setState(() {
-                        _error = null;
-                        _step++;
-                      });
-                    },
-                    child: const Text('Next'),
-                  ),
-                if (_step == 2)
-                  FilledButton(
-                    onPressed: _saving ? null : _submit,
-                    child: _saving
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : Text(_isEdit ? 'Save Changes' : 'Create School'),
-                  ),
-                if (_step == 3) FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Done')),
-              ]),
-            ],
+                if (i < 2) const SizedBox(width: 6),
+              ],
+            ]),
+          ),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: KeyedSubtree(
+            key: ValueKey(_step),
+            child: _step == 0 ? _identity() : _step == 1 ? _contact() : _step == 2 ? _look() : _done(),
           ),
         ),
-      ),
+        if (_error != null) ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: Sa.danger.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+            child: Row(children: [
+              const Icon(Icons.error_outline_rounded, color: Sa.danger, size: 18),
+              const SizedBox(width: 8),
+              Expanded(child: Text(_error!, style: const TextStyle(color: Sa.danger, fontSize: 13))),
+            ]),
+          ),
+        ],
+      ]),
     );
   }
 
-  Widget _identityStep() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _darkField(_name, 'School name'),
+  Widget _identity() => Column(children: [
+        SaField(controller: _name, label: 'School name', icon: Icons.apartment_rounded),
         const SizedBox(height: 14),
-        _darkField(_code, 'School code (e.g. SHC) - used in admission numbers'),
+        SaField(controller: _code, label: 'School code', icon: Icons.tag_rounded, hint: 'e.g. SHC (used in admission numbers)'),
         const SizedBox(height: 14),
-        _darkField(_domain, 'Domain (e.g. sacredheart.com) - leave blank to derive from the name'),
+        SaField(controller: _domain, label: 'Domain', icon: Icons.language_rounded, hint: 'e.g. sacredheart.com (blank = from the name)'),
         const SizedBox(height: 14),
-        _darkField(_website, 'Website (optional - defaults to the domain)'),
+        SaField(controller: _website, label: 'Website (optional)', icon: Icons.link_rounded),
         const SizedBox(height: 14),
         DropdownButtonFormField<String>(
           initialValue: _languageMode,
-          dropdownColor: const Color(0xFF1E293B),
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(labelText: 'Language mode', labelStyle: TextStyle(color: Colors.white38)),
+          dropdownColor: Sa.cardHi,
+          style: const TextStyle(color: Sa.text),
+          decoration: const InputDecoration(labelText: 'Language mode', prefixIcon: Icon(Icons.translate_rounded, color: Sa.faint, size: 20)),
           items: const [
             DropdownMenuItem(value: 'bilingual', child: Text('Bilingual (English + French)')),
             DropdownMenuItem(value: 'english', child: Text('English only')),
@@ -520,424 +404,63 @@ class _SchoolFormDialogState extends ConsumerState<_SchoolFormDialog> {
         ),
       ]);
 
-  Widget _locationStep() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _darkField(_email, 'Email'),
+  Widget _contact() => Column(children: [
+        SaField(controller: _email, label: 'Email', icon: Icons.mail_outline_rounded, keyboardType: TextInputType.emailAddress),
         const SizedBox(height: 14),
-        _darkField(_phone, 'Phone'),
+        SaField(controller: _phone, label: 'Phone', icon: Icons.phone_outlined, keyboardType: TextInputType.phone),
         const SizedBox(height: 14),
-        _darkField(_address, 'Address'),
+        SaField(controller: _address, label: 'Address', icon: Icons.place_outlined),
         const SizedBox(height: 14),
-        Row(children: [Expanded(child: _darkField(_city, 'City')), const SizedBox(width: 10), Expanded(child: _darkField(_country, 'Country'))]),
+        LayoutBuilder(builder: (context, c) {
+          final city = SaField(controller: _city, label: 'City', icon: Icons.location_city_rounded);
+          final country = SaField(controller: _country, label: 'Country', icon: Icons.flag_outlined);
+          if (c.maxWidth < 420) return Column(children: [city, const SizedBox(height: 14), country]);
+          return Row(children: [Expanded(child: city), const SizedBox(width: 12), Expanded(child: country)]);
+        }),
       ]);
 
-  Widget _brandingStep() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _darkField(_motto, 'Motto (optional)'),
+  Widget _look() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SaField(controller: _motto, label: 'Motto (optional)', icon: Icons.format_quote_rounded),
         const SizedBox(height: 18),
-        Row(children: [Expanded(child: _hexColorField('Primary color', _primaryHex)), const SizedBox(width: 14), Expanded(child: _hexColorField('Secondary color', _secondaryHex))]),
-        const SizedBox(height: 8),
-        Text(
-          'Logo, hero banner, gallery, mission/vision/history are managed from the "Branding" button once the school exists.',
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11),
-        ),
+        LayoutBuilder(builder: (context, c) {
+          final a = _hex('Primary colour', _primaryHex);
+          final b = _hex('Secondary colour', _secondaryHex);
+          if (c.maxWidth < 420) return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [a, const SizedBox(height: 14), b]);
+          return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: a), const SizedBox(width: 14), Expanded(child: b)]);
+        }),
+        const SizedBox(height: 14),
+        const Text('Logo, banner, gallery and the school story are managed from the school page, under Website content.', style: TextStyle(color: Sa.faint, fontSize: 12)),
       ]);
 
-  Widget _doneStep() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Icon(Icons.check_circle_rounded, color: Colors.green, size: 40),
-        const SizedBox(height: 12),
-        Text('${_result?.schoolName ?? ''} ${_isEdit ? 'updated' : 'created'}.', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
-        const SizedBox(height: 4),
-        Text('Domain: ${_result?.domain ?? ''}', style: const TextStyle(color: Colors.white70)),
-      ]);
-
-  Widget _darkField(TextEditingController controller, String label) => TextField(
-        controller: controller,
-        style: const TextStyle(color: Colors.white),
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: const TextStyle(color: Colors.white38),
-          filled: true,
-          fillColor: Colors.white.withValues(alpha: 0.04),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-        ),
-      );
-
-  Widget _hexColorField(String label, TextEditingController controller) {
-    return StatefulBuilder(builder: (context, setLocalState) {
-      final color = _tryParseHex(controller.text) ?? Colors.grey;
+  Widget _hex(String label, TextEditingController controller) {
+    return StatefulBuilder(builder: (context, setLocal) {
+      final color = parseHexColor(controller.text) ?? Colors.grey;
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+        Text(label, style: const TextStyle(color: Sa.muted, fontSize: 12.5, fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
         Row(children: [
-          Container(width: 40, height: 40, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.white24))),
+          Container(width: 46, height: 46, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(12), border: Border.all(color: Sa.border))),
           const SizedBox(width: 10),
-          Expanded(
-            child: TextField(
-              controller: controller,
-              onChanged: (_) => setLocalState(() {}),
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: '#1A73E8',
-                hintStyle: const TextStyle(color: Colors.white24),
-                filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.04),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-              ),
-            ),
-          ),
+          Expanded(child: SaField(controller: controller, label: 'Hex', hint: '#1A73E8', onChanged: (_) => setLocal(() {}))),
         ]),
       ]);
     });
   }
-}
 
-// ============================================================
-// SCHOOL ADMIN ACCOUNTS
-// ============================================================
-
-class _SchoolAdminsDialog extends ConsumerWidget {
-  final SchoolSummary school;
-  const _SchoolAdminsDialog({required this.school});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(schoolAdminsProvider(school.id));
-
-    return Dialog(
-      backgroundColor: const Color(0xFF1E293B),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480, maxHeight: 560),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('${school.schoolName} · Admin Accounts', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 16),
-              Flexible(
-                child: async.when(
-                  loading: () => const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator())),
-                  error: (e, _) => Text('$e', style: const TextStyle(color: Colors.redAccent)),
-                  data: (admins) {
-                    if (admins.isEmpty) return const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Text('No admin accounts created yet.', style: TextStyle(color: Colors.white54)));
-                    return ListView(
-                      shrinkWrap: true,
-                      children: admins
-                          .map((a) => Container(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(12)),
-                                child: Row(children: [
-                                  Expanded(
-                                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                      Text(a.fullName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-                                      Text('${a.role[0].toUpperCase()}${a.role.substring(1)} · ${a.email ?? ''}', style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                                    ]),
-                                  ),
-                                ]),
-                              ))
-                          .toList(),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(children: [
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: () async {
-                      final creds = await showDialog<NewAdminCredentials>(context: context, builder: (_) => _CreateAdminDialog(schoolId: school.id));
-                      if (creds != null) {
-                        ref.invalidate(schoolAdminsProvider(school.id));
-                        if (context.mounted) await showDialog(context: context, builder: (_) => _AdminCredentialsDialog(credentials: creds, schoolName: school.schoolName));
-                      }
-                    },
-                    icon: const Icon(Icons.person_add_alt_1_rounded),
-                    label: const Text('Create Admin Account'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
-              ]),
-            ],
-          ),
+  Widget _done() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(color: Sa.success.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(18)),
+          child: const Icon(Icons.check_rounded, color: Sa.success, size: 30),
         ),
-      ),
-    );
-  }
-}
-
-class _CreateAdminDialog extends ConsumerStatefulWidget {
-  final String schoolId;
-  const _CreateAdminDialog({required this.schoolId});
-
-  @override
-  ConsumerState<_CreateAdminDialog> createState() => _CreateAdminDialogState();
-}
-
-class _CreateAdminDialogState extends ConsumerState<_CreateAdminDialog> {
-  String? _role; // null = still choosing the role
-  String _lang = 'en';
-  final _name = TextEditingController();
-  final _email = TextEditingController();
-  final _phone = TextEditingController();
-  final _password = TextEditingController();
-  bool _showPassword = true;
-  bool _saving = false;
-  String? _error;
-
-  static const _roles = [
-    ('principal', 'Principal', 'Runs the school: staff, students, results and the school website.', Icons.school_rounded),
-    ('proprietor', 'Proprietor', 'Owner view: finances, performance and oversight.', Icons.business_center_rounded),
-    ('secretary', 'Secretary', 'Daily office work: admissions, records and fees.', Icons.assignment_ind_rounded),
-  ];
-
-  String get _roleLabel => _roles.firstWhere((r) => r.$1 == _role).$2;
-
-  @override
-  void initState() {
-    super.initState();
-    _password.text = _generate();
-  }
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _email.dispose();
-    _phone.dispose();
-    _password.dispose();
-    super.dispose();
-  }
-
-  String _generate() {
-    const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-    const lower = 'abcdefghijkmnopqrstuvwxyz';
-    const digits = '23456789';
-    const symbols = '@#\$%&*!?';
-    final rnd = Random.secure();
-    String pick(String s) => s[rnd.nextInt(s.length)];
-    final chars = [pick(upper), pick(lower), pick(digits), pick(symbols)];
-    const all = upper + lower + digits + symbols;
-    while (chars.length < 14) {
-      chars.add(pick(all));
-    }
-    chars.shuffle(rnd);
-    return chars.join();
-  }
-
-  Future<void> _save() async {
-    final email = _email.text.trim();
-    if (_name.text.trim().length < 2) {
-      setState(() => _error = 'Enter the full name.');
-      return;
-    }
-    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
-      setState(() => _error = 'Enter a login email, for example name@yourschool.com.');
-      return;
-    }
-    if (_password.text.length < 8) {
-      setState(() => _error = 'The password must be at least 8 characters.');
-      return;
-    }
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-    try {
-      final creds = await ref.read(superAdminRepositoryProvider).createSchoolAdmin(
-            schoolId: widget.schoolId,
-            role: _role!,
-            fullName: _name.text.trim(),
-            email: email,
-            phone: _phone.text.trim(),
-            password: _password.text,
-            language: _lang,
-          );
-      if (mounted) Navigator.pop(context, creds);
-    } catch (e) {
-      if (mounted) setState(() => _error = '$e'.replaceFirst('Exception: ', ''));
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    return Dialog(
-      backgroundColor: const Color(0xFF1E293B),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: width < 520 ? width : 460, maxHeight: 640),
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 220),
-          child: _role == null ? _rolePicker() : _form(),
-        ),
-      ),
-    );
-  }
-
-  Widget _rolePicker() => Padding(
-        key: const ValueKey('pick'),
-        padding: const EdgeInsets.all(24),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Create Admin Account', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 4),
-          const Text('Who is this account for?', style: TextStyle(color: Colors.white54, fontSize: 13)),
-          const SizedBox(height: 16),
-          for (final r in _roles)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: () => setState(() => _role = r.$1),
-                child: Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.white12)),
-                  child: Row(children: [
-                    Icon(r.$4, color: Colors.white70),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(r.$2, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 2),
-                        Text(r.$3, style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                      ]),
-                    ),
-                    const Icon(Icons.chevron_right_rounded, color: Colors.white38),
-                  ]),
-                ),
-              ),
-            ),
-          Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel'))),
-        ]),
-      );
-
-  Widget _form() => SingleChildScrollView(
-        key: const ValueKey('form'),
-        padding: const EdgeInsets.all(24),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            IconButton(
-              onPressed: _saving ? null : () => setState(() => _role = null),
-              icon: const Icon(Icons.arrow_back_rounded, color: Colors.white70),
-              visualDensity: VisualDensity.compact,
-            ),
-            Expanded(child: Text('Sign up a $_roleLabel', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800))),
-          ]),
-          const SizedBox(height: 6),
-          const Text('This creates a real login. The person can sign in right away with the email and password below.', style: TextStyle(color: Colors.white54, fontSize: 12)),
-          const SizedBox(height: 16),
-          _field(_name, 'Full name', icon: Icons.person_outline_rounded),
+        const SizedBox(height: 16),
+        Text('${_result?.schoolName ?? ''} ${_isEdit ? 'updated' : 'created'}', style: const TextStyle(color: Sa.text, fontWeight: FontWeight.w800, fontSize: 17)),
+        const SizedBox(height: 6),
+        Text('Domain: ${_result?.domain ?? ''}', style: const TextStyle(color: Sa.muted)),
+        if (!_isEdit) ...[
           const SizedBox(height: 12),
-          _field(_email, 'Login email', icon: Icons.alternate_email_rounded, keyboard: TextInputType.emailAddress),
-          const SizedBox(height: 12),
-          _field(_phone, 'Phone (optional)', icon: Icons.phone_outlined, keyboard: TextInputType.phone),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _password,
-            obscureText: !_showPassword,
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              labelText: 'Password',
-              labelStyle: const TextStyle(color: Colors.white38),
-              prefixIcon: const Icon(Icons.lock_outline_rounded, color: Colors.white38, size: 20),
-              suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
-                IconButton(
-                  tooltip: _showPassword ? 'Hide' : 'Show',
-                  onPressed: () => setState(() => _showPassword = !_showPassword),
-                  icon: Icon(_showPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: Colors.white38, size: 20),
-                ),
-                IconButton(
-                  tooltip: 'Generate a new one',
-                  onPressed: () => setState(() => _password.text = _generate()),
-                  icon: const Icon(Icons.autorenew_rounded, color: Colors.white54, size: 20),
-                ),
-              ]),
-            ),
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            initialValue: _lang,
-            dropdownColor: const Color(0xFF1E293B),
-            style: const TextStyle(color: Colors.white),
-            decoration: const InputDecoration(labelText: 'Language', labelStyle: TextStyle(color: Colors.white38)),
-            items: const [
-              DropdownMenuItem(value: 'en', child: Text('English')),
-              DropdownMenuItem(value: 'fr', child: Text('Français')),
-            ],
-            onChanged: (v) => setState(() => _lang = v ?? 'en'),
-          ),
-          if (_error != null) ...[const SizedBox(height: 12), Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 12))],
-          const SizedBox(height: 18),
-          Row(children: [
-            Expanded(
-              child: FilledButton(
-                onPressed: _saving ? null : _save,
-                child: _saving ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Create account'),
-              ),
-            ),
-            const SizedBox(width: 10),
-            TextButton(onPressed: _saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
-          ]),
-        ]),
-      );
-
-  Widget _field(TextEditingController c, String label, {required IconData icon, TextInputType? keyboard}) => TextField(
-        controller: c,
-        keyboardType: keyboard,
-        style: const TextStyle(color: Colors.white),
-        decoration: InputDecoration(labelText: label, labelStyle: const TextStyle(color: Colors.white38), prefixIcon: Icon(icon, color: Colors.white38, size: 20)),
-      );
-}
-
-class _AdminCredentialsDialog extends StatelessWidget {
-  final NewAdminCredentials credentials;
-  final String schoolName;
-  const _AdminCredentialsDialog({required this.credentials, required this.schoolName});
-
-  String get _signInUrl => Uri.base.origin;
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: const Color(0xFF1E293B),
-      title: const Text('Account created successfully', style: TextStyle(color: Colors.white)),
-      content: SizedBox(
-        width: 400,
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
-            child: const Text('The password is shown only now. Copy these details and hand them over before closing.', style: TextStyle(color: Colors.amberAccent, fontSize: 12)),
-          ),
-          const SizedBox(height: 16),
-          _row('Role', credentials.role),
-          _row('Sign in at', _signInUrl),
-          _row('Email', credentials.email),
-          _row('Temporary password', credentials.temporaryPassword, bold: true),
-        ]),
-      ),
-      actions: [
-        TextButton.icon(
-          onPressed: () => Clipboard.setData(ClipboardData(
-            text: '$schoolName\nRole: ${credentials.role}\nSign in: $_signInUrl\nEmail: ${credentials.email}\nPassword: ${credentials.temporaryPassword}',
-          )),
-          icon: const Icon(Icons.copy_rounded, size: 16),
-          label: const Text('Copy'),
-        ),
-        FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
-      ],
-    );
-  }
-
-  Widget _row(String label, String value, {bool bold = false}) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: const TextStyle(color: Colors.white38, fontSize: 11)),
-          SelectableText(value, style: TextStyle(color: Colors.white, fontWeight: bold ? FontWeight.w800 : FontWeight.w500, fontSize: bold ? 17 : 14)),
-        ]),
-      );
+          const Text('Next step: open the school and create its principal, proprietor and secretary accounts.', style: TextStyle(color: Sa.muted, fontSize: 13.5)),
+        ],
+      ]);
 }

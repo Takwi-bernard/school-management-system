@@ -107,6 +107,28 @@ class SuperAdminRepository {
     return data['new_status'] as String;
   }
 
+  // ---------------- PLATFORM ----------------
+
+  Future<PlatformOverview> getOverview() async {
+    final data = await _call('platform_overview', {});
+    return PlatformOverview.fromMap(data);
+  }
+
+  Future<Map<String, SchoolMetrics>> getSchoolMetrics() async {
+    final data = await _call('school_metrics', {});
+    final out = <String, SchoolMetrics>{};
+    for (final e in (data['metrics'] as List?) ?? []) {
+      final m = SchoolMetrics.fromMap(Map<String, dynamic>.from(e as Map));
+      out[m.schoolId] = m;
+    }
+    return out;
+  }
+
+  Future<List<AuditEntry>> listAudit() async {
+    final data = await _call('list_audit', {});
+    return ((data['entries'] as List?) ?? []).map((e) => AuditEntry.fromMap(Map<String, dynamic>.from(e as Map))).toList();
+  }
+
   // ---------------- ADMIN ACCOUNTS ----------------
 
   Future<NewAdminCredentials> createSchoolAdmin({
@@ -133,6 +155,24 @@ class SuperAdminRepository {
   Future<List<SchoolAdminAccount>> listSchoolAdmins(String schoolId) async {
     final data = await _call('list_school_admins', {'school_id': schoolId});
     return ((data['admins'] as List?) ?? []).map((a) => SchoolAdminAccount.fromMap(Map<String, dynamic>.from(a as Map))).toList();
+  }
+
+  Future<List<SchoolAdminAccount>> listAllAdmins() async {
+    final data = await _call('list_all_admins', {});
+    return ((data['admins'] as List?) ?? []).map((a) => SchoolAdminAccount.fromMap(Map<String, dynamic>.from(a as Map))).toList();
+  }
+
+  Future<void> updateSchoolAdmin({required String role, required String id, required String fullName, String? phone}) async {
+    await _call('update_school_admin', {'role': role, 'id': id, 'full_name': fullName, 'phone': phone});
+  }
+
+  Future<void> setAdminActive({required String role, required String id, required bool isActive}) async {
+    await _call('set_admin_active', {'role': role, 'id': id, 'is_active': isActive});
+  }
+
+  Future<NewAdminCredentials> resetAdminPassword({required String role, required String id, String? password}) async {
+    final data = await _call('reset_admin_password', {'role': role, 'id': id, 'password': password});
+    return NewAdminCredentials.fromMap(Map<String, dynamic>.from(data['account'] as Map));
   }
 
   // ---------------- BRANDING: CONTENT ----------------

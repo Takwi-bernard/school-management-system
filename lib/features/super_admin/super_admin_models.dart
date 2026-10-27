@@ -64,20 +64,41 @@ class SchoolSummary {
 }
 
 class SchoolAdminAccount {
+  final String id;
+  final String userId;
   final String role;
   final String fullName;
   final String? phone;
   final String? email;
   final bool isActive;
+  final String? schoolId;
+  final String? schoolName;
+  final DateTime? createdAt;
 
-  const SchoolAdminAccount({required this.role, required this.fullName, this.phone, this.email, required this.isActive});
+  const SchoolAdminAccount({
+    this.id = '',
+    this.userId = '',
+    required this.role,
+    required this.fullName,
+    this.phone,
+    this.email,
+    required this.isActive,
+    this.schoolId,
+    this.schoolName,
+    this.createdAt,
+  });
 
   factory SchoolAdminAccount.fromMap(Map<String, dynamic> m) => SchoolAdminAccount(
+        id: m['id']?.toString() ?? '',
+        userId: m['user_id']?.toString() ?? '',
         role: m['role'] as String? ?? '',
         fullName: m['full_name'] as String? ?? '',
         phone: m['phone'] as String?,
         email: m['email'] as String?,
         isActive: m['is_active'] as bool? ?? true,
+        schoolId: m['school_id']?.toString(),
+        schoolName: m['school_name'] as String?,
+        createdAt: DateTime.tryParse(m['created_at'] as String? ?? ''),
       );
 }
 
@@ -409,5 +430,121 @@ class AsInstallment {
         amount: (m['amount'] as num?)?.toDouble() ?? 0,
         dueDate: DateTime.tryParse(m['due_date'] as String? ?? ''),
         displayOrder: m['display_order'] as int? ?? 0,
+      );
+}
+
+// ---------------------------------------------------------------- PLATFORM
+
+class SchoolMetrics {
+  final String schoolId;
+  final int students;
+  final int teachers;
+  final int parents;
+  final int principals;
+  final int proprietors;
+  final int secretaries;
+
+  const SchoolMetrics({
+    required this.schoolId,
+    this.students = 0,
+    this.teachers = 0,
+    this.parents = 0,
+    this.principals = 0,
+    this.proprietors = 0,
+    this.secretaries = 0,
+  });
+
+  int get admins => principals + proprietors + secretaries;
+
+  factory SchoolMetrics.fromMap(Map<String, dynamic> m) {
+    int n(String k) => (m[k] as num?)?.toInt() ?? 0;
+    return SchoolMetrics(
+      schoolId: m['school_id']?.toString() ?? '',
+      students: n('students'),
+      teachers: n('teachers'),
+      parents: n('parents'),
+      principals: n('principals'),
+      proprietors: n('proprietors'),
+      secretaries: n('secretaries'),
+    );
+  }
+}
+
+class PlatformAlert {
+  final String type; // no_principal | no_admin | inactive
+  final String schoolId;
+  final String schoolName;
+  final String message;
+  const PlatformAlert({required this.type, required this.schoolId, required this.schoolName, required this.message});
+
+  factory PlatformAlert.fromMap(Map<String, dynamic> m) => PlatformAlert(
+        type: m['type'] as String? ?? '',
+        schoolId: m['school_id']?.toString() ?? '',
+        schoolName: m['school_name'] as String? ?? '',
+        message: m['message'] as String? ?? '',
+      );
+}
+
+class PlatformOverview {
+  final int schools;
+  final int activeSchools;
+  final int students;
+  final int teachers;
+  final int parents;
+  final int adminAccounts;
+  final bool metricsAvailable;
+  final List<SchoolSummary> recentSchools;
+  final List<PlatformAlert> alerts;
+  final List<AuditEntry> recentActivity;
+
+  const PlatformOverview({
+    required this.schools,
+    required this.activeSchools,
+    required this.students,
+    required this.teachers,
+    required this.parents,
+    required this.adminAccounts,
+    required this.metricsAvailable,
+    required this.recentSchools,
+    required this.alerts,
+    required this.recentActivity,
+  });
+
+  factory PlatformOverview.fromMap(Map<String, dynamic> m) {
+    int n(String k) => (m[k] as num?)?.toInt() ?? 0;
+    List<T> list<T>(String k, T Function(Map<String, dynamic>) f) =>
+        ((m[k] as List?) ?? []).map((e) => f(Map<String, dynamic>.from(e as Map))).toList();
+    return PlatformOverview(
+      schools: n('schools'),
+      activeSchools: n('active_schools'),
+      students: n('students'),
+      teachers: n('teachers'),
+      parents: n('parents'),
+      adminAccounts: n('admin_accounts'),
+      metricsAvailable: m['metrics_available'] as bool? ?? false,
+      recentSchools: list('recent_schools', SchoolSummary.fromMap),
+      alerts: list('alerts', PlatformAlert.fromMap),
+      recentActivity: list('recent_activity', AuditEntry.fromMap),
+    );
+  }
+}
+
+class AuditEntry {
+  final String id;
+  final String actorName;
+  final String action;
+  final String summary;
+  final String? schoolName;
+  final DateTime createdAt;
+
+  const AuditEntry({required this.id, required this.actorName, required this.action, required this.summary, this.schoolName, required this.createdAt});
+
+  factory AuditEntry.fromMap(Map<String, dynamic> m) => AuditEntry(
+        id: m['id']?.toString() ?? '',
+        actorName: m['actor_name'] as String? ?? 'Platform admin',
+        action: m['action'] as String? ?? '',
+        summary: m['summary'] as String? ?? '',
+        schoolName: m['school_name'] as String?,
+        createdAt: DateTime.tryParse(m['created_at'] as String? ?? '') ?? DateTime.now(),
       );
 }
