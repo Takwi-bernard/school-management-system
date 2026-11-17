@@ -76,6 +76,14 @@ final paymentHistoryProvider = FutureProvider<List<PaymentTransaction>>((ref) as
   return ref.watch(parentRepositoryProvider).getPaymentHistory(profile.parentId);
 });
 
+/// This child's installments with a payment in flight right now
+/// (installment id -> its pending payment). autoDispose so the Fees tab always
+/// starts from a fresh read.
+final pendingInstallmentsProvider =
+    FutureProvider.autoDispose.family<Map<String, PendingPayment>, String>((ref, studentId) {
+  return ref.watch(parentRepositoryProvider).getPendingInstallmentPayments(studentId);
+});
+
 final termsForYearProvider = FutureProvider.family<List<AcademicTermOption>, String>((ref, academicYearId) {
   return ref.watch(parentRepositoryProvider).getTermsForYear(academicYearId);
 });

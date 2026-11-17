@@ -1,13 +1,19 @@
 import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'parent_models.dart';
-import '../../core/student_photo.dart';
 
 /// Thrown by changePassword specifically for a wrong CURRENT password,
 /// so the UI (which has the locale) can show a localized message
 /// instead of a hardcoded English one baked in here.
 class WrongPasswordException implements Exception {
   const WrongPasswordException();
+}
+
+/// A payment that has been started but not yet confirmed.
+class PendingPayment {
+  final String id;
+  final DateTime createdAt;
+  const PendingPayment({required this.id, required this.createdAt});
 }
 
 class ParentRepository {
@@ -77,9 +83,31 @@ class ParentRepository {
     return signed;
   }
 
-  // Photos are resolved by the shared StudentPhoto helper: it signs the link
-  // and, if signing is refused, falls back instead of showing nothing.
-  Future<String?> _signedStudentPhotoUrl(String stored) => StudentPhoto.displayUrl(_client, stored);
+  // The student-photos bucket is private, so a stored value can never be
+  // opened directly - it must always be re-signed. Handles both a bare
+  // storage path (the current format) and an old getPublicUrl-style link
+  // from before this fix, so previously-submitted rows keep working.
+  static const _studentPhotoBucket = 'student-photos';
+
+  String? _studentPhotoPath(String stored) {
+    if (!stored.startsWith('http')) return stored;
+    const marker = '/$_studentPhotoBucket/';
+    final index = stored.indexOf(marker);
+    if (index == -1) return null;
+    return Uri.decodeComponent(stored.substring(index + marker.length).split('?').first);
+  }
+
+  Future<String?> _signedStudentPhotoUrl(String stored) async {
+    final path = _studentPhotoPath(stored);
+    if (path == null) return null;
+    try {
+      return await _client.storage.from(_studentPhotoBucket).createSignedUrl(path, 6 * 60 * 60);
+    } catch (_) {
+      // A photo that can no longer be signed (moved/deleted) just shows
+      // the placeholder icon instead of a broken image.
+      return null;
+    }
+  }
 
   Future<List<EnrolledChild>> _withSignedPhotoUrls(List<EnrolledChild> children) {
     return Future.wait(children.map((child) async {
@@ -338,100 +366,7 @@ class ParentRepository {
         .select('score, coefficient, weighted_score, grade, remark, subjects(subject_name)')
         .eq('report_card_id', reportRow['id']);
 
-    final base = ReportCardSummary.fromMap(reportRow, subjectRows);
-
-    // A sequence report is a single column; nothing to combine.
-    if (scope != 'term') {
-      return ReportCardSummary(
-        studentName: base.studentName,
-        className: base.className,
-        termName: base.termName,
-        overallAverage: base.overallAverage,
-        classRank: base.classRank,
-        totalStudents: base.totalStudents,
-        principalComment: base.principalComment,
-        subjects: base.subjects,
-        periods: [ReportPeriodColumn(id: examPeriodId!, name: (reportRow['exam_periods'] as Map?)?['period_name'] as String? ?? '')],
-      );
-    }
-
-    // Term report: one column per sequence of the term, filled from the
-    // approved marks. A sequence that has no approved mark yet stays an
-    // empty cell, and the average is taken over the marks that exist.
-    final periodRows = await _client
-        .from('exam_periods')
-        .select('id, period_name')
-        .eq('academic_term_id', termId!)
-        .order('sequence_order');
-    final periods = [
-      for (final p in periodRows) ReportPeriodColumn(id: p['id'] as String, name: p['period_name'] as String? ?? ''),
-    ];
-
-    List<dynamic> marksRows = const [];
-    try {
-      marksRows = await _client
-          .from('marks')
-          .select('score, coefficient, exam_period_id, subjects(subject_name)')
-          .eq('student_id', studentId)
-          .inFilter('exam_period_id', periods.map((p) => p.id).toList())
-          .eq('status', 'approved');
-    } catch (_) {
-      // If marks cannot be read here, fall back to the stored term
-      // averages (the columns just stay empty).
-    }
-
-    final byName = <String, SubjectResult>{for (final s in base.subjects) s.subjectName: s};
-    final scores = <String, Map<String, double>>{};
-    final coefs = <String, int>{};
-    for (final m in marksRows) {
-      final name = (m['subjects'] as Map?)?['subject_name'] as String? ?? '';
-      if (name.isEmpty) continue;
-      scores.putIfAbsent(name, () => {})[m['exam_period_id'] as String] = (m['score'] as num).toDouble();
-      coefs[name] = (m['coefficient'] as num).toInt();
-    }
-
-    final names = <String>{...byName.keys, ...scores.keys}.toList()..sort();
-    final subjects = <SubjectResult>[];
-    for (final name in names) {
-      final stored = byName[name];
-      final perPeriod = scores[name] ?? const <String, double>{};
-      final coefficient = stored?.coefficient ?? coefs[name] ?? 1;
-      double avg = stored?.score ?? 0;
-      var grade = stored?.grade;
-      if (perPeriod.isNotEmpty) {
-        avg = perPeriod.values.reduce((a, b) => a + b) / perPeriod.length;
-        // The stored grade belonged to the stored average.
-        if (stored == null || (stored.score - avg).abs() > 0.005) grade = null;
-      }
-      subjects.add(SubjectResult(
-        subjectName: name,
-        score: avg,
-        coefficient: coefficient,
-        weightedScore: avg * coefficient,
-        grade: grade,
-        remark: stored?.remark,
-        scoresByPeriod: perPeriod,
-      ));
-    }
-
-    var overall = base.overallAverage;
-    if (marksRows.isNotEmpty) {
-      final coefSum = subjects.fold<int>(0, (a, s) => a + s.coefficient);
-      final weighted = subjects.fold<double>(0, (a, s) => a + s.weightedScore);
-      if (coefSum > 0) overall = weighted / coefSum;
-    }
-
-    return ReportCardSummary(
-      studentName: base.studentName,
-      className: base.className,
-      termName: base.termName,
-      overallAverage: overall,
-      classRank: base.classRank,
-      totalStudents: base.totalStudents,
-      principalComment: base.principalComment,
-      subjects: subjects,
-      periods: periods,
-    );
+    return ReportCardSummary.fromMap(reportRow, subjectRows);
   }
 
   // --------------------------------------------------
@@ -602,6 +537,22 @@ class ParentRepository {
   // PAYMENT - via Edge Functions only, never direct table writes
   // --------------------------------------------------
 
+  /// A non-2xx answer from an Edge Function arrives as a
+  /// FunctionException whose toString() is a wall of technical text.
+  /// Pull out the server's own human message instead, so a parent
+  /// sees "This child has already been approved." - never
+  /// "FunctionException(status: 409, ...)".
+  Exception _functionError(FunctionException e, String fallback) {
+    final details = e.details;
+    if (details is Map && details['message'] is String && (details['message'] as String).trim().isNotEmpty) {
+      return Exception(details['message'] as String);
+    }
+    if (details is String && details.trim().isNotEmpty && !details.trim().startsWith('{')) {
+      return Exception(details.trim());
+    }
+    return Exception(fallback);
+  }
+
   Future<PaymentTransaction> initiatePayment({
     required String schoolId,
     String? childId,
@@ -611,32 +562,84 @@ class ParentRepository {
     required String paymentPurpose,
     required String phoneNumber,
   }) async {
-    final response = await _client.functions.invoke('initiate-parent-payment', body: {
-      'school_id': schoolId,
-      if (childId != null) 'child_id': childId,
-      if (admissionRequestId != null) 'admission_request_id': admissionRequestId,
-      if (installmentId != null) 'installment_id': installmentId,
-      'amount': amount,
-      'payment_purpose': paymentPurpose,
-      'phone_number': phoneNumber,
-    });
+    try {
+      final response = await _client.functions.invoke('initiate-parent-payment', body: {
+        'school_id': schoolId,
+        if (childId != null) 'child_id': childId,
+        if (admissionRequestId != null) 'admission_request_id': admissionRequestId,
+        if (installmentId != null) 'installment_id': installmentId,
+        // The server works out the real amount itself; this is only
+        // sent so an old function version keeps working.
+        'amount': amount,
+        'payment_purpose': paymentPurpose,
+        'phone_number': phoneNumber,
+      });
 
-    final data = response.data as Map;
-    if (data['success'] != true) {
-      throw Exception(data['message'] ?? 'Unable to start payment.');
+      final data = response.data as Map;
+      if (data['success'] != true) {
+        throw Exception(data['message'] ?? 'Unable to start payment.');
+      }
+      return PaymentTransaction.fromMap(Map<String, dynamic>.from(data['transaction']));
+    } on FunctionException catch (e) {
+      throw _functionError(e, 'Unable to start payment.');
     }
-    return PaymentTransaction.fromMap(Map<String, dynamic>.from(data['transaction']));
   }
 
+  /// Asks the server to check this payment with the Mobile Money
+  /// provider right now. The returned object only reliably carries
+  /// status + reference; amount/purpose should come from
+  /// getPaymentById, which reads the real row.
   Future<PaymentTransaction> verifyPayment(String transactionId) async {
-    final response = await _client.functions.invoke('verify-parent-payment', body: {
-      'transaction_id': transactionId,
-    });
-    final data = response.data as Map;
-    if (data['success'] != true) {
-      throw Exception(data['message'] ?? 'Unable to verify payment.');
+    try {
+      final response = await _client.functions.invoke('verify-parent-payment', body: {
+        'transaction_id': transactionId,
+      });
+      final data = response.data as Map;
+      if (data['success'] != true) {
+        throw Exception(data['message'] ?? 'Unable to verify payment.');
+      }
+      return PaymentTransaction.fromMap(Map<String, dynamic>.from(data['transaction']));
+    } on FunctionException catch (e) {
+      throw _functionError(e, 'Unable to verify payment.');
     }
-    return PaymentTransaction.fromMap(Map<String, dynamic>.from(data['transaction']));
+  }
+
+  /// One payment, read straight from the database (RLS: the parent's
+  /// own rows - the same access the Payment History tab already
+  /// uses). Far lighter than the Edge Function, so it still works on a
+  /// weak connection, and it is where a webhook-confirmed payment
+  /// shows up first.
+  Future<PaymentTransaction?> getPaymentById(String transactionId) async {
+    final row = await _client
+        .from('payments')
+        .select('*, students(first_name, last_name), admission_requests!payments_admission_request_id_fkey(first_name, last_name)')
+        .eq('id', transactionId)
+        .maybeSingle();
+    return row == null ? null : PaymentTransaction.fromMap(row);
+  }
+
+  /// installment id -> its in-flight payment, for this child's installments that
+  /// have a payment in flight right now (started within 20 minutes).
+  /// Lets the Fees tab show "Awaiting confirmation" instead of a Pay
+  /// button, so nobody pays the same installment twice.
+  Future<Map<String, PendingPayment>> getPendingInstallmentPayments(String studentId) async {
+    final since = DateTime.now().toUtc().subtract(const Duration(minutes: 20)).toIso8601String();
+    final rows = await _client
+        .from('payments')
+        .select('id, installment_id, created_at')
+        .eq('student_id', studentId)
+        .eq('status', 'pending')
+        .gte('created_at', since);
+    final result = <String, PendingPayment>{};
+    for (final r in rows) {
+      final installmentId = r['installment_id'] as String?;
+      if (installmentId == null) continue;
+      result[installmentId] = PendingPayment(
+        id: r['id'] as String,
+        createdAt: DateTime.tryParse(r['created_at'] as String? ?? '') ?? DateTime.now(),
+      );
+    }
+    return result;
   }
 
     // --------------------------------------------------
@@ -663,4 +666,3 @@ class ParentRepository {
     return result;
   }
 }
-

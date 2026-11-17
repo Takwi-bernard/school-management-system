@@ -1,18 +1,27 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:async';
 
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../core/error_state.dart';
 import '../../core/l10n/app_strings.dart';
+import '../../core/responsive.dart';
 import '../../core/status_colors.dart';
 import '../landing/landing_model.dart';
-import '../proprietor/proprietor_ui.dart';
+import '../parent/parent_models.dart';
 import 'parent_fees.dart' show generateReceiptPdf;
-import 'parent_models.dart';
 import 'parent_providers.dart';
-import 'parent_ui.dart';
 
-enum _Filter { all, paid, pending, failed }
-
-/// Payment history across all children, with a summary and filter.
+/// Payment history, in-shell (ParentShell provides the Scaffold,
+/// AppBar and Theme).
+///
+/// This tab is also the safety net for the payment flow: if a parent
+/// left the status page, lost signal or closed the app, any payment
+/// still "pending" here is re-checked automatically (against the
+/// provider, not just the database) the moment the tab opens and every
+/// few seconds after, until it resolves. Pull down to refresh.
 class ParentPaymentHistoryTab extends ConsumerStatefulWidget {
   final LandingModel landing;
   final AppStrings strings;
@@ -23,104 +32,173 @@ class ParentPaymentHistoryTab extends ConsumerStatefulWidget {
 }
 
 class _ParentPaymentHistoryTabState extends ConsumerState<ParentPaymentHistoryTab> {
-  _Filter _filter = _Filter.all;
+  Timer? _timer;
+  bool _reconciling = false;
 
-  bool _matches(PaymentTransaction t) {
-    switch (_filter) {
-      case _Filter.all:
-        return true;
-      case _Filter.paid:
-        return t.isSuccessful;
-      case _Filter.pending:
-        return !t.isTerminal;
-      case _Filter.failed:
-        return t.isFailed || t.isCancelled;
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 8), (_) => _reconcile());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _reconcile();
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _reconcile() async {
+    if (!mounted || _reconciling) return;
+    final list = ref.read(paymentHistoryProvider).valueOrNull;
+    if (list == null) return;
+    final cutoff = DateTime.now().subtract(const Duration(hours: 48));
+    final pending = list.where((t) => t.isPending && t.createdAt.isAfter(cutoff)).take(3).toList();
+    if (pending.isEmpty) return;
+
+    _reconciling = true;
+    try {
+      final repo = ref.read(parentRepositoryProvider);
+      for (final t in pending) {
+        try {
+          await repo.verifyPayment(t.id).timeout(const Duration(seconds: 20));
+        } catch (_) {
+          // Weak network - the next round tries again.
+        }
+      }
+    } finally {
+      _reconciling = false;
     }
+    if (!mounted) return;
+    ref.invalidate(paymentHistoryProvider);
+    ref.invalidate(childFeesProvider);
+    ref.invalidate(pendingInstallmentsProvider);
+  }
+
+  Future<void> _refresh() async {
+    ref.invalidate(paymentHistoryProvider);
+    try {
+      await ref.read(paymentHistoryProvider.future);
+    } catch (_) {
+      // The error state below explains it; pull-to-refresh just ends.
+    }
+    _reconcile();
   }
 
   @override
   Widget build(BuildContext context) {
+    final landing = widget.landing;
     final strings = widget.strings;
-    final fr = strings.isFrench;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final historyAsync = ref.watch(paymentHistoryProvider);
+    final pendingCount = (historyAsync.valueOrNull ?? const <PaymentTransaction>[]).where((t) => t.isPending).length;
 
-    return PrPage(
-      maxWidth: 820,
-      onRefresh: () async {
-        ref.invalidate(paymentHistoryProvider);
-        await ref.read(paymentHistoryProvider.future).catchError((_) => <PaymentTransaction>[]);
-      },
-      children: [
-        PrHeader(
-          title: strings.paymentHistory,
-          subtitle: fr
-              ? 'Toutes vos transactions, pour tous vos enfants, les plus récentes en premier.'
-              : 'All your transactions, across all your children, most recent first.',
-        ),
-        const SizedBox(height: 16),
-        PaAsync<List<PaymentTransaction>>(
-          value: historyAsync,
-          strings: strings,
-          onRetry: () => ref.invalidate(paymentHistoryProvider),
-          rows: 4,
-          rowHeight: 110,
-          isEmpty: (l) => l.isEmpty,
-          empty: PaEmpty(icon: Icons.receipt_long_rounded, title: strings.noPaymentsYet),
-          builder: (all) {
-            final paidTotal = all.where((t) => t.isSuccessful).fold<double>(0, (a, t) => a + t.amount);
-            final shown = all.where(_matches).toList();
-            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              PaHero(
-                eyebrow: fr ? 'Total payé' : 'Total paid',
-                title: paMoney(paidTotal),
-                subtitle: fr ? '${all.length} transaction${all.length > 1 ? 's' : ''}' : '${all.length} transaction${all.length > 1 ? 's' : ''}',
-              ),
-              const SizedBox(height: 14),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: PrPills<_Filter>(
-                  values: _Filter.values,
-                  selected: _filter,
-                  label: (f) => switch (f) {
-                    _Filter.all => fr ? 'Tout' : 'All',
-                    _Filter.paid => fr ? 'Payé' : 'Paid',
-                    _Filter.pending => fr ? 'En attente' : 'Pending',
-                    _Filter.failed => fr ? 'Échoué' : 'Failed',
-                  },
-                  onChanged: (f) => setState(() => _filter = f),
-                ),
-              ),
-              const SizedBox(height: 14),
-              if (shown.isEmpty)
-                PrCard(child: PaEmpty(icon: Icons.filter_alt_off_rounded, title: strings.noPaymentsYet))
-              else
-                for (var i = 0; i < shown.length; i++)
-                  PrReveal(
-                    index: i,
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _PaymentTile(transaction: shown[i], landing: widget.landing, strings: strings),
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.all(Responsive.pagePadding(context)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(strings.paymentHistory, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Text(
+              strings.isFrench
+                  ? 'Toutes vos transactions, pour tous vos enfants, les plus récentes en premier.'
+                  : 'All your transactions, across all your children, most recent first.',
+              style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 18),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: pendingCount == 0
+                  ? const SizedBox(width: double.infinity)
+                  : Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 14),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: kPending.withValues(alpha: 0.09),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: kPending.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.only(top: 2),
+                            child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: kPending)),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              strings.isFrench
+                                  ? '$pendingCount paiement${pendingCount > 1 ? 's' : ''} en cours de confirmation. Nous vérifions automatiquement - ne payez pas une deuxième fois.'
+                                  : '$pendingCount payment${pendingCount > 1 ? 's are' : ' is'} being confirmed. We are checking automatically - please do not pay again.',
+                              style: theme.textTheme.bodySmall?.copyWith(height: 1.45),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-            ]);
-          },
+            ),
+            historyAsync.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.symmetric(vertical: 60),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+              error: (e, _) => ErrorStateView(error: e, onRetry: () => ref.invalidate(paymentHistoryProvider)),
+              data: (transactions) {
+                if (transactions.isEmpty) {
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 44, horizontal: 24),
+                    decoration: BoxDecoration(color: scheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(20)),
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(color: scheme.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
+                          child: Icon(Icons.receipt_long_rounded, size: 30, color: scheme.primary),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(strings.noPaymentsYet, textAlign: TextAlign.center, style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
+                      ],
+                    ),
+                  );
+                }
+                return Column(
+                  children: [
+                    for (final t in transactions) _PaymentHistoryTile(key: ValueKey(t.id), transaction: t, landing: landing, strings: strings),
+                  ],
+                );
+              },
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
 
-class _PaymentTile extends ConsumerStatefulWidget {
+class _PaymentHistoryTile extends ConsumerStatefulWidget {
   final PaymentTransaction transaction;
   final LandingModel landing;
   final AppStrings strings;
-  const _PaymentTile({required this.transaction, required this.landing, required this.strings});
+  const _PaymentHistoryTile({super.key, required this.transaction, required this.landing, required this.strings});
 
   @override
-  ConsumerState<_PaymentTile> createState() => _PaymentTileState();
+  ConsumerState<_PaymentHistoryTile> createState() => _PaymentHistoryTileState();
 }
 
-class _PaymentTileState extends ConsumerState<_PaymentTile> {
+class _PaymentHistoryTileState extends ConsumerState<_PaymentHistoryTile> {
   bool _downloading = false;
 
   Future<void> _download() async {
@@ -129,19 +207,33 @@ class _PaymentTileState extends ConsumerState<_PaymentTile> {
       await generateReceiptPdf(ref: ref, transaction: widget.transaction, landing: widget.landing, isFrench: widget.strings.isFrench);
     } catch (_) {
       if (mounted) {
-        prSnack(context, widget.strings.isFrench ? 'Échec du téléchargement. Veuillez réessayer.' : 'Download failed. Please try again.');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(widget.strings.isFrench ? 'Échec du téléchargement. Veuillez réessayer.' : 'Download failed. Please try again.'),
+        ));
       }
     } finally {
       if (mounted) setState(() => _downloading = false);
     }
   }
 
+  void _openStatus() {
+    final t = widget.transaction;
+    context.push('/parent/payment-status', extra: {
+      'transactionId': t.id,
+      'landing': widget.landing,
+      'child': null,
+      'paymentPurpose': t.paymentPurpose,
+      'amount': t.amount,
+      'startedAt': t.createdAt,
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final cs = theme.colorScheme;
     final t = widget.transaction;
-    final fr = widget.strings.isFrench;
+    final strings = widget.strings;
+    final fr = strings.isFrench;
 
     final (Color color, String label, IconData icon) = t.isSuccessful
         ? (kSettled, fr ? 'Payé' : 'Paid', Icons.check_circle_rounded)
@@ -151,44 +243,120 @@ class _PaymentTileState extends ConsumerState<_PaymentTile> {
                 ? (kOverdue, fr ? 'Annulé' : 'Cancelled', Icons.block_rounded)
                 : (kPending, fr ? 'En attente' : 'Pending', Icons.hourglass_top_rounded);
 
-    return PrCard(
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          PaIconBadge(icon: icon, color: color, size: 38),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(t.paymentPurpose, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800)),
-              if (t.childName != null) Text(t.childName!, style: theme.textTheme.bodySmall?.copyWith(color: cs.outline)),
-            ]),
+    final ref0 = t.transactionReference;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(16),
+        border: t.isPending ? Border.all(color: kPending.withValues(alpha: 0.35)) : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.12), shape: BoxShape.circle),
+                child: Icon(icon, color: color, size: 17),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(t.paymentPurpose, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+                    if (t.childName != null)
+                      Text(t.childName!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+                  ],
+                ),
+              ),
+              Text('${_formatAmount(t.amount)} FCFA', style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800)),
+            ],
           ),
-          const SizedBox(width: 8),
-          Text(paMoney(t.amount), style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w900)),
-        ]),
-        const SizedBox(height: 10),
-        Row(children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
-            child: Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+                child: Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(_formatDate(t.createdAt), style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+              ),
+            ],
           ),
-          const SizedBox(width: 10),
-          Text(paDateTime(t.createdAt), style: theme.textTheme.bodySmall?.copyWith(color: cs.outline)),
-        ]),
-        if (t.isSuccessful) ...[
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _downloading ? null : _download,
-              icon: _downloading
-                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.download_rounded, size: 16),
-              label: Text(widget.strings.downloadReceipt),
+          if (ref0 != null && ref0.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: ref0));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(fr ? 'Référence copiée' : 'Reference copied'), duration: const Duration(seconds: 2)),
+                );
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${fr ? 'Réf' : 'Ref'}: $ref0',
+                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(Icons.copy_rounded, size: 13, color: theme.colorScheme.outline),
+                  ],
+                ),
+              ),
             ),
-          ),
+          ],
+          if (t.isPending) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _openStatus,
+                icon: const Icon(Icons.visibility_outlined, size: 16),
+                label: Text(fr ? 'Voir l\'état du paiement' : 'Check payment status'),
+              ),
+            ),
+          ],
+          if (t.isSuccessful) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _downloading ? null : _download,
+                icon: _downloading
+                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.download_rounded, size: 16),
+                label: Text(strings.downloadReceipt),
+              ),
+            ),
+          ],
         ],
-      ]),
+      ),
     );
   }
+
+  String _formatAmount(double amount) {
+    final whole = amount.toStringAsFixed(0);
+    final buffer = StringBuffer();
+    for (int i = 0; i < whole.length; i++) {
+      if (i > 0 && (whole.length - i) % 3 == 0) buffer.write(',');
+      buffer.write(whole[i]);
+    }
+    return buffer.toString();
+  }
+
+  String _formatDate(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 }
