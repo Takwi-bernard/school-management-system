@@ -42,6 +42,17 @@ final appRouter = GoRouter(
   initialLocation: '/',
   routes: [
     GoRoute(path: '/', name: 'landing', pageBuilder: (c, s) => _page(const LandingPage(), s)),
+    // Google sign-in returns here. The session is already created by
+    // the time this route is reached (Supabase reads the sign-in code
+    // from the address when the app starts), so there is nothing to
+    // show: send the user to the home route, which takes a signed-in
+    // user on to their dashboard. Without this route the browser
+    // showed "Page Not Found" even though the login had worked.
+    GoRoute(
+      path: '/auth/callback',
+      redirect: (context, state) => '/',
+      pageBuilder: (c, s) => _page(const Scaffold(body: Center(child: CircularProgressIndicator())), s),
+    ),
     GoRoute(path: '/sign-in', name: 'sign-in', pageBuilder: (c, s) => _page(const SignInPage(), s)),
     GoRoute(path: '/sign-up', name: 'sign-up', pageBuilder: (c, s) => _page(const SignUpPage(), s)),
     GoRoute(
